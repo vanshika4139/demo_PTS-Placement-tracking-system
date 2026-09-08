@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Placements{% endblock %}
+
+{% block content %}
+<style>
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-amber { background: #fef3c7; color: #d97706; }
+  .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+  .sa-pl-table th, .sa-pl-table td {
+    padding: 12px 14px;
+  }
+  .sa-pl-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-pl-name {
+    font-weight: 600;
+    color: #111827;
+  }
+  .sa-progress-track {
+    display: inline-block;
+    width: 80px;
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 999px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  .sa-progress-fill {
+    height: 100%;
+    background: #16a34a;
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Placements</h2>
+    <p>Track placed candidates and their follow-up verification checkpoints.</p>
+  </div>
+</div>
+
+<div class="panel-card">
+  <table class="data-table sa-pl-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Employer</th>
+        <th>Job Role</th>
+        <th>Salary</th>
+        <th>Joining Date</th>
+        <th>Working Status</th>
+        <th>Follow-ups</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in placement_data %}
+      {% set status_val = (item.candidate.working_status or '-')|string %}
+      {% set status_upper = status_val|upper %}
+      {% set pct = ((item.checkpoints_done / item.checkpoints_total * 100) | round(0, 'floor')) if item.checkpoints_total else 0 %}
+      <tr>
+        <td class="sa-pl-name">{{ item.candidate.full_name }}</td>
+        <td>{{ item.candidate.employer_name }}</td>
+        <td>{{ item.candidate.job_role or '-' }}</td>
+        <td>{{ item.candidate.salary or '-' }}</td>
+        <td>{{ item.candidate.joining_date.strftime('%d-%m-%Y') if item.candidate.joining_date else '-' }}</td>
+        <td>
+          <span class="sa-pill {{ 'sa-pill-green' if status_upper == 'WORKING' else ('sa-pill-red' if status_upper == 'LEFT' else 'sa-pill-gray') }}">
+            {{ item.candidate.working_status or '-' }}
+          </span>
+        </td>
+        <td>
+          <span class="sa-progress-track"><span class="sa-progress-fill" style="width:{{ pct }}%;"></span></span>
+          {{ item.checkpoints_done }}/{{ item.checkpoints_total }}
+        </td>
+        <td>
+          <a href="{{ url_for('frontend.organization_placement_detail', candidate_id=item.candidate.id) }}">View</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No placed candidates yet. Fill "Employer Name" in a candidate's profile to mark them as placed.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

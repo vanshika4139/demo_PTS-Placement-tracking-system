@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="{{ current_language() }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ _('candidate_portal') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-card">
+      <div style="text-align:right; font-size:0.82rem; margin-bottom:8px;">
+        <a href="{{ url_for('frontend.set_language', lang_code='en') }}"
+           style="text-decoration:none; {{ 'font-weight:700; color:var(--avocado-dark);' if current_language() == 'en' else 'color:var(--muted);' }}">EN</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('frontend.set_language', lang_code='hi') }}"
+           style="text-decoration:none; {{ 'font-weight:700; color:var(--avocado-dark);' if current_language() == 'hi' else 'color:var(--muted);' }}">हिं</a>
+      </div>
+
+      <div class="brand-block" style="margin-bottom:16px;">
+        <div class="brand-mark large">C</div>
+        <div>
+          <h2 style="margin:0;">{{ _('candidate_portal') }}</h2>
+          <p style="margin:0; color:var(--muted);">{{ _('portal_subtitle') }}</p>
+        </div>
+      </div>
+
+      {% if error %}
+      <p class="form-error">{{ error }}</p>
+      {% endif %}
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" class="auth-form">
+        <input type="text" name="registration_number" placeholder="{{ _('registration_number') }}" required>
+        <input type="password" name="password" placeholder="{{ _('password') }}" required>
+        <button type="submit" class="primary-btn">{{ _('login_button') }}</button>
+      </form>
+
+      <p style="margin-top:16px; font-size:0.85rem; color:var(--muted);">
+        {{ _('login_help_text') }}
+      </p>
+    </div>
+  </div>
+</body>
+</html>

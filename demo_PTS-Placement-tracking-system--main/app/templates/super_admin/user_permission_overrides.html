@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Permission Overrides{% endblock %}
+
+{% block content %}
+<style>
+  .upo-resource-block { margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .upo-resource-header {
+    background: #f9fafb; padding: 10px 16px; font-weight: 600;
+    text-transform: capitalize; border-bottom: 1px solid #e5e7eb;
+  }
+  .upo-permission-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 16px; border-bottom: 1px solid #f3f4f6;
+  }
+  .upo-permission-row:last-child { border-bottom: none; }
+  .upo-permission-label { display: flex; flex-direction: column; }
+  .upo-permission-code { font-weight: 500; }
+  .upo-permission-desc { color: #6b7280; font-size: 0.8rem; }
+  .upo-role-badge {
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+    background: #eef2ff; color: #4338ca; margin-left: 8px;
+  }
+  .upo-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.85rem; }
+</style>
+
+<div class="page-header">
+  <h2>Permission Overrides — {{ target_user.full_name }}</h2>
+  <p>Role: <strong>{{ role_name }}</strong>. Set individual exceptions below — these override the role's default permissions for this user only.</p>
+</div>
+
+<div class="panel-card">
+  <form method="post">
+    {% for resource, permissions in grouped_permissions.items() %}
+    <div class="upo-resource-block">
+      <div class="upo-resource-header">{{ resource.replace('_', ' ') }}</div>
+      {% for perm in permissions %}
+      <div class="upo-permission-row">
+        <div class="upo-permission-label">
+          <span class="upo-permission-code">
+            {{ perm.code }}
+            {% if perm.id in role_permission_ids %}
+            <span class="upo-role-badge">from role</span>
+            {% endif %}
+          </span>
+          {% if perm.description %}<span class="upo-permission-desc">{{ perm.description }}</span>{% endif %}
+        </div>
+        <select name="override_{{ perm.id }}" class="upo-select">
+          {% set current = current_overrides.get(perm.id) %}
+          <option value="inherit" {{ 'selected' if perm.id not in current_overrides }}>Inherit from role</option>
+          <option value="allow" {{ 'selected' if current == True }}>Force Allow</option>
+          <option value="deny" {{ 'selected' if current == False }}>Force Deny</option>
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save Overrides</button>
+      <a class="ghost-btn" href="{{ url_for('frontend.super_admin_users') }}">Back to Users</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

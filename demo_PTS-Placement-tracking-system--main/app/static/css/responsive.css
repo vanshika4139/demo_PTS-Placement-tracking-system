@@ -1,0 +1,30 @@
+/* ============================================================
+   CODEVOCADO — Responsive breakpoints
+   ============================================================ */
+
+@media (max-width: 1024px) {
+  .page-content { padding: 20px; }
+  .card-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; padding: 16px; }
+  .nav-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .nav-list li { margin-bottom: 0; }
+  .sidebar-inner .sidebar-logo { margin-bottom: 12px; }
+}
+
+@media (max-width: 640px) {
+  .page-header-inline { flex-direction: column; align-items: flex-start; }
+  .top-nav { flex-wrap: wrap; gap: 12px; }
+  .top-nav-actions { flex-wrap: wrap; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .data-table { font-size: 0.85rem; }
+  .data-table th, .data-table td { padding: 8px; }
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  .stats-grid { grid-template-columns: 1fr; }
+}

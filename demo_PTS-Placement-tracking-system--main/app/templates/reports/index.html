@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% block title %}Reports{% endblock %}
+
+{% block content %}
+<style>
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 16px 0 24px 0;
+  }
+  .sa-stat-card {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .sa-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-report-table th, .sa-report-table td {
+    padding: 10px 14px;
+  }
+  .sa-report-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-report-count {
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-report-section-title {
+    margin: 0 0 4px;
+  }
+  .sa-report-section-sub {
+    color: #6b7280;
+    font-size: 0.85rem;
+    margin: 0 0 14px;
+  }
+  .sa-inline-stat {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .sa-inline-stat div { text-align: left; }
+  .sa-inline-stat .label { font-size: 0.78rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; }
+  .sa-inline-stat .value { font-size: 1.4rem; font-weight: 700; color: #111827; }
+
+  /* --- Organization Leaderboard --- */
+  .sa-lb-rank-cell {
+    font-weight: 700;
+    font-size: 1rem;
+    text-align: center;
+    width: 40px;
+  }
+  .sa-lb-rank-medal {
+    font-size: 1.3rem;
+  }
+  .sa-lb-row-top1 { background: #fffbeb; }
+  .sa-lb-row-top2 { background: #fafafa; }
+  .sa-lb-row-top3 { background: #fdf8f3; }
+  .sa-lb-bar-track {
+    display: inline-block;
+    width: 100px;
+    height: 8px;
+    background: #f3f4f6;
+    border-radius: 999px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  .sa-lb-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #16a34a, #22c55e);
+  }
+  .sa-lb-name-link {
+    font-weight: 600;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Reports</h2>
+  <p>Placement performance and candidate lifecycle summary.</p>
+</div>
+
+<div class="sa-stats-grid">
+  <a href="{{ url_for('frontend.organization_candidates') }}" class="sa-stat-card" style="--accent:#2563eb;">
+    <h3>Total Candidates</h3><p class="stat-value">{{ total }}</p>
+  </a>
+  <a href="{{ url_for('frontend.organization_candidates', placed='yes') }}" class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>Placed</h3><p class="stat-value">{{ placed }}</p>
+  </a>
+  <a href="{{ url_for('frontend.organization_candidates', placed='yes') }}" class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>Placement Rate</h3><p class="stat-value">{{ placement_rate }}%</p>
+  </a>
+  <a href="{{ url_for('frontend.organization_candidates', verification_status='verified') }}" class="sa-stat-card" style="--accent:#8b5cf6;">
+    <h3>Verification Rate</h3><p class="stat-value">{{ verification_rate }}%</p>
+  </a>
+</div>
+
+<div class="panel-card">
+  <h3>Training Status Breakdown</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Status</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for status, count in training_status_breakdown.items() %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidates', training_status=status) }}">{{ status }}</a></td>
+        <td class="sa-report-count">{{ count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Sector-wise Distribution</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Sector</th><th>Count</th><th>Avg. Salary</th></tr></thead>
+    <tbody>
+      {% for sector, count in sector_breakdown.items() %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidates', sector=sector) }}">{{ sector }}</a></td>
+        <td class="sa-report-count">{{ count }}</td>
+        <td>{{ '₹' + '{:,}'.format(sector_avg_salary[sector]) if sector in sector_avg_salary else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3 class="sa-report-section-title">Batch-wise Placement Performance</h3>
+  <p class="sa-report-section-sub">Sorted by placement rate, highest first{% if unassigned_batch_count %} · {{ unassigned_batch_count }} candidate(s) have no batch assigned{% endif %}.</p>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Batch</th><th>Total Candidates</th><th>Placed</th><th>Placement Rate</th></tr></thead>
+    <tbody>
+      {% for batch in batch_breakdown %}
+      <tr>
+        <td>{{ batch.name }}</td>
+        <td class="sa-report-count">{{ batch.total }}</td>
+        <td class="sa-report-count">{{ batch.placed }}</td>
+        <td class="sa-report-count">{{ batch.placement_rate }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No batches with candidates yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3 class="sa-report-section-title">Time-to-Placement &amp; Attrition</h3>
+  <p class="sa-report-section-sub">How quickly candidates get placed after training, and how many later leave their job.</p>
+  <div class="sa-inline-stat">
+    <div>
+      <div class="label">Avg. Days: Training End → Joining</div>
+      <div class="value">{{ avg_time_to_placement if avg_time_to_placement is not none else '—' }}{% if avg_time_to_placement is not none %} days{% endif %}</div>
+    </div>
+    <div>
+      <div class="label">Candidates Who Exited</div>
+      <div class="value">{{ attrition_count }}</div>
+    </div>
+    <div>
+      <div class="label">Attrition Rate (of placed)</div>
+      <div class="value">{{ attrition_rate }}%</div>
+    </div>
+  </div>
+  {% if exit_reason_breakdown %}
+  <table class="data-table sa-report-table" style="margin-top:16px;">
+    <thead><tr><th>Exit Reason</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for reason, count in exit_reason_breakdown.items() %}
+      <tr>
+        <td>{{ reason }}</td>
+        <td class="sa-report-count">{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if is_super_admin %}
+<div class="panel-card">
+  <h3 class="sa-report-section-title">🏆 Organization Leaderboard</h3>
+  <p class="sa-report-section-sub">Ranked by placement rate, highest first. Organizations with no candidates yet are listed last.</p>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Rank</th><th>Organization</th><th>Total Candidates</th><th>Placed</th><th>Placement Rate</th></tr></thead>
+    <tbody>
+      {% for org in org_breakdown %}
+      {% set rank = loop.index %}
+      <tr class="{{ 'sa-lb-row-top1' if rank == 1 and org.total > 0 else ('sa-lb-row-top2' if rank == 2 and org.total > 0 else ('sa-lb-row-top3' if rank == 3 and org.total > 0 else '')) }}">
+        <td class="sa-lb-rank-cell">
+          {% if org.total > 0 and rank == 1 %}<span class="sa-lb-rank-medal">🥇</span>
+          {% elif org.total > 0 and rank == 2 %}<span class="sa-lb-rank-medal">🥈</span>
+          {% elif org.total > 0 and rank == 3 %}<span class="sa-lb-rank-medal">🥉</span>
+          {% else %}{{ rank }}
+          {% endif %}
+        </td>
+        <td><a class="sa-lb-name-link" href="{{ url_for('frontend.super_admin_organization_detail', organization_id=org.id) }}">{{ org.name }}</a></td>
+        <td class="sa-report-count">{{ org.total }}</td>
+        <td class="sa-report-count">{{ org.placed }}</td>
+        <td>
+          {% if org.total > 0 %}
+          <span class="sa-lb-bar-track"><span class="sa-lb-bar-fill" style="width:{{ org.placement_rate }}%;"></span></span>{{ org.placement_rate }}%
+          {% else %}
+          <span style="color:#9ca3af;">No candidates yet</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No organizations yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

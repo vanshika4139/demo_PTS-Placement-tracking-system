@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Deleted Candidates{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Deleted Candidates</h2>
+    <p>Candidates that were removed. You can restore them here.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates') }}">Back to Candidates</a>
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Registration No.</th>
+        <th>Name</th>
+        <th>Mobile</th>
+        <th>Training Center</th>
+        <th>Employer</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for candidate in candidates %}
+      <tr>
+        <td>{{ candidate.registration_number or '-' }}</td>
+        <td>{{ candidate.full_name }}</td>
+        <td>{{ candidate.mobile or '-' }}</td>
+        <td>{{ candidate.training_center or '-' }}</td>
+        <td>{{ candidate.employer_name or '-' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_candidate_restore', candidate_id=candidate.id) }}" onsubmit="return confirm('Restore this candidate?');">
+            <button type="submit" class="ghost-btn" style="padding:2px 8px; font-size:0.85rem;">Restore</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No deleted candidates.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

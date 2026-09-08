@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Modules{% endblock %}
+
+{% block content %}
+<style>
+  .mod-block { margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .mod-header {
+    background: #f9fafb; padding: 12px 16px; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid #e5e7eb;
+  }
+  .mod-title { font-weight: 600; font-size: 1rem; }
+  .mod-sub-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; border-bottom: 1px solid #f3f4f6; font-size: 0.9rem;
+  }
+  .mod-sub-row:last-child { border-bottom: none; }
+  .mod-sub-key { color: #6b7280; font-size: 0.8rem; }
+  .mod-deactivate-btn, .mod-activate-btn {
+    background: none; border: 1px solid #d1d5db; padding: 4px 10px;
+    border-radius: 6px; font-size: 0.78rem; cursor: pointer;
+  }
+  .mod-deactivate-btn { border-color: #fca5a5; color: #b91c1c; }
+  .mod-activate-btn { border-color: #86efac; color: #15803d; }
+  .mod-create-form, .mod-sub-create-form {
+    display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; background: #fafafa;
+  }
+  .mod-create-form input, .mod-sub-create-form input {
+    padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.85rem;
+  }
+  .mod-inactive-list { color: #6b7280; font-size: 0.85rem; }
+</style>
+
+<div class="page-header">
+  <h2>Modules</h2>
+  <p>Manage the top-level menu sections and their sub-pages. Note: the live sidebar currently reflects role permissions directly; this screen manages the module/sub-module reference data described in the RBAC spec.</p>
+</div>
+
+<div class="panel-card">
+  <form class="mod-create-form" method="post" action="{{ url_for('frontend.super_admin_module_create') }}">
+    <input type="text" name="name" placeholder="New module name (e.g. Reports)" required style="min-width:220px;">
+    <button type="submit" class="primary-btn">+ Create Module</button>
+  </form>
+</div>
+
+{% for module in modules %}
+<div class="mod-block">
+  <div class="mod-header">
+    <span class="mod-title">
+      {{ module.name }}
+      {% if module.created_by %}
+      <span class="mod-sub-key">— created by {{ user_name_by_id.get(module.created_by, 'Unknown') }}</span>
+      {% endif %}
+    </span>
+    <form method="post" action="{{ url_for('frontend.super_admin_module_deactivate', module_id=module.id) }}"
+          onsubmit="return confirm('Deactivate module {{ module.name }}? Its sub-modules will stay but the module will be hidden from this list.');">
+      <button type="submit" class="mod-deactivate-btn">Deactivate</button>
+    </form>
+  </div>
+
+  {% for sub in sub_modules_by_module.get(module.id, []) %}
+  <div class="mod-sub-row">
+    <div>
+      {{ sub.name }}
+      <span class="mod-sub-key">
+        — {{ sub.sub_url }} · key: {{ sub.permission_key }}
+        {% if sub.created_by %}· by {{ user_name_by_id.get(sub.created_by, 'Unknown') }}{% endif %}
+      </span>
+    </div>
+    <form method="post" action="{{ url_for('frontend.super_admin_sub_module_deactivate', sub_module_id=sub.id) }}"
+          onsubmit="return confirm('Deactivate sub-module {{ sub.name }}?');">
+      <button type="submit" class="mod-deactivate-btn">Deactivate</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="mod-sub-row"><em>No sub-modules yet.</em></div>
+  {% endfor %}
+
+  <form class="mod-sub-create-form" method="post" action="{{ url_for('frontend.super_admin_sub_module_create', module_id=module.id) }}">
+    <input type="text" name="name" placeholder="Sub-module name" required>
+    <input type="text" name="sub_url" placeholder="/organization/example" required>
+    <input type="text" name="permission_key" placeholder="example.view" required>
+    <button type="submit" class="ghost-btn">+ Add Sub-module</button>
+  </form>
+</div>
+{% else %}
+<div class="panel-card"><p>No active modules yet. Create one above.</p></div>
+{% endfor %}
+
+{% if inactive_modules %}
+<div class="panel-card mod-inactive-list">
+  <strong>Deactivated modules:</strong>
+  {% for module in inactive_modules %}
+  <form method="post" action="{{ url_for('frontend.super_admin_module_activate', module_id=module.id) }}" style="display:inline-block; margin-left:10px;">
+    {{ module.name }}
+    <button type="submit" class="mod-activate-btn">Reactivate</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

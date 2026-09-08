@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Activity Log{% endblock %}
+
+{% block content %}
+<style>
+  .al-filter-form { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .al-filter-form input, .al-filter-form select {
+    padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.88rem;
+  }
+  .al-time { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+  .al-action { font-weight: 600; }
+  .al-details { color: var(--muted); font-size: 0.9rem; }
+  .al-pagination { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
+  .al-pagination a, .al-pagination span {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; color: var(--text); font-size: 0.85rem;
+  }
+  .al-pagination .current { background: var(--avocado); color: white; border-color: var(--avocado); }
+  .al-org-banner {
+    background: var(--avocado-pale);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Activity Log</h2>
+  <p>Audit trail of actions taken across the system — {{ total_count }} total entries.</p>
+</div>
+
+{% if selected_organization %}
+<div class="al-org-banner">
+  <span>Showing activity for <strong>{{ selected_organization.organization_name }}</strong>'s users only.</span>
+  <a href="{{ url_for('frontend.super_admin_activity_log') }}" class="ghost-btn" style="padding:4px 12px; font-size:0.82rem;">View all organizations</a>
+</div>
+{% endif %}
+
+<div class="panel-card">
+  <form class="al-filter-form" method="get">
+    {% if organization_filter %}
+    <input type="hidden" name="organization_id" value="{{ organization_filter }}">
+    {% endif %}
+    <input type="text" name="action" placeholder="Search by action (e.g. 'role', 'candidate')" value="{{ action_filter }}">
+    <select name="user_id">
+      <option value="">All users{% if selected_organization %} in this organization{% endif %}</option>
+      {% for u in all_users_for_filter %}
+      <option value="{{ u.id }}" {{ 'selected' if u.id == user_filter }}>{{ u.full_name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="primary-btn">Filter</button>
+    {% if action_filter or user_filter %}
+    <a href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization_filter) }}" class="ghost-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Clear</a>
+    {% endif %}
+  </form>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>When</th><th>User</th><th>Action</th><th>Details</th></tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td class="al-time">{{ log.created_at.strftime('%d-%m-%Y %H:%M') if log.created_at else '—' }}</td>
+        <td>{{ user_name_by_id.get(log.user_id, 'System') }}</td>
+        <td class="al-action">{{ log.action }}</td>
+        <td class="al-details">{{ log.details or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No activity recorded{% if selected_organization %} for this organization{% endif %} yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if total_pages > 1 %}
+  <div class="al-pagination">
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == page %}
+      <span class="current">{{ p }}</span>
+      {% else %}
+      <a href="{{ url_for('frontend.super_admin_activity_log', page=p, action=action_filter, user_id=user_filter, organization_id=organization_filter) }}">{{ p }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

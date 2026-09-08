@@ -1,0 +1,177 @@
+<nav class="top-nav">
+  <div class="brand-block">
+    <div class="brand-mark">C</div>
+    <div>
+      <h1>Codevocado</h1>
+      <p>Placement Tracking</p>
+    </div>
+  </div>
+  <div class="top-nav-actions">
+    <form class="search-box" method="get" action="{{ url_for('frontend.search') }}" style="position:relative;" autocomplete="off">
+      <input type="text" id="global-search-input" name="q" placeholder="Search candidates, organizations..." aria-label="Search" value="{{ request.args.get('q', '') }}">
+      <div id="global-search-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; margin-top:6px; background:white; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,0.12); max-height:360px; overflow-y:auto; z-index:200;"></div>
+    </form>
+    <a href="{{ url_for('frontend.notifications') }}" class="ghost-btn" style="position:relative; display:inline-block;">
+      Notifications
+      <span id="notif-badge" style="display:none; position:absolute; top:-6px; right:-6px; background:#e11d48; color:white; border-radius:999px; font-size:11px; padding:1px 6px; font-weight:bold;">0</span>
+    </a>
+    <a href="{{ url_for('frontend.help_page') }}" class="ghost-btn">Help</a>
+
+    <div class="user-menu" style="position:relative; display:inline-block;">
+      <button type="button" class="user-chip" onclick="document.getElementById('user-dropdown').classList.toggle('open')" style="cursor:pointer; border:none;">
+        {{ session.get('user', {}).get('full_name', 'User') }}
+      </button>
+      <div id="user-dropdown" class="user-dropdown" style="display:none; position:absolute; right:0; top:100%; margin-top:8px; background:white; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:180px; z-index:100;">
+        <a href="{{ url_for('frontend.settings_profile') }}" style="display:block; padding:10px 16px; text-decoration:none; color:#1e293b; border-bottom:1px solid #f1f5f9;">My Profile</a>
+        <a href="{{ url_for('frontend.settings_profile') }}" style="display:block; padding:10px 16px; text-decoration:none; color:#1e293b; border-bottom:1px solid #f1f5f9;">Settings</a>
+        <a href="{{ url_for('frontend.logout') }}" style="display:block; padding:10px 16px; text-decoration:none; color:#e11d48;">Logout</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<style>
+  .gs-section-label {
+    padding: 8px 14px 4px 14px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .gs-item {
+    display: block;
+    padding: 8px 14px;
+    text-decoration: none;
+    color: #111827;
+  }
+  .gs-item:hover {
+    background: #f3f4f6;
+  }
+  .gs-item-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .gs-item-subtitle {
+    font-size: 0.78rem;
+    color: #6b7280;
+  }
+  .gs-empty {
+    padding: 14px;
+    font-size: 0.85rem;
+    color: #6b7280;
+    text-align: center;
+  }
+  .gs-view-all {
+    display: block;
+    padding: 10px 14px;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    border-top: 1px solid #f0f0f0;
+  }
+  .gs-view-all:hover {
+    background: #f3f4f6;
+  }
+</style>
+
+<script>
+  document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('user-dropdown');
+    const menu = document.querySelector('.user-menu');
+    if (dropdown && menu && !menu.contains(event.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function() {
+    const button = document.querySelector('.user-menu button');
+    if (button) {
+      button.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const dropdown = document.getElementById('user-dropdown');
+        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+      });
+    }
+  });
+
+  // Global live search dropdown
+  (function () {
+    const input = document.getElementById('global-search-input');
+    const dropdown = document.getElementById('global-search-dropdown');
+    if (!input || !dropdown) return;
+
+    let debounceTimer = null;
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function renderResults(data, query) {
+      const hasCandidates = data.candidates && data.candidates.length > 0;
+      const hasOrganizations = data.organizations && data.organizations.length > 0;
+
+      if (!hasCandidates && !hasOrganizations) {
+        dropdown.innerHTML = '<div class="gs-empty">No results for "' + escapeHtml(query) + '"</div>';
+        dropdown.style.display = 'block';
+        return;
+      }
+
+      let html = '';
+      if (hasCandidates) {
+        html += '<div class="gs-section-label">Candidates</div>';
+        data.candidates.forEach(function (c) {
+          html += '<a class="gs-item" href="' + c.url + '">' +
+            '<div class="gs-item-name">' + escapeHtml(c.name) + '</div>' +
+            '<div class="gs-item-subtitle">' + escapeHtml(c.subtitle) + '</div>' +
+            '</a>';
+        });
+      }
+      if (hasOrganizations) {
+        html += '<div class="gs-section-label">Organizations</div>';
+        data.organizations.forEach(function (o) {
+          html += '<a class="gs-item" href="' + o.url + '">' +
+            '<div class="gs-item-name">' + escapeHtml(o.name) + '</div>' +
+            '<div class="gs-item-subtitle">' + escapeHtml(o.subtitle) + '</div>' +
+            '</a>';
+        });
+      }
+      html += '<a class="gs-view-all" href="{{ url_for("frontend.search") }}?q=' + encodeURIComponent(query) + '">View all results</a>';
+
+      dropdown.innerHTML = html;
+      dropdown.style.display = 'block';
+    }
+
+    input.addEventListener('input', function () {
+      const query = input.value.trim();
+      clearTimeout(debounceTimer);
+
+      if (query.length < 2) {
+        dropdown.style.display = 'none';
+        return;
+      }
+
+      debounceTimer = setTimeout(function () {
+        fetch("{{ url_for('frontend.api_search_suggestions') }}?q=" + encodeURIComponent(query))
+          .then(function (res) { return res.json(); })
+          .then(function (data) { renderResults(data, query); })
+          .catch(function () { dropdown.style.display = 'none'; });
+      }, 250);
+    });
+
+    document.addEventListener('click', function (event) {
+      if (!input.contains(event.target) && !dropdown.contains(event.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        dropdown.style.display = 'none';
+      }
+    });
+  })();
+</script>

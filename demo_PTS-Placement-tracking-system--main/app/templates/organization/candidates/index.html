@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Candidates{% endblock %}
+
+{% block content %}
+<style>
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-amber { background: #fef3c7; color: #d97706; }
+  .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+  .sa-cand-table th, .sa-cand-table td {
+    padding: 12px 14px;
+  }
+  .sa-cand-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-cand-name {
+    font-weight: 600;
+    color: #111827;
+  }
+  .sa-cand-name a {
+    color: #111827;
+    text-decoration: none;
+  }
+  .sa-cand-name a:hover {
+    color: #2563eb;
+    text-decoration: underline;
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Candidates</h2>
+    <p>Manage training, placement, verification, and lifecycle progress.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.organization_candidate_create') }}">Add Candidate</a>
+</div>
+
+<div class="panel-card">
+  <form method="get" action="{{ url_for('frontend.organization_candidates') }}" class="table-toolbar">
+    <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Search candidates" aria-label="Search candidates">
+
+    <select name="training_status">
+      <option value="">All Training Status</option>
+      <option value="training_started" {{ 'selected' if training_status == 'training_started' }}>Training Started</option>
+      <option value="training_completed" {{ 'selected' if training_status == 'training_completed' }}>Training Completed</option>
+      <option value="dropped_out" {{ 'selected' if training_status == 'dropped_out' }}>Dropped Out</option>
+    </select>
+
+    <select name="verification_status">
+      <option value="">All Verification Status</option>
+      <option value="pending" {{ 'selected' if verification_status == 'pending' }}>Pending</option>
+      <option value="verified" {{ 'selected' if verification_status == 'verified' }}>Verified</option>
+    </select>
+
+    <select name="account_status">
+      <option value="">All Account Status</option>
+      <option value="active" {{ 'selected' if account_status == 'active' }}>Active</option>
+      <option value="blocked" {{ 'selected' if account_status == 'blocked' }}>Blocked</option>
+    </select>
+
+    <div class="inline-actions">
+      <button type="submit" class="ghost-btn">Filter</button>
+      <a class="ghost-btn" href="{{ url_for('frontend.candidate_import') }}">Bulk Import</a>
+      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to Excel</a>
+      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export_pdf', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to PDF</a>
+      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_deleted') }}">Deleted Candidates</a>
+      <form method="post" action="{{ url_for('frontend.organization_candidates_bulk_set_passwords') }}" style="display:inline;" onsubmit="return confirm('This will set login passwords (mobile number) for all candidates who don\'t have one yet. Continue?');">
+        <button type="submit" class="ghost-btn">Set Passwords</button>
+      </form>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('frontend.organization_candidates_bulk_action') }}" id="bulkActionForm" onsubmit="return confirm('Apply this action to all selected candidates?');">
+    <div class="inline-actions" style="margin-bottom:12px;">
+      <select name="action" required>
+        <option value="">Bulk action for selected...</option>
+        <option value="verify">Mark as Verified</option>
+        <option value="block">Block</option>
+        <option value="unblock">Unblock</option>
+        <option value="delete">Delete</option>
+      </select>
+      <button type="submit" class="ghost-btn">Apply</button>
+      <span id="selectedCount" style="color:#6b7280; font-size:0.85rem;"></span>
+    </div>
+
+    <table class="data-table sa-cand-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="selectAll" aria-label="Select all"></th>
+          <th>Registration No.</th>
+          <th>Name</th>
+          <th>Mobile</th>
+          <th>Training Center</th>
+          <th>Course</th>
+          <th>Sector</th>
+          <th>Employer</th>
+          <th>Training Status</th>
+          <th>Verification</th>
+          <th>Account Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for candidate in candidates %}
+        {% set training_val = (candidate.training_status or 'pending')|string %}
+        {% set training_upper = training_val|upper %}
+        {% set verif_val = (candidate.verification_status or 'pending')|string %}
+        {% set verif_upper = verif_val|upper %}
+        <tr>
+          <td><input type="checkbox" name="candidate_ids" value="{{ candidate.id }}" class="rowCheckbox"></td>
+          <td>{{ candidate.registration_number or '-' }}</td>
+          <td class="sa-cand-name"><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">{{ candidate.full_name }}</a></td>
+          <td>{{ candidate.mobile or '-' }}</td>
+          <td>{{ candidate.training_center or '-' }}</td>
+          <td>{{ candidate.course or '-' }}</td>
+          <td>{{ candidate.sector or '-' }}</td>
+          <td>{{ candidate.employer_name or '-' }}</td>
+          <td>
+            <span class="sa-pill {{ 'sa-pill-green' if training_upper == 'TRAINING_COMPLETED' else ('sa-pill-red' if training_upper == 'DROPPED_OUT' else 'sa-pill-amber') }}">
+              {{ candidate.training_status or '-' }}
+            </span>
+          </td>
+          <td>
+            <span class="sa-pill {{ 'sa-pill-green' if verif_upper == 'VERIFIED' else 'sa-pill-amber' }}">
+              {{ candidate.verification_status or '-' }}
+            </span>
+          </td>
+          <td>
+            <span class="sa-pill {{ 'sa-pill-green' if candidate.account_status == 'active' else 'sa-pill-red' }}">
+              {{ candidate.account_status|capitalize }}
+            </span>
+          </td>
+          <td class="inline-actions">
+            <a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">View</a>
+            <a href="{{ url_for('frontend.organization_candidate_edit', candidate_id=candidate.id) }}">Edit</a>
+            <button type="button" style="background:none; border:none; color:#e11d48; text-decoration:underline; cursor:pointer; padding:0; font:inherit;" onclick="deleteRow('{{ candidate.id }}')">Delete</button>
+            <button type="button" class="ghost-btn" style="padding:2px 6px; font-size:0.85rem;" onclick="toggleStatusRow('{{ candidate.id }}')">{{ 'Block' if candidate.account_status == 'active' else 'Unblock' }}</button>
+            <button type="button" class="ghost-btn" style="padding:2px 6px; font-size:0.85rem;" onclick="resetPasswordRow('{{ candidate.id }}')">Reset Password</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12">No candidates found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+</div>
+
+<!-- Hidden standalone forms are built dynamically by JS below (can't nest <form> inside bulkActionForm) -->
+<script>
+  var DELETE_URL_TEMPLATE = "{{ url_for('frontend.organization_candidate_delete', candidate_id='__ID__') }}";
+  var TOGGLE_STATUS_URL_TEMPLATE = "{{ url_for('frontend.organization_candidate_toggle_status', candidate_id='__ID__') }}";
+  var RESET_PASSWORD_URL_TEMPLATE = "{{ url_for('frontend.organization_candidate_reset_password', candidate_id='__ID__') }}";
+
+  function submitStandaloneAction(url, confirmMsg) {
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  function deleteRow(candidateId) {
+    submitStandaloneAction(
+      DELETE_URL_TEMPLATE.replace('__ID__', candidateId),
+      'Delete this candidate? This cannot be undone.'
+    );
+  }
+
+  function toggleStatusRow(candidateId) {
+    submitStandaloneAction(TOGGLE_STATUS_URL_TEMPLATE.replace('__ID__', candidateId));
+  }
+
+  function resetPasswordRow(candidateId) {
+    submitStandaloneAction(
+      RESET_PASSWORD_URL_TEMPLATE.replace('__ID__', candidateId),
+      "Reset password to candidate's mobile number?"
+    );
+  }
+
+  (function () {
+    var selectAll = document.getElementById('selectAll');
+    var rowCheckboxes = document.querySelectorAll('.rowCheckbox');
+    var selectedCount = document.getElementById('selectedCount');
+
+    function updateCount() {
+      var checked = document.querySelectorAll('.rowCheckbox:checked').length;
+      selectedCount.textContent = checked ? checked + ' selected' : '';
+    }
+
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        rowCheckboxes.forEach(function (cb) { cb.checked = selectAll.checked; });
+        updateCount();
+      });
+    }
+    rowCheckboxes.forEach(function (cb) {
+      cb.addEventListener('change', updateCount);
+    });
+  })();
+</script>
+{% endblock %}

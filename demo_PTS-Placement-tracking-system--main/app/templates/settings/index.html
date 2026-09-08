@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<style>
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-amber { background: #fef3c7; color: #d97706; }
+  .sa-settings-table th, .sa-settings-table td {
+    padding: 10px 12px;
+  }
+  .sa-settings-table tbody tr:hover {
+    background: #f9fafb;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Settings</h2>
+  <p>Manage your profile, security, and preferences.</p>
+</div>
+
+<div class="panel-card">
+  <h3>Profile</h3>
+  <form method="post" class="full-form">
+    <input type="hidden" name="form_type" value="profile">
+    <div class="form-grid">
+      <label>Full Name<input type="text" name="full_name" value="{{ db_user.full_name }}" required></label>
+      <label>Email<input type="email" name="email" value="{{ db_user.email }}" required></label>
+
+      <label>Role<input type="text" value="{{ display_role_name }}" disabled></label>
+
+      {% if organization %}
+      <label>Organization<input type="text" value="{{ organization.organization_name }}" disabled></label>
+      {% endif %}
+      <label>Account Status
+        <span style="display:block; margin-top:6px;">
+          <span class="sa-pill {{ 'sa-pill-green' if db_user.is_active else 'sa-pill-red' }}">{{ 'Active' if db_user.is_active else 'Inactive' }}</span>
+        </span>
+      </label>
+      <label>Last Login<input type="text" value="{{ db_user.last_login_at.strftime('%d-%m-%Y %H:%M') if db_user.last_login_at else 'Never' }}" disabled></label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save Profile</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel-card">
+  <h3>Security</h3>
+  <form method="post" class="full-form">
+    <input type="hidden" name="form_type" value="password">
+    <div class="form-grid">
+      <label>Current Password<input type="password" name="current_password" required></label>
+      <label>New Password<input type="password" name="new_password" required minlength="6"></label>
+      <label>Confirm New Password<input type="password" name="confirm_password" required minlength="6"></label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Change Password</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel-card">
+  <h3>Notification Preferences</h3>
+  <form method="post" class="full-form">
+    <input type="hidden" name="form_type" value="notifications">
+    <div class="form-grid">
+      <label style="flex-direction:row; align-items:center; gap:8px;">
+        <input type="checkbox" name="email_notifications" {{ 'checked' if user_settings.email_notifications }} style="width:auto;">
+        Email Notifications
+      </label>
+      <label style="flex-direction:row; align-items:center; gap:8px;">
+        <input type="checkbox" name="sms_notifications" {{ 'checked' if user_settings.sms_notifications }} style="width:auto;">
+        SMS Notifications
+      </label>
+      <label style="flex-direction:row; align-items:center; gap:8px;">
+        <input type="checkbox" name="whatsapp_notifications" {{ 'checked' if user_settings.whatsapp_notifications }} style="width:auto;">
+        WhatsApp Notifications
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save Preferences</button>
+    </div>
+  </form>
+</div>
+
+{% if organization %}
+<div class="panel-card">
+  <h3>Organization Details</h3>
+  <div class="form-grid">
+    <label>Organization Code<input type="text" value="{{ organization.organization_code or '-' }}" disabled></label>
+    <label>Status
+      <span style="display:block; margin-top:6px;">
+        <span class="sa-pill {{ 'sa-pill-green' if organization.status == 1 else 'sa-pill-red' }}">{{ 'Active' if organization.status == 1 else 'Inactive' }}</span>
+      </span>
+    </label>
+    <label>KYC Status
+      <span style="display:block; margin-top:6px;">
+        {% set kyc_upper = (organization.kyc_status or '-')|upper %}
+        <span class="sa-pill {{ 'sa-pill-green' if kyc_upper == 'APPROVED' else ('sa-pill-red' if kyc_upper == 'REJECTED' else 'sa-pill-amber') }}">{{ organization.kyc_status or '-' }}</span>
+      </span>
+    </label>
+    <label>Payment Status
+      <span style="display:block; margin-top:6px;">
+        {% set pay_upper = (organization.payment_status or '-')|upper %}
+        <span class="sa-pill {{ 'sa-pill-green' if pay_upper == 'APPROVED' else ('sa-pill-red' if pay_upper == 'REJECTED' else 'sa-pill-amber') }}">{{ organization.payment_status or '-' }}</span>
+      </span>
+    </label>
+    <label>Subscription Expiry<input type="text" value="{{ organization.subscription_expiry_date.strftime('%d-%m-%Y') if organization.subscription_expiry_date else '-' }}" disabled></label>
+    <label>Candidate Limit<input type="text" value="{{ organization.candidate_limit or 0 }}" disabled></label>
+    <label>WhatsApp Credits<input type="text" value="{{ organization.whatsapp_credits or 0 }}" disabled></label>
+    <label>SMS Credits<input type="text" value="{{ organization.sms_credits or 0 }}" disabled></label>
+    <label>Email Credits<input type="text" value="{{ organization.email_credits or 0 }}" disabled></label>
+  </div>
+  {% if db_user.is_super_admin == false %}
+  <p style="margin-top:12px; color:var(--muted); font-size:0.9rem;">Need changes to your plan or credits? Contact your Codevocado account manager.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if db_user.is_super_admin %}
+<div class="panel-card">
+  <h3>Platform Info</h3>
+  <div class="detail-grid">
+    <p><strong>System:</strong> Codevocado Placement Tracking System</p>
+    <p><strong>Environment:</strong> Development</p>
+    <p><strong>Database:</strong> MySQL</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel-card">
+  <h3>Recent Logins</h3>
+  {% if recent_logins %}
+  <table class="data-table sa-settings-table">
+    <thead>
+      <tr><th>Status</th><th>Email</th><th>IP Address</th><th>Date &amp; Time</th></tr>
+    </thead>
+    <tbody>
+      {% for login in recent_logins %}
+      <tr>
+        <td>
+          <span class="sa-pill {{ 'sa-pill-green' if login.success else 'sa-pill-red' }}">
+            {{ 'Success' if login.success else (login.failure_reason or 'Failed') }}
+          </span>
+        </td>
+        <td>{{ login.email }}</td>
+        <td>{{ login.ip_address or '-' }}</td>
+        <td>{{ login.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No login history yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel-card">
+  <h3>Activity History</h3>
+  {% if activity_logs %}
+  <table class="data-table sa-settings-table">
+    <thead>
+      <tr><th>Action</th><th>Details</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for log in activity_logs %}
+      <tr>
+        <td>{{ log.action }}</td>
+        <td>{{ log.details or '-' }}</td>
+        <td>{{ log.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No activity recorded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

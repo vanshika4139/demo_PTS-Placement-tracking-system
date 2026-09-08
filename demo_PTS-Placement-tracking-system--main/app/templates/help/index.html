@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Help & Support{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Help & Support</h2>
+  <p>Guides and answers for using the Placement Tracking System.</p>
+</div>
+
+<div class="panel-card">
+  <h3>Getting Started</h3>
+  <ul class="timeline-list">
+    <li><strong>Organizations:</strong> Super Admins can create and manage partner organizations under the "Organization" tab.</li>
+    <li><strong>Candidates:</strong> Add candidates with full training, education, and contact details under "Candidates".</li>
+    <li><strong>Placements:</strong> Once a candidate's Employer Name is filled, they automatically appear under "Placements" with auto-generated follow-up checkpoints.</li>
+    <li><strong>Tracking:</strong> Monitor overdue, upcoming, and completed follow-ups across all candidates.</li>
+    <li><strong>Reports:</strong> View placement rates, sector-wise breakdowns, and organization performance.</li>
+  </ul>
+</div>
+
+<div class="panel-card">
+  <h3>Frequently Asked Questions</h3>
+  <p><strong>Q: How do I mark a candidate as placed?</strong><br>Edit the candidate and fill in the Employer Name, Job Role, and Joining Date under the Placement section.</p>
+  <p><strong>Q: How do follow-up checkpoints work?</strong><br>Checkpoints (Month 1, 2, 3, 6, 9, 12) are auto-created once a candidate has a joining date set. Update their status from the Placements or Tracking page.</p>
+  <p><strong>Q: Who can create organizations?</strong><br>Only Super Admin accounts can create and manage organizations.</p>
+</div>
+
+<div class="panel-card">
+  <h3>Need More Help?</h3>
+  <p>Contact your system administrator or reach out to the Codevocado internal support team.</p>
+</div>
+{% endblock %}

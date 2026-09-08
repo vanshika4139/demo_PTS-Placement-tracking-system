@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Candidate Form{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit Candidate' if candidate else 'Create Candidate' }}</h2>
+  <p>Capture personal, training, financial, and placement details.</p>
+</div>
+
+<div class="panel-card form-card">
+  <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">
+    Fields marked with <span style="color:#dc2626; font-weight:bold;">*</span> are required.
+  </p>
+
+  <form method="post" class="full-form" enctype="multipart/form-data">
+
+    {% if organizations %}
+    <h3>Organization</h3>
+    <div class="form-grid">
+      <label>Organization <span style="color:#dc2626;">*</span>
+        <select name="organization_id" required>
+          <option value="">-- Select Organization --</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}" {{ 'selected' if candidate and candidate.organization_id == org.id }}>{{ org.organization_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    {% endif %}
+
+    <h3>Personal Information</h3>
+    <div class="form-grid">
+      <label>Registration Number <span style="color:#dc2626;">*</span><input type="text" name="registration_number" value="{{ candidate.registration_number if candidate else '' }}" required></label>
+      <label>Full Name <span style="color:#dc2626;">*</span><input type="text" name="full_name" value="{{ candidate.full_name if candidate else '' }}" required></label>
+      <label>Father's Name<input type="text" name="father_name" value="{{ candidate.father_name if candidate else '' }}"></label>
+      <label>Mother's Name<input type="text" name="mother_name" value="{{ candidate.mother_name if candidate else '' }}"></label>
+      <label>Gender <span style="color:#dc2626;">*</span><input type="text" name="gender" value="{{ candidate.gender if candidate else '' }}" required></label>
+      <label>Date of Birth <span style="color:#dc2626;">*</span><input type="date" name="date_of_birth" value="{{ candidate.date_of_birth.strftime('%Y-%m-%d') if candidate and candidate.date_of_birth else '' }}" required></label>
+      <label>Aadhaar <span style="color:#dc2626;">*</span><input type="text" name="aadhaar" value="{{ candidate.aadhaar if candidate else '' }}" required></label>
+      <label>PAN<input type="text" name="pan" value="{{ candidate.pan if candidate else '' }}"></label>
+      <label>Category<input type="text" name="category" value="{{ candidate.category if candidate else '' }}"></label>
+      <label>Religion <span style="color:#dc2626;">*</span><input type="text" name="religion" value="{{ candidate.religion if candidate else '' }}" required></label>
+      <label>Marital Status<input type="text" name="marital_status" value="{{ candidate.marital_status if candidate else '' }}"></label>
+      <label>Blood Group<input type="text" name="blood_group" value="{{ candidate.blood_group if candidate else '' }}"></label>
+      <label>Nationality<input type="text" name="nationality" value="{{ candidate.nationality if candidate else '' }}"></label>
+    </div>
+
+    <h3>Contact</h3>
+    <div class="form-grid">
+      <label>Mobile <span style="color:#dc2626;">*</span><input type="text" name="mobile" value="{{ candidate.mobile if candidate else '' }}" required></label>
+      <label>Alternative Mobile<input type="text" name="alternative_mobile" value="{{ candidate.alternative_mobile if candidate else '' }}"></label>
+      <label>Email <span style="color:#dc2626;">*</span><input type="email" name="email" value="{{ candidate.email if candidate else '' }}" required></label>
+    </div>
+
+    <h3>Address</h3>
+    <div class="form-grid">
+      <label>Current Address <span style="color:#dc2626;">*</span><input type="text" name="current_address" value="{{ candidate.current_address if candidate else '' }}" required></label>
+      <label>Permanent Address<input type="text" name="permanent_address" value="{{ candidate.permanent_address if candidate else '' }}"></label>
+      <label>Village<input type="text" name="village" value="{{ candidate.village if candidate else '' }}"></label>
+      <label>District<input type="text" name="district" value="{{ candidate.district if candidate else '' }}"></label>
+      <label>State<input type="text" name="state" value="{{ candidate.state if candidate else '' }}"></label>
+      <label>Pincode <span style="color:#dc2626;">*</span><input type="text" name="pin" value="{{ candidate.pin if candidate else '' }}" required></label>
+    </div>
+
+    <h3>Education</h3>
+    <div class="form-grid">
+      <label>Qualification <span style="color:#dc2626;">*</span><input type="text" name="qualification" value="{{ candidate.qualification if candidate else '' }}" required></label>
+      <label>Board <span style="color:#dc2626;">*</span><input type="text" name="board" value="{{ candidate.board if candidate else '' }}" required></label>
+      <label>Passing Year <span style="color:#dc2626;">*</span><input type="text" name="passing_year" value="{{ candidate.passing_year if candidate else '' }}" required></label>
+      <label>Percentage <span style="color:#dc2626;">*</span><input type="text" name="percentage" value="{{ candidate.percentage if candidate else '' }}" required></label>
+      <label>University <span style="color:#dc2626;">*</span><input type="text" name="university" value="{{ candidate.university if candidate else '' }}" required></label>
+    </div>
+
+    <h3>Training</h3>
+    <div class="form-grid">
+      <label>Training Center<input type="text" name="training_center" value="{{ candidate.training_center if candidate else '' }}"></label>
+      <label>Batch (free text)<input type="text" name="training_batch" value="{{ candidate.training_batch if candidate else '' }}"></label>
+
+      <label>Batch (from list)
+        <select name="batch_id">
+          <option value="">-- None --</option>
+          {% for batch in batches %}
+          <option value="{{ batch.id }}" {{ 'selected' if candidate and candidate.batch_id == batch.id }}>{{ batch.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>Scheme
+        <select name="scheme_id">
+          <option value="">-- None --</option>
+          {% for scheme in schemes %}
+          <option value="{{ scheme.id }}" {{ 'selected' if candidate and candidate.scheme_id == scheme.id }}>{{ scheme.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>Start Date<input type="date" name="training_start_date" value="{{ candidate.training_start_date.strftime('%Y-%m-%d') if candidate and candidate.training_start_date else '' }}"></label>
+      <label>End Date<input type="date" name="training_end_date" value="{{ candidate.training_end_date.strftime('%Y-%m-%d') if candidate and candidate.training_end_date else '' }}"></label>
+      <label>Trainer<input type="text" name="trainer" value="{{ candidate.trainer if candidate else '' }}"></label>
+      <label>Sector<input type="text" name="sector" value="{{ candidate.sector if candidate else '' }}"></label>
+      <label>Trade<input type="text" name="trade" value="{{ candidate.trade if candidate else '' }}"></label>
+      <label>Course<input type="text" name="course" value="{{ candidate.course if candidate else '' }}"></label>
+      <label>Course Duration<input type="text" name="course_duration" value="{{ candidate.course_duration if candidate else '' }}"></label>
+      <label>Training Status
+        <select name="training_status">
+          <option value="training_started" {{ 'selected' if candidate and candidate.training_status == 'training_started' }}>Training Started</option>
+          <option value="training_completed" {{ 'selected' if candidate and candidate.training_status == 'training_completed' }}>Training Completed</option>
+          <option value="dropped_out" {{ 'selected' if candidate and candidate.training_status == 'dropped_out' }}>Dropped Out</option>
+        </select>
+      </label>
+    </div>
+
+    <h3>Bank Details</h3>
+    <div class="form-grid">
+      <label>Bank Name<input type="text" name="bank_name" value="{{ candidate.bank_name if candidate else '' }}"></label>
+      <label>Account Number<input type="text" name="account_number" value="{{ candidate.account_number if candidate else '' }}"></label>
+      <label>IFSC<input type="text" name="ifsc" value="{{ candidate.ifsc if candidate else '' }}"></label>
+    </div>
+
+    <h3>Placement <span style="font-weight:normal; font-size:12px; color:#6b7280;">(fill once the candidate is placed)</span></h3>
+    <div class="form-grid">
+      <label>Employer Name<input type="text" name="employer_name" value="{{ candidate.employer_name if candidate else '' }}"></label>
+      <label>Job Role<input type="text" name="job_role" value="{{ candidate.job_role if candidate else '' }}"></label>
+      <label>Salary<input type="text" name="salary" value="{{ candidate.salary if candidate else '' }}"></label>
+      <label>Joining Date<input type="date" name="joining_date" value="{{ candidate.joining_date.strftime('%Y-%m-%d') if candidate and candidate.joining_date else '' }}"></label>
+      <label>Working Status<input type="text" name="working_status" value="{{ candidate.working_status if candidate else '' }}"></label>
+      <label>Location<input type="text" name="location" value="{{ candidate.location if candidate else '' }}"></label>
+      <label>Department<input type="text" name="department" value="{{ candidate.department if candidate else '' }}"></label>
+      <label>Manager<input type="text" name="manager" value="{{ candidate.manager if candidate else '' }}"></label>
+      <label>HR Contact<input type="text" name="hr_contact" value="{{ candidate.hr_contact if candidate else '' }}"></label>
+
+      <label>Offer Letter (PDF/Image)
+        <input type="file" name="offer_letter" accept=".pdf,.jpg,.jpeg,.png">
+      </label>
+      {% if candidate and candidate.offer_letter_url %}
+      <p style="grid-column: 1/-1;">Current file: <a href="{{ candidate.offer_letter_url }}" target="_blank">View Offer Letter</a></p>
+      {% endif %}
+    </div>
+
+    <label style="flex-direction:row; align-items:center; gap:8px;">
+        <input type="checkbox" name="placement_proof_uploaded" {{ 'checked' if candidate and candidate.placement_proof_uploaded }} style="width:auto;">
+        Placement Proof Uploaded
+      </label>
+      
+    {% if candidate %}
+    <h3>Verification</h3>
+    <div class="form-grid">
+      <label>Verification Status
+        <select name="verification_status">
+          <option value="pending" {{ 'selected' if candidate.verification_status == 'pending' }}>Pending</option>
+          <option value="verified" {{ 'selected' if candidate.verification_status == 'verified' }}>Verified</option>
+          <option value="rejected" {{ 'selected' if candidate.verification_status == 'rejected' }}>Rejected</option>
+        </select>
+      </label>
+    </div>
+    {% endif %}
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Batch' if batch else 'Add Batch' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit Batch' if batch else 'Add Batch' }}</h2>
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      {% if organizations %}
+      <label>
+        Organization
+        <select name="organization_id" required>
+          <option value="">-- Select Organization --</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}" {{ 'selected' if batch and batch.organization_id == org.id }}>{{ org.organization_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+
+      <label>
+        Batch Name
+        <input type="text" name="name" value="{{ batch.name if batch else '' }}" required>
+      </label>
+
+      <label>
+        Training Center
+        <input type="text" name="training_center" value="{{ batch.training_center if batch else '' }}">
+      </label>
+
+      <label>
+        Start Date
+        <input type="date" name="start_date" value="{{ batch.start_date.strftime('%Y-%m-%d') if batch and batch.start_date else '' }}">
+      </label>
+
+      <label>
+        End Date
+        <input type="date" name="end_date" value="{{ batch.end_date.strftime('%Y-%m-%d') if batch and batch.end_date else '' }}">
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.organization_batches') }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

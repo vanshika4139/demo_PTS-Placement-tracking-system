@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<style>
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-purple { background: #ede9fe; color: #7c3aed; }
+  .sa-pill-blue { background: #dbeafe; color: #2563eb; }
+  .sa-users-table th, .sa-users-table td {
+    padding: 12px 14px;
+  }
+  .sa-users-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-user-name {
+    font-weight: 600;
+    color: #111827;
+  }
+  .sa-impersonate-btn {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+  .sa-impersonate-btn:hover {
+    background: #fde68a;
+  }
+</style>
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Users</h2>
+    <p>Manage super admins and organization users.</p>
+  </div>
+  <a href="{{ url_for('frontend.super_admin_create_user') }}" class="primary-btn">Add User</a>
+</div>
+<div class="panel-card">
+  <table class="data-table sa-users-table">
+    <thead>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Organization</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td class="sa-user-name">{{ user.full_name }}</td>
+        <td>{{ user.email }}</td>
+        <td>
+          <span class="sa-pill {{ 'sa-pill-purple' if user.is_super_admin else 'sa-pill-blue' }}">
+            {{ 'Super Admin' if user.is_super_admin else 'Org User' }}
+          </span>
+        </td>
+        <td>{{ org_map.get(user.organization_id, '-') if user.organization_id else '-' }}</td>
+        <td>
+          <span class="sa-pill {{ 'sa-pill-green' if user.is_active else 'sa-pill-red' }}">
+            {{ 'Active' if user.is_active else 'Inactive' }}
+          </span>
+        </td>
+        <td class="inline-actions">
+          <a href="{{ url_for('frontend.super_admin_edit_user', user_id=user.id) }}">Edit</a>
+          {% if not user.is_super_admin %}
+          <a href="{{ url_for('frontend.super_admin_user_permission_overrides', user_id=user.id) }}">Manage Overrides</a>
+          {% endif %}
+          {% if not user.is_super_admin and user.is_active and not session.get('impersonator') %}
+          <form method="post" action="{{ url_for('frontend.super_admin_impersonate_user', user_id=user.id) }}" style="display:inline;"
+                onsubmit="return confirm('Login as {{ user.full_name }}? You will see the app exactly as they do, and this will be recorded in the activity log.');">
+            <button type="submit" class="ghost-btn sa-impersonate-btn" style="padding:2px 8px; font-size:0.85rem;">Login as</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('frontend.super_admin_toggle_user_active', user_id=user.id) }}" style="display:inline;">
+            <button type="submit" class="ghost-btn">{{ 'Deactivate' if user.is_active else 'Activate' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('frontend.super_admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('Delete this user? This cannot be undone.');" style="display:inline;">
+            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No users yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

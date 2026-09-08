@@ -1,0 +1,24 @@
+{% set show_sidebar = false %}
+{% set show_navbar = false %}
+{% extends 'base.html' %}
+{% block title %}No Access{% endblock %}
+
+{% block content %}
+<div style="max-width: 520px; margin: 80px auto; text-align: center;">
+  <div class="brand-mark large" style="margin: 0 auto 20px;">C</div>
+  <h2 style="margin-bottom: 8px;">No permissions assigned yet</h2>
+  <p style="color: var(--muted); margin-bottom: 24px;">
+    Your account doesn't have any role or permissions assigned, so there's nothing to show you yet.
+    Please contact your organization administrator or Codevocado support to get access set up.
+  </p>
+  <div style="display:flex; gap:12px; justify-content:center;">
+    {% if session.get('impersonator') %}
+    <form method="post" action="{{ url_for('frontend.super_admin_stop_impersonating') }}">
+      <button type="submit" class="primary-btn">Return to Super Admin</button>
+    </form>
+    {% else %}
+    <a href="{{ url_for('frontend.logout') }}" class="primary-btn" style="text-decoration:none; display:inline-block;">Logout</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

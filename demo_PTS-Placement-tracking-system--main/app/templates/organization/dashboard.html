@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block title %}Organization Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Organization Dashboard</h2>
+  <p>Operational snapshot for the current tenant.</p>
+</div>
+
+<div class="stats-grid">
+  {% for stat in stats %}
+  <a href="{{ stat.link }}" class="stat-card" style="text-decoration:none; color:inherit; display:block;">
+    <h3>{{ stat.title }}</h3>
+    <p class="stat-value">{{ stat.value }}</p>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card-grid">
+  <div class="panel-card">
+    <h3>Monthly Placement Trend</h3>
+    <canvas id="placementTrendChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Employer Trend</h3>
+    <canvas id="employerTrendChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Sector-wise Distribution</h3>
+    <canvas id="sectorChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Verification Funnel</h3>
+    <canvas id="verificationFunnelChart" height="200"></canvas>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const placementCtx = document.getElementById('placementTrendChart');
+  if (placementCtx) {
+    new Chart(placementCtx, {
+      type: 'line',
+      data: {
+        labels: {{ placement_labels | tojson }},
+        datasets: [{
+          label: 'Candidates Placed',
+          data: {{ placement_data | tojson }},
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22, 163, 74, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const employerCtx = document.getElementById('employerTrendChart');
+  if (employerCtx) {
+    const labels = {{ employer_labels | tojson }};
+    const data = {{ employer_data | tojson }};
+    if (labels.length > 0) {
+      new Chart(employerCtx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Candidates Placed',
+            data: data,
+            backgroundColor: '#2563eb',
+          }]
+        },
+        options: {
+          responsive: true,
+          indexAxis: 'y',
+          scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    } else {
+      employerCtx.parentElement.innerHTML = '<h3>Employer Trend</h3><p>No placement data yet.</p>';
+    }
+  }
+
+  const sectorCtx = document.getElementById('sectorChart');
+  if (sectorCtx) {
+    const sectorLabels = {{ sector_labels | tojson }};
+    const sectorData = {{ sector_data | tojson }};
+    if (sectorLabels.length > 0) {
+      new Chart(sectorCtx, {
+        type: 'pie',
+        data: {
+          labels: sectorLabels,
+          datasets: [{
+            data: sectorData,
+            backgroundColor: ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'],
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'right' } }
+        }
+      });
+    } else {
+      sectorCtx.parentElement.innerHTML = '<h3>Sector-wise Distribution</h3><p>No sector data yet.</p>';
+    }
+  }
+
+  const funnelCtx = document.getElementById('verificationFunnelChart');
+  if (funnelCtx) {
+    const funnelLabels = {{ verification_funnel_labels | tojson }};
+    const funnelData = {{ verification_funnel_data | tojson }};
+    new Chart(funnelCtx, {
+      type: 'doughnut',
+      data: {
+        labels: funnelLabels,
+        datasets: [{
+          data: funnelData,
+          backgroundColor: ['#f59e0b', '#16a34a'],
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'right' } }
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

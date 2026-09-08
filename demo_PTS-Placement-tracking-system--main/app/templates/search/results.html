@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}Search Results{% endblock %}
+
+{% block content %}
+<style>
+  .sr-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .sr-pill-green { background: #dcfce7; color: #16a34a; }
+  .sr-pill-red { background: #fee2e2; color: #dc2626; }
+  .sr-pill-amber { background: #fef3c7; color: #d97706; }
+  .sr-table th, .sr-table td {
+    padding: 12px 14px;
+  }
+  .sr-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sr-name {
+    font-weight: 600;
+    color: #111827;
+  }
+  .sr-name a {
+    color: #111827;
+    text-decoration: none;
+  }
+  .sr-name a:hover {
+    color: #2563eb;
+    text-decoration: underline;
+  }
+  .sr-count {
+    color: #6b7280;
+    font-weight: 500;
+    font-size: 0.85rem;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Search Results</h2>
+  <p>Showing results for "<strong>{{ query }}</strong>"</p>
+</div>
+
+<div class="panel-card">
+  <h3>Candidates <span class="sr-count">({{ candidates|length }})</span></h3>
+  {% if candidates %}
+  <table class="data-table sr-table">
+    <thead>
+      <tr>
+        <th>Registration No.</th>
+        <th>Name</th>
+        <th>Mobile</th>
+        <th>Training Status</th>
+        <th>Verification</th>
+        <th>Account Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for candidate in candidates %}
+      {% set verif_upper = (candidate.verification_status or 'pending')|upper %}
+      <tr>
+        <td>{{ candidate.registration_number or '-' }}</td>
+        <td class="sr-name"><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">{{ candidate.full_name }}</a></td>
+        <td>{{ candidate.mobile or '-' }}</td>
+        <td>{{ candidate.training_status or '-' }}</td>
+        <td><span class="sr-pill {{ 'sr-pill-green' if verif_upper == 'VERIFIED' else 'sr-pill-amber' }}">{{ candidate.verification_status or '-' }}</span></td>
+        <td><span class="sr-pill {{ 'sr-pill-green' if candidate.account_status == 'active' else 'sr-pill-red' }}">{{ candidate.account_status|capitalize }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No matching candidates found.</p>
+  {% endif %}
+</div>
+
+{% if organizations or (query and session.get('user', {}).get('is_super_admin')) %}
+<div class="panel-card">
+  <h3>Organizations <span class="sr-count">({{ organizations|length }})</span></h3>
+  {% if organizations %}
+  <table class="data-table sr-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Code</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for organization in organizations %}
+      {% set is_active = (organization.status == 1) or (organization.status|string|lower == 'active') %}
+      <tr>
+        <td class="sr-name"><a href="{{ url_for('frontend.super_admin_organization_detail', organization_id=organization.id) }}">{{ organization.organization_name }}</a></td>
+        <td>{{ organization.organization_code or '-' }}</td>
+        <td><span class="sr-pill {{ 'sr-pill-green' if is_active else 'sr-pill-red' }}">{{ 'Active' if is_active else 'Inactive' }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No matching organizations found.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not query %}
+<div class="panel-card">
+  <p>Type something in the search box above to find candidates or organizations.</p>
+</div>
+{% endif %}
+{% endblock %}

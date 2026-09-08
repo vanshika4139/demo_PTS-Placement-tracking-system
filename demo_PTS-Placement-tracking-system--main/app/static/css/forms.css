@@ -1,0 +1,63 @@
+/* ============================================================
+   CODEVOCADO — Form styles
+   ============================================================ */
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+
+.full-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.full-form input,
+.full-form select,
+.full-form textarea,
+.auth-form input {
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.92rem;
+  background: var(--cream);
+  color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.full-form input:focus,
+.full-form select:focus,
+.full-form textarea:focus,
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--avocado-light);
+  background: var(--card);
+  box-shadow: 0 0 0 3px rgba(122, 155, 92, 0.18);
+}
+
+.full-form input[required] + label::after,
+label.required::after {
+  content: " *";
+  color: #b5493c;
+}
+
+.form-actions { display: flex; gap: 12px; margin-top: 24px; }
+
+/* Password visibility toggle wrapper */
+.password-field-wrapper { position: relative; }
+.password-field-wrapper input { width: 100%; padding-right: 44px; }
+.password-toggle-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.password-toggle-icon:hover { color: var(--avocado); }
+
+/* Checkbox / radio rows used across permission screens */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--avocado); }

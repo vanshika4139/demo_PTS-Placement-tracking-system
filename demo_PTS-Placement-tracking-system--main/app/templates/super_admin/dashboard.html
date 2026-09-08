@@ -1,0 +1,470 @@
+{% extends 'base.html' %}
+{% block title %}Super Admin Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .sa-stat-card {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .sa-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #374151;
+    margin: 28px 0 12px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+  }
+  .sa-recent-table th, .sa-recent-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.9rem;
+  }
+  .sa-recent-table th {
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+  }
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .sa-pill-active { background: #dcfce7; color: #16a34a; }
+  .sa-pill-inactive { background: #fee2e2; color: #dc2626; }
+  .sa-pill-pending { background: #fef3c7; color: #d97706; }
+  .sa-pill-approved { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-amber { background: #fef3c7; color: #d97706; }
+  .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+
+  /* --- Alert panels (subscription / credits / security) --- */
+  .sa-alert-panel {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .sa-alert-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .sa-alert-panel-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #111827;
+  }
+  .sa-alert-count-badge {
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+  .sa-alert-empty {
+    padding: 20px;
+    color: #6b7280;
+    font-size: 0.88rem;
+  }
+  .sa-alert-table th, .sa-alert-table td {
+    text-align: left;
+    padding: 10px 20px;
+    border-bottom: 1px solid #f6f6f6;
+    font-size: 0.88rem;
+  }
+  .sa-alert-table th {
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    background: #fafafa;
+  }
+  .sa-alert-table tr:last-child td { border-bottom: none; }
+  .sa-days-left-critical { color: #dc2626; font-weight: 700; }
+  .sa-days-left-warning { color: #d97706; font-weight: 700; }
+  .sa-credit-chip {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .sa-security-summary {
+    display: flex;
+    gap: 24px;
+    padding: 16px 20px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .sa-security-summary .label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; }
+  .sa-security-summary .value { font-size: 1.5rem; font-weight: 700; color: #111827; }
+  .sa-security-summary .value.danger { color: #dc2626; }
+  .sa-ip-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Super Admin Dashboard</h2>
+  <p>Platform-wide overview and operational health.</p>
+</div>
+
+<div class="sa-section-title">Organizations</div>
+<div class="sa-stats-grid">
+  <a href="{{ stats[0].link }}" class="sa-stat-card" style="--accent:#2563eb;">
+    <h3>{{ stats[0].title }}</h3>
+    <p class="stat-value">{{ stats[0].value }}</p>
+  </a>
+  <a href="{{ stats[1].link }}" class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>{{ stats[1].title }}</h3>
+    <p class="stat-value">{{ stats[1].value }}</p>
+  </a>
+  <a href="{{ stats[2].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>{{ stats[2].title }}</h3>
+    <p class="stat-value">{{ stats[2].value }}</p>
+  </a>
+  <a href="{{ stats[3].link }}" class="sa-stat-card" style="--accent:#ef4444;">
+    <h3>{{ stats[3].title }}</h3>
+    <p class="stat-value">{{ stats[3].value }}</p>
+  </a>
+</div>
+
+<div class="sa-section-title">Operations</div>
+<div class="sa-stats-grid">
+  <a href="{{ stats[4].link }}" class="sa-stat-card" style="--accent:#8b5cf6;">
+    <h3>{{ stats[4].title }}</h3>
+    <p class="stat-value">{{ stats[4].value }}</p>
+  </a>
+  <a href="{{ stats[5].link }}" class="sa-stat-card" style="--accent:#06b6d4;">
+    <h3>{{ stats[5].title }}</h3>
+    <p class="stat-value">{{ stats[5].value }}</p>
+  </a>
+  <a href="{{ stats[6].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>{{ stats[6].title }}</h3>
+    <p class="stat-value">{{ stats[6].value }}</p>
+  </a>
+  <a href="{{ stats[7].link }}" class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>{{ stats[7].title }}</h3>
+    <p class="stat-value">{{ stats[7].value }}</p>
+  </a>
+</div>
+
+<!-- ================= NEW: Subscription Expiry Alerts ================= -->
+<div class="sa-section-title">Alerts</div>
+<div class="sa-alert-panel">
+  <div class="sa-alert-panel-header">
+    <h3>Subscriptions Expiring Soon (next 30 days)</h3>
+    {% if expiring_subscriptions %}
+    <span class="sa-alert-count-badge sa-pill-amber">{{ expiring_subscriptions|length }}</span>
+    {% else %}
+    <span class="sa-alert-count-badge sa-pill-active" style="background:#dcfce7; color:#16a34a;">All clear</span>
+    {% endif %}
+  </div>
+  {% if expiring_subscriptions %}
+  <table class="sa-alert-table" style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr><th>Organization</th><th>Expiry Date</th><th>Status</th><th>Payment</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for sub in expiring_subscriptions %}
+      <tr>
+        <td><a href="{{ url_for('frontend.super_admin_organization_detail', organization_id=sub.id) }}">{{ sub.organization_name }}</a></td>
+        <td>{{ sub.expiry_date }}</td>
+        <td>
+          {% if sub.is_overdue %}
+          <span class="sa-days-left-critical">Expired {{ -sub.days_left }} day(s) ago</span>
+          {% elif sub.days_left <= 7 %}
+          <span class="sa-days-left-critical">{{ sub.days_left }} day(s) left</span>
+          {% else %}
+          <span class="sa-days-left-warning">{{ sub.days_left }} day(s) left</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="sa-pill {{ 'sa-pill-active' if sub.payment_status == 'APPROVED' else ('sa-pill-red' if sub.payment_status == 'REJECTED' else 'sa-pill-amber') }}" style="{{ 'background:#dcfce7; color:#16a34a;' if sub.payment_status == 'APPROVED' }}">{{ sub.payment_status or '-' }}</span>
+        </td>
+        <td>
+          <a href="{{ url_for('frontend.super_admin_subscription', organization_id=sub.id) }}" style="font-size:0.85rem; font-weight:600;">Renew</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sa-alert-empty">No subscriptions expiring in the next 30 days.</div>
+  {% endif %}
+</div>
+
+<!-- ================= NEW: Low Credit Balance Alerts ================= -->
+<div class="sa-alert-panel">
+  <div class="sa-alert-panel-header">
+    <h3>Organizations Running Low on Credits</h3>
+    {% if low_credit_organizations %}
+    <span class="sa-alert-count-badge sa-pill-red" style="background:#fee2e2; color:#dc2626;">{{ low_credit_organizations|length }}</span>
+    {% else %}
+    <span class="sa-alert-count-badge" style="background:#dcfce7; color:#16a34a;">All clear</span>
+    {% endif %}
+  </div>
+  {% if low_credit_organizations %}
+  <table class="sa-alert-table" style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr><th>Organization</th><th>Low Balances</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for org in low_credit_organizations %}
+      <tr>
+        <td><a href="{{ url_for('frontend.super_admin_organization_detail', organization_id=org.id) }}">{{ org.organization_name }}</a></td>
+        <td>
+          {% for label, count in org.low_items %}
+          <span class="sa-credit-chip">{{ label }}: {{ count }}</span>
+          {% endfor %}
+        </td>
+        <td>
+          <a href="{{ url_for('frontend.super_admin_subscription', organization_id=org.id) }}" style="font-size:0.85rem; font-weight:600;">Top Up</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sa-alert-empty">No organizations below the credit threshold.</div>
+  {% endif %}
+</div>
+
+<!-- ================= NEW: Security / Failed Login Monitoring ================= -->
+<div class="sa-alert-panel">
+  <div class="sa-alert-panel-header">
+    <h3>Security — Login Activity (last 24h)</h3>
+    {% if suspicious_ips %}
+    <span class="sa-alert-count-badge sa-pill-red" style="background:#fee2e2; color:#dc2626;">{{ suspicious_ips|length }} suspicious IP(s)</span>
+    {% else %}
+    <span class="sa-alert-count-badge" style="background:#dcfce7; color:#16a34a;">No anomalies</span>
+    {% endif %}
+  </div>
+  <div class="sa-security-summary">
+    <div>
+      <div class="label">Successful Logins</div>
+      <div class="value">{{ successful_logins_24h }}</div>
+    </div>
+    <div>
+      <div class="label">Failed Attempts</div>
+      <div class="value {{ 'danger' if failed_logins_24h > 0 }}">{{ failed_logins_24h }}</div>
+    </div>
+    <div>
+      <div class="label">Suspicious IPs (3+ fails)</div>
+      <div class="value {{ 'danger' if suspicious_ips }}">{{ suspicious_ips|length }}</div>
+    </div>
+  </div>
+  {% if suspicious_ips %}
+  <table class="sa-alert-table" style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr><th>IP Address</th><th>Failed Attempts</th><th>Distinct Emails Tried</th><th>Last Attempt</th></tr>
+    </thead>
+    <tbody>
+      {% for item in suspicious_ips %}
+      <tr>
+        <td class="sa-ip-mono">{{ item.ip }}</td>
+        <td><span class="sa-days-left-critical">{{ item.count }}</span></td>
+        <td>{{ item.distinct_emails }}</td>
+        <td>{{ item.last_attempt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sa-alert-empty">No IP has hit 3+ failed login attempts in the last 24 hours.</div>
+  {% endif %}
+</div>
+
+<div class="sa-card-grid">
+  <div class="panel-card">
+    <h3>Organization Growth</h3>
+    <canvas id="orgGrowthChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Placement Trend</h3>
+    <canvas id="placementTrendChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>KYC Status Breakdown</h3>
+    <canvas id="kycStatusChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Payment Status Breakdown</h3>
+    <canvas id="paymentStatusChart" height="200"></canvas>
+  </div>
+</div>
+
+<div class="sa-section-title">Recently Registered Organizations</div>
+<div class="panel-card">
+  <table class="data-table sa-recent-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th>KYC</th>
+        <th>Payment</th>
+        <th>Registered On</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for org in recent_organizations %}
+      <tr>
+        <td><a href="{{ url_for('frontend.super_admin_organization_detail', organization_id=org.id) }}">{{ org.organization_name }}</a></td>
+        <td><span class="sa-pill {{ 'sa-pill-active' if org.status == 1 else 'sa-pill-inactive' }}">{{ 'Active' if org.status == 1 else 'Inactive' }}</span></td>
+        <td><span class="sa-pill {{ 'sa-pill-approved' if org.kyc_status == 'APPROVED' else 'sa-pill-pending' }}">{{ org.kyc_status or '-' }}</span></td>
+        <td><span class="sa-pill {{ 'sa-pill-approved' if org.payment_status == 'APPROVED' else 'sa-pill-pending' }}">{{ org.payment_status or '-' }}</span></td>
+        <td>{{ org.created_at if org.created_at else '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No organizations registered yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const orgCtx = document.getElementById('orgGrowthChart');
+  if (orgCtx) {
+    new Chart(orgCtx, {
+      type: 'line',
+      data: {
+        labels: {{ org_growth_labels | tojson }},
+        datasets: [{
+          label: 'New Organizations',
+          data: {{ org_growth_data | tojson }},
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const placementCtx = document.getElementById('placementTrendChart');
+  if (placementCtx) {
+    new Chart(placementCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ placement_labels | tojson }},
+        datasets: [{
+          label: 'Candidates Placed',
+          data: {{ placement_data | tojson }},
+          backgroundColor: '#16a34a',
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const kycCtx = document.getElementById('kycStatusChart');
+  if (kycCtx) {
+    const kycLabels = {{ kyc_status_labels | tojson }};
+    const kycData = {{ kyc_status_data | tojson }};
+    if (kycLabels.length > 0) {
+      new Chart(kycCtx, {
+        type: 'doughnut',
+        data: {
+          labels: kycLabels,
+          datasets: [{
+            data: kycData,
+            backgroundColor: ['#16a34a', '#f59e0b', '#ef4444', '#6b7280'],
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'right' } }
+        }
+      });
+    } else {
+      kycCtx.parentElement.innerHTML = '<h3>KYC Status Breakdown</h3><p>No organization data yet.</p>';
+    }
+  }
+
+  const paymentCtx = document.getElementById('paymentStatusChart');
+  if (paymentCtx) {
+    const paymentLabels = {{ payment_status_labels | tojson }};
+    const paymentData = {{ payment_status_data | tojson }};
+    if (paymentLabels.length > 0) {
+      new Chart(paymentCtx, {
+        type: 'doughnut',
+        data: {
+          labels: paymentLabels,
+          datasets: [{
+            data: paymentData,
+            backgroundColor: ['#16a34a', '#f59e0b', '#ef4444', '#6b7280'],
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'right' } }
+        }
+      });
+    } else {
+      paymentCtx.parentElement.innerHTML = '<h3>Payment Status Breakdown</h3><p>No organization data yet.</p>';
+    }
+  }
+});
+</script>
+{% endblock %}

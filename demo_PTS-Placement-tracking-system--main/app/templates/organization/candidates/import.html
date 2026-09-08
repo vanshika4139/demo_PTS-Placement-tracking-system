@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Import{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Bulk Candidate Import</h2>
+  <p>Upload a CSV file to add multiple candidates at once.</p>
+</div>
+
+<div class="card-grid">
+  <div class="panel-card">
+    <h3>Import Steps</h3>
+    <ol>
+      <li><a href="{{ url_for('frontend.candidate_import_template') }}">Download CSV template</a></li>
+      <li>Fill in candidate rows (full_name is required, registration_number must be unique)</li>
+      <li>Select organization and upload the file below</li>
+      <li>Review the summary after import</li>
+    </ol>
+
+    <form method="post" enctype="multipart/form-data" class="full-form">
+      {% if organizations %}
+      <label>Organization
+        <select name="organization_id" required>
+          <option value="">-- Select Organization --</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}">{{ org.organization_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <label>CSV File<input type="file" name="csv_file" accept=".csv" required></label>
+      <div class="form-actions">
+        <button type="submit" class="primary-btn">Start Import</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="panel-card">
+    <h3>Import Summary</h3>
+    {% if summary %}
+    <p>Total Rows: {{ summary.total }}</p>
+    <p>Valid (Added): {{ summary.valid }}</p>
+    <p>Duplicate (Skipped): {{ summary.duplicate }}</p>
+    <p>Invalid (Skipped): {{ summary.invalid }}</p>
+    <a class="primary-btn" href="{{ url_for('frontend.organization_candidates') }}">View Candidates</a>
+    {% else %}
+    <p>Upload a file to see the import summary here.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

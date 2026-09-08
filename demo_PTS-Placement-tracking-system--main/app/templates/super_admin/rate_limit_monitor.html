@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block title %}Rate Limit Monitor{% endblock %}
+
+{% block content %}
+<style>
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .sa-stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .sa-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .sa-stat-card.sa-stat-card-active {
+    box-shadow: 0 0 0 2px var(--accent, #2563eb) inset, 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+  .rl-key-table th, .rl-key-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.88rem;
+  }
+  .rl-key-table th {
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+  }
+  .rl-ip-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88rem;
+  }
+  .rl-count-bar-track {
+    display: inline-block;
+    width: 80px;
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 999px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  .rl-count-bar-fill {
+    height: 100%;
+  }
+  .rl-row-blocked {
+    background: #fef2f2;
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Rate Limit Monitor</h2>
+    <p>Live view of login / OTP attempt counters currently tracked in Redis.</p>
+  </div>
+  <span class="sa-pill {{ 'sa-pill-green' if overview.redis_available else 'sa-pill-red' }}">
+    {{ 'Redis Connected' if overview.redis_available else 'Redis Unreachable' }}
+  </span>
+</div>
+
+{% if not overview.redis_available %}
+<div class="panel-card">
+  <p>Redis is currently unreachable. Rate limiting is fail-open right now,
+     meaning login/OTP attempts are NOT being throttled until Redis comes
+     back.</p>
+</div>
+{% else %}
+
+{% set active_filter = request.args.get('filter') %}
+<div class="sa-stats-grid">
+  <a href="{{ url_for('frontend.super_admin_rate_limit_monitor') }}#rl-key-table-section" class="sa-stat-card {{ 'sa-stat-card-active' if not active_filter }}" style="--accent:#2563eb; text-decoration:none; color:inherit; display:block;">
+    <h3>Tracked IP/Route Pairs</h3>
+    <p class="stat-value">{{ overview.total_keys }}</p>
+  </a>
+  <a href="{{ url_for('frontend.super_admin_rate_limit_monitor', filter='blocked') }}#rl-key-table-section" class="sa-stat-card {{ 'sa-stat-card-active' if active_filter == 'blocked' }}" style="--accent:#dc2626; text-decoration:none; color:inherit; display:block;">
+    <h3>Currently Blocked</h3>
+    <p class="stat-value">{{ overview.blocked_count }}</p>
+  </a>
+</div>
+<p style="color:#6b7280; font-size:0.85rem; margin-top:8px; display:flex; align-items:center; gap:8px;">
+  {% if active_filter == 'blocked' %}
+  <span class="sa-pill sa-pill-red">Showing: Blocked only</span>
+  <a href="{{ url_for('frontend.super_admin_rate_limit_monitor') }}#rl-key-table-section" style="font-weight:600;">Clear filter &times;</a>
+  {% else %}
+  <span class="sa-pill sa-pill-gray">Showing: All entries</span>
+  <span>Click "Currently Blocked" above to filter.</span>
+  {% endif %}
+</p>
+
+<div class="panel-card" id="rl-key-table-section" style="margin-top:20px; scroll-margin-top: 20px;">
+  <table class="data-table rl-key-table">
+    <thead>
+      <tr>
+        <th>Route</th>
+        <th>IP Address</th>
+        <th>Attempts</th>
+        <th>TTL Remaining</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set show_only_blocked = (request.args.get('filter') == 'blocked') %}
+      {% for item in overview.entries %}
+      {% if not show_only_blocked or item.is_blocked %}
+      <tr class="{{ 'rl-row-blocked' if item.is_blocked }}">
+        <td>{{ item.label }}</td>
+        <td class="rl-ip-mono">{{ item.ip }}</td>
+        <td>
+          {% if item.max_attempts %}
+          <span class="rl-count-bar-track">
+            <span class="rl-count-bar-fill" style="width:{{ [(item.count / item.max_attempts * 100), 100] | min }}%; background:{{ '#dc2626' if item.is_blocked else '#f59e0b' }};"></span>
+          </span>
+          {{ item.count }} / {{ item.max_attempts }}
+          {% else %}
+          {{ item.count }}
+          {% endif %}
+        </td>
+        <td>
+          {% if item.ttl_seconds is none or item.ttl_seconds < 0 %}
+          <span class="sa-pill sa-pill-gray">No expiry</span>
+          {% else %}
+          {{ item.ttl_seconds }}s
+          {% endif %}
+        </td>
+        <td>
+          {% if item.is_blocked %}
+          <span class="sa-pill sa-pill-red">Blocked</span>
+          {% else %}
+          <span class="sa-pill sa-pill-green">OK</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.super_admin_rate_limit_reset') }}" style="display:inline;"
+                onsubmit="return confirm('Clear the rate limit for {{ item.ip }} on {{ item.label }}? They will be able to try again immediately.');">
+            <input type="hidden" name="key" value="{{ item.key }}">
+            <button type="submit" class="ghost-btn" style="padding:2px 8px; font-size:0.85rem;">Unblock</button>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+      {% else %}
+      <tr><td colspan="6">No active rate-limit entries right now - nobody has attempted login/OTP recently.</td></tr>
+      {% endfor %}
+      {% if show_only_blocked and overview.entries and overview.blocked_count == 0 %}
+      <tr><td colspan="6">No blocked IPs right now.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+{% block title %}Tracking{% endblock %}
+
+{% block content %}
+<style>
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin: 16px 0 24px 0;
+  }
+  .sa-stat-card {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 18px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .sa-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 4px 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-track-table th, .sa-track-table td {
+    padding: 10px 12px;
+  }
+  .sa-track-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-section-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-left: 8px;
+  }
+  .sa-badge-red { background: #fee2e2; color: #dc2626; }
+  .sa-badge-amber { background: #fef3c7; color: #d97706; }
+  .sa-badge-green { background: #dcfce7; color: #16a34a; }
+</style>
+
+<div class="page-header">
+  <h2>Candidate Tracking</h2>
+  <p>Lifecycle overview and follow-up verification schedule.</p>
+</div>
+
+<div class="panel-card">
+  <form method="get" action="{{ url_for('frontend.organization_tracking') }}" class="table-toolbar">
+    <select name="batch_id">
+      <option value="">All Batches</option>
+      {% for batch in batches %}
+      <option value="{{ batch.id }}" {{ 'selected' if batch_filter == batch.id }}>{{ batch.name }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="scheme_id">
+      <option value="">All Schemes</option>
+      {% for scheme in schemes %}
+      <option value="{{ scheme.id }}" {{ 'selected' if scheme_filter == scheme.id }}>{{ scheme.name }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="training_center">
+      <option value="">All Training Centres</option>
+      {% for center in training_centers %}
+      <option value="{{ center }}" {{ 'selected' if training_center_filter == center }}>{{ center }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="ghost-btn">Filter</button>
+    <a href="{{ url_for('frontend.organization_tracking') }}" class="ghost-btn">Clear</a>
+  </form>
+</div>
+
+<div class="sa-stats-grid">
+  {% for stat in stage_counts %}
+  <a href="{{ stat.link }}" class="sa-stat-card" style="--accent:{{ ['#2563eb','#16a34a','#f59e0b','#8b5cf6','#06b6d4','#ef4444'][loop.index0 % 6] }};">
+    <h3>{{ stat.title }}</h3>
+    <p class="stat-value">{{ stat.value }}</p>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="panel-card">
+  <h3>Overdue Follow-ups <span class="sa-section-badge sa-badge-red">{{ overdue|length }}</span></h3>
+  {% if overdue %}
+  <table class="data-table sa-track-table">
+    <thead>
+      <tr><th>Candidate</th><th>Employer</th><th>Checkpoint</th><th>Due Date</th><th>Update</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for item in overdue %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=item.candidate.id) }}">{{ item.candidate.full_name }}</a></td>
+        <td>{{ item.candidate.employer_name or '-' }}</td>
+        <td>{{ item.checkpoint.label }}</td>
+        <td>{{ item.checkpoint.due_date.strftime('%d-%m-%Y') }}</td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_tracking_checkpoint_update', checkpoint_id=item.checkpoint.id) }}" style="display:inline;">
+            <select name="status" onchange="this.form.submit()">
+              <option value="pending" selected>Pending</option>
+              <option value="completed">Completed</option>
+              <option value="missed">Missed</option>
+            </select>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_tracking_checkpoint_delete', checkpoint_id=item.checkpoint.id) }}" style="display:inline;" onsubmit="return confirm('Delete this checkpoint?');">
+            <button type="submit" style="background:none; border:none; color:#e11d48; text-decoration:underline; cursor:pointer; padding:0; font:inherit;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No overdue follow-ups. Nice!</p>
+  {% endif %}
+</div>
+
+<div class="panel-card">
+  <h3>Upcoming Follow-ups <span class="sa-section-badge sa-badge-amber">{{ upcoming|length }}</span></h3>
+  {% if upcoming %}
+  <table class="data-table sa-track-table">
+    <thead>
+      <tr><th>Candidate</th><th>Employer</th><th>Checkpoint</th><th>Due Date</th><th>Update</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for item in upcoming %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=item.candidate.id) }}">{{ item.candidate.full_name }}</a></td>
+        <td>{{ item.candidate.employer_name or '-' }}</td>
+        <td>{{ item.checkpoint.label }}</td>
+        <td>{{ item.checkpoint.due_date.strftime('%d-%m-%Y') }}</td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_tracking_checkpoint_update', checkpoint_id=item.checkpoint.id) }}" style="display:inline;">
+            <select name="status" onchange="this.form.submit()">
+              <option value="pending" selected>Pending</option>
+              <option value="completed">Completed</option>
+              <option value="missed">Missed</option>
+            </select>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_tracking_checkpoint_delete', checkpoint_id=item.checkpoint.id) }}" style="display:inline;" onsubmit="return confirm('Delete this checkpoint?');">
+            <button type="submit" style="background:none; border:none; color:#e11d48; text-decoration:underline; cursor:pointer; padding:0; font:inherit;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No upcoming follow-ups scheduled.</p>
+  {% endif %}
+</div>
+
+<div class="panel-card">
+  <h3>Completed Follow-ups <span class="sa-section-badge sa-badge-green">{{ completed|length }}</span></h3>
+  {% if completed %}
+  <table class="data-table sa-track-table">
+    <thead>
+      <tr><th>Candidate</th><th>Employer</th><th>Checkpoint</th><th>Due Date</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for item in completed %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=item.candidate.id) }}">{{ item.candidate.full_name }}</a></td>
+        <td>{{ item.candidate.employer_name or '-' }}</td>
+        <td>{{ item.checkpoint.label }}</td>
+        <td>{{ item.checkpoint.due_date.strftime('%d-%m-%Y') }}</td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.organization_tracking_checkpoint_delete', checkpoint_id=item.checkpoint.id) }}" style="display:inline;" onsubmit="return confirm('Delete this checkpoint?');">
+            <button type="submit" style="background:none; border:none; color:#e11d48; text-decoration:underline; cursor:pointer; padding:0; font:inherit;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No completed follow-ups yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

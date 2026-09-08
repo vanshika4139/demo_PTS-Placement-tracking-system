@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit User' if user else 'Add User' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit User' if user else 'Add User' }}</h2>
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>
+        First Name
+        <input type="text" name="first_name" id="first_name" value="{{ user.first_name if user else '' }}" required oninput="suggestUsernames()">
+      </label>
+
+      <label>
+        Last Name
+        <input type="text" name="last_name" id="last_name" value="{{ user.last_name if user else '' }}" oninput="suggestUsernames()">
+      </label>
+
+      <label>
+        Email
+        <input type="email" name="email" value="{{ user.email if user else '' }}" {% if user %}readonly{% else %}required{% endif %}>
+      </label>
+
+      <label>
+        Date of Birth
+        <input type="date" name="date_of_birth" id="date_of_birth" value="{{ user.date_of_birth.strftime('%Y-%m-%d') if user and user.date_of_birth else '' }}" oninput="suggestUsernames()">
+      </label>
+
+      <label>
+        Username
+        <input type="text" name="username" id="username" value="{{ user.username if user else '' }}" required autocomplete="off">
+      </label>
+
+      <label>
+        {{ 'New Password (leave blank to keep current)' if user else 'Password' }}
+        <input type="password" name="password" {% if not user %}required{% endif %} autocomplete="new-password">
+      </label>
+
+      <label>
+        Account Type
+        <select name="role" id="role" onchange="toggleOrgField()">
+          <option value="org_admin" {{ 'selected' if user and not user.is_super_admin }}>Organization User</option>
+          <option value="super_admin" {{ 'selected' if user and user.is_super_admin }}>Super Admin</option>
+        </select>
+      </label>
+
+      <label id="org-field">
+        Organization
+        <select name="organization_id">
+          <option value="">-- Select Organization --</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}" {{ 'selected' if user and user.organization_id == org.id }}>{{ org.organization_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label id="rbac-role-field">
+        Role <span style="color:#dc2626;">*</span>
+        <select name="rbac_role_id">
+          <option value="">-- Select Role --</option>
+          {% for r in roles %}
+          <option value="{{ r.id }}" {{ 'selected' if current_role_id == r.id }}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+        <span style="font-size:0.78rem; color:var(--muted); font-weight:normal;">
+          Determines what this user can see and do. Required for non-Super-Admin accounts.
+        </span>
+      </label>
+    </div>
+
+    <div id="username-suggestions" style="margin-top:8px; display:none;">
+      <p style="margin:4px 0; font-size:0.9rem; color:var(--muted);">Suggestions (click to use):</p>
+      <div id="suggestion-chips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.super_admin_users') }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+function toggleOrgField() {
+  const role = document.getElementById('role').value;
+  const orgField = document.getElementById('org-field');
+  const rbacField = document.getElementById('rbac-role-field');
+  const isSuperAdmin = (role === 'super_admin');
+  orgField.style.display = isSuperAdmin ? 'none' : 'flex';
+  rbacField.style.display = isSuperAdmin ? 'none' : 'flex';
+}
+window.onload = toggleOrgField;
+
+function randomDigits(count) {
+  let result = '';
+  for (let i = 0; i < count; i++) {
+    result += Math.floor(Math.random() * 10);
+  }
+  return result;
+}
+
+function suggestUsernames() {
+  const firstName = document.getElementById('first_name').value.trim().toLowerCase();
+  const lastName = document.getElementById('last_name').value.trim().toLowerCase();
+  const dob = document.getElementById('date_of_birth').value;
+
+  const box = document.getElementById('username-suggestions');
+  const chipsContainer = document.getElementById('suggestion-chips');
+
+  if (!firstName) {
+    box.style.display = 'none';
+    return;
+  }
+
+  const cleanFirst = firstName.replace(/[^a-z]/g, '');
+  const cleanLast = lastName.replace(/[^a-z]/g, '');
+
+  let year = '';
+  let day = '';
+  if (dob) {
+    const parts = dob.split('-');
+    if (parts.length === 3) {
+      year = parts[0].slice(-2);
+      day = parts[2];
+    }
+  }
+
+  const numTag = year || randomDigits(2);
+  const numTag2 = day || randomDigits(3);
+
+  let suggestions = [];
+
+  if (cleanLast) {
+    suggestions = [
+      `${cleanFirst}.${cleanLast}`,
+      `${cleanFirst}${cleanLast}${numTag}`,
+      `${cleanFirst[0]}.${cleanLast}${numTag}`,
+      `${cleanFirst}_${cleanLast}${numTag2}`
+    ];
+  } else {
+    suggestions = [
+      `${cleanFirst}${numTag}`,
+      `${cleanFirst}_${numTag2}`,
+      `${cleanFirst}.${randomDigits(2)}`,
+      `${cleanFirst}${randomDigits(4)}`
+    ];
+  }
+
+  suggestions = suggestions.filter(s => s && s.length > 2);
+
+  chipsContainer.innerHTML = '';
+  suggestions.forEach(s => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'ghost-btn';
+    chip.style.padding = '6px 10px';
+    chip.style.fontSize = '0.85rem';
+    chip.textContent = s;
+    chip.onclick = () => {
+      document.getElementById('username').value = s;
+    };
+    chipsContainer.appendChild(chip);
+  });
+
+  box.style.display = suggestions.length ? 'block' : 'none';
+}
+</script>
+{% endblock %}

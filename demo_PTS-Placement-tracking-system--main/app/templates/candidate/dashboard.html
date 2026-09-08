@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="{{ current_language() }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ _('my_details_readonly') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}">
+</head>
+<body>
+  <div class="page-content" style="max-width:900px; margin:0 auto;">
+
+    <div style="text-align:right; font-size:0.82rem; margin-bottom:8px;">
+      <a href="{{ url_for('frontend.set_language', lang_code='en') }}"
+         style="text-decoration:none; {{ 'font-weight:700; color:var(--avocado-dark);' if current_language() == 'en' else 'color:var(--muted);' }}">EN</a>
+      &nbsp;|&nbsp;
+      <a href="{{ url_for('frontend.set_language', lang_code='hi') }}"
+         style="text-decoration:none; {{ 'font-weight:700; color:var(--avocado-dark);' if current_language() == 'hi' else 'color:var(--muted);' }}">हिं</a>
+    </div>
+
+    <div class="page-header page-header-inline">
+      <div>
+        <h2>{{ _('welcome') }} {{ candidate.full_name }}</h2>
+        <p>{{ _('registration_no_label') }} {{ candidate.registration_number or '-' }}</p>
+      </div>
+      <a href="{{ url_for('frontend.candidate_logout') }}" class="ghost-btn">{{ _('logout') }}</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="panel-card">
+      <h3>{{ _('my_details_readonly') }}</h3>
+      <div class="form-grid">
+        <label>{{ _('fathers_name') }}<input type="text" value="{{ candidate.father_name or '-' }}" disabled></label>
+        <label>{{ _('date_of_birth') }}<input type="text" value="{{ candidate.date_of_birth.strftime('%d-%m-%Y') if candidate.date_of_birth else '-' }}" disabled></label>
+        <label>{{ _('aadhaar') }}<input type="text" value="{{ candidate.aadhaar or '-' }}" disabled></label>
+        <label>{{ _('training_center') }}<input type="text" value="{{ candidate.training_center or '-' }}" disabled></label>
+        <label>{{ _('course') }}<input type="text" value="{{ candidate.course or '-' }}" disabled></label>
+        <label>{{ _('training_status') }}<input type="text" value="{{ candidate.training_status or '-' }}" disabled></label>
+        <label>{{ _('verification_status') }}<input type="text" value="{{ candidate.verification_status or '-' }}" disabled></label>
+        <label>{{ _('employer') }}<input type="text" value="{{ candidate.employer_name or '-' }}" disabled></label>
+      </div>
+      <p style="margin-top:12px; font-size:0.85rem; color:var(--muted);">{{ _('readonly_note') }}</p>
+    </div>
+
+    <div class="panel-card">
+      <h3>{{ _('update_contact_bank') }}</h3>
+      <form method="post" class="full-form">
+        <div class="form-grid">
+          <label>{{ _('mobile') }}<input type="text" name="mobile" value="{{ candidate.mobile or '' }}"></label>
+          <label>{{ _('alternative_mobile') }}<input type="text" name="alternative_mobile" value="{{ candidate.alternative_mobile or '' }}"></label>
+          <label>{{ _('email') }}<input type="email" name="email" value="{{ candidate.email or '' }}"></label>
+          <label>{{ _('current_address') }}<input type="text" name="current_address" value="{{ candidate.current_address or '' }}"></label>
+          <label>{{ _('permanent_address') }}<input type="text" name="permanent_address" value="{{ candidate.permanent_address or '' }}"></label>
+          <label>{{ _('bank_name') }}<input type="text" name="bank_name" value="{{ candidate.bank_name or '' }}"></label>
+          <label>{{ _('account_number') }}<input type="text" name="account_number" value="{{ candidate.account_number or '' }}"></label>
+          <label>{{ _('ifsc') }}<input type="text" name="ifsc" value="{{ candidate.ifsc or '' }}"></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn">{{ _('save_changes') }}</button>
+        </div>
+      </form>
+    </div>
+
+    {% if candidate.employer_name %}
+    <div class="panel-card" id="feedback-card">
+      {% if existing_feedback %}
+        <h3>{{ _('feedback_prompt_title') }}</h3>
+        <p>{{ _('feedback_already_submitted') }}</p>
+        <div class="fb-stars-display">
+          {% for i in range(1, 6) %}
+            <span class="fb-star {{ 'filled' if i <= existing_feedback.rating }}">★</span>
+          {% endfor %}
+        </div>
+        {% if existing_feedback.comment %}<p class="fb-comment">"{{ existing_feedback.comment }}"</p>{% endif %}
+      {% else %}
+        <h3>{{ _('feedback_prompt_title') }}</h3>
+        <p>{{ _('feedback_prompt_body') }}</p>
+        <form method="post" action="{{ url_for('frontend.candidate_feedback_submit') }}">
+          <label>{{ _('feedback_rating_label') }}</label>
+          <div class="fb-star-input" id="fb-star-input">
+            {% for i in range(1, 6) %}
+            <span class="fb-star" data-value="{{ i }}">★</span>
+            {% endfor %}
+          </div>
+          <input type="hidden" name="rating" id="fb-rating-value" required>
+          <label>{{ _('feedback_comment_label') }}
+            <textarea name="comment" rows="3"></textarea>
+          </label>
+          <button type="submit" class="primary-btn">{{ _('feedback_submit') }}</button>
+        </form>
+      {% endif %}
+    </div>
+
+    <style>
+      .fb-star-input, .fb-stars-display { display: flex; gap: 6px; font-size: 1.8rem; margin: 10px 0; }
+      .fb-star-input .fb-star { cursor: pointer; color: var(--border); transition: color 0.15s ease; }
+      .fb-star-input .fb-star.hover, .fb-star-input .fb-star.selected { color: #f59e0b; }
+      .fb-stars-display .fb-star { color: var(--border); }
+      .fb-stars-display .fb-star.filled { color: #f59e0b; }
+      .fb-comment { color: var(--muted); font-style: italic; margin-top: 8px; }
+    </style>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const container = document.getElementById('fb-star-input');
+      if (!container) return;
+      const stars = Array.from(container.querySelectorAll('.fb-star'));
+      const hiddenInput = document.getElementById('fb-rating-value');
+      function setSelected(value) {
+        stars.forEach(s => s.classList.toggle('selected', parseInt(s.dataset.value, 10) <= value));
+      }
+      stars.forEach(star => {
+        star.addEventListener('mouseenter', () => {
+          const value = parseInt(star.dataset.value, 10);
+          stars.forEach(s => s.classList.toggle('hover', parseInt(s.dataset.value, 10) <= value));
+        });
+        star.addEventListener('mouseleave', () => stars.forEach(s => s.classList.remove('hover')));
+        star.addEventListener('click', () => {
+          hiddenInput.value = star.dataset.value;
+          setSelected(parseInt(star.dataset.value, 10));
+        });
+      });
+    });
+    </script>
+    {% endif %}
+
+    <div class="panel-card">
+      <h3>{{ _('change_password') }}</h3>
+      <form method="post" action="{{ url_for('frontend.candidate_change_password') }}" class="full-form">
+        <div class="form-grid">
+          <label>{{ _('current_password') }}<input type="password" name="current_password" required></label>
+          <label>{{ _('new_password') }}<input type="password" name="new_password" required minlength="6"></label>
+          <label>{{ _('confirm_new_password') }}<input type="password" name="confirm_password" required minlength="6"></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn">{{ _('change_password') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

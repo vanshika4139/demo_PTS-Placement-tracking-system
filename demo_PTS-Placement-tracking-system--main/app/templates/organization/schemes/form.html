@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Scheme' if scheme else 'Add Scheme' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit Scheme' if scheme else 'Add Scheme' }}</h2>
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      {% if organizations %}
+      <label>
+        Organization
+        <select name="organization_id" required>
+          <option value="">-- Select Organization --</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}" {{ 'selected' if scheme and scheme.organization_id == org.id }}>{{ org.organization_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+
+      <label>
+        Scheme Name
+        <input type="text" name="name" value="{{ scheme.name if scheme else '' }}" required>
+      </label>
+
+      <label>
+        Description
+        <input type="text" name="description" value="{{ scheme.description if scheme else '' }}">
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.organization_schemes') }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

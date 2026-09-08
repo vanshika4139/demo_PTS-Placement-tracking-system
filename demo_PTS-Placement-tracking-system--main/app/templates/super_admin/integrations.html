@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Integrations{% endblock %}
+
+{% block content %}
+<style>
+  .ig-section-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ig-hint {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin-top: -8px;
+    margin-bottom: 16px;
+  }
+  .ig-status-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .ig-status-set { background: #dcfce7; color: #16a34a; }
+  .ig-status-env { background: #f3f4f6; color: #6b7280; }
+</style>
+
+<div class="page-header">
+  <h2>Integrations</h2>
+  <p>Platform-wide credentials for email, WhatsApp, and SMS delivery.</p>
+</div>
+
+<form method="post" class="full-form">
+
+  <div class="panel-card" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      Email (SMTP)
+      {% if settings.smtp_host %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+    </div>
+    <p class="ig-hint">Used for password-reset OTPs and notification emails. Leave a field blank to fall back to the .env value.</p>
+    <div class="form-grid">
+      <label>SMTP Host<input type="text" name="smtp_host" value="{{ settings.smtp_host or '' }}" placeholder="smtp.gmail.com"></label>
+      <label>SMTP Port<input type="number" name="smtp_port" value="{{ settings.smtp_port or '' }}" placeholder="587"></label>
+      <label>SMTP Username<input type="text" name="smtp_username" value="{{ settings.smtp_username or '' }}" placeholder="you@example.com"></label>
+      <label>SMTP Password
+        <input type="password" name="smtp_password" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.smtp_password else 'Enter password' }}" autocomplete="new-password">
+      </label>
+    </div>
+  </div>
+
+  <div class="panel-card" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      WhatsApp Business API
+      {% if settings.whatsapp_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+    </div>
+    <p class="ig-hint">Used for sending WhatsApp notifications (deducts from an organization's WhatsApp credits).</p>
+    <div class="form-grid">
+      <label>API Key / Access Token
+        <input type="password" name="whatsapp_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.whatsapp_api_key else 'Enter API key' }}" autocomplete="new-password">
+      </label>
+      <label>Phone Number ID<input type="text" name="whatsapp_phone_number_id" value="{{ settings.whatsapp_phone_number_id or '' }}" placeholder="e.g. 109876543210123"></label>
+    </div>
+  </div>
+
+  <div class="panel-card" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      SMS Gateway
+      {% if settings.sms_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+    </div>
+    <p class="ig-hint">Used for sending SMS notifications (deducts from an organization's SMS credits).</p>
+    <div class="form-grid">
+      <label>API Key
+        <input type="password" name="sms_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.sms_api_key else 'Enter API key' }}" autocomplete="new-password">
+      </label>
+      <label>Sender ID<input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" placeholder="e.g. CDVOCD"></label>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="primary-btn">Save Integration Settings</button>
+  </div>
+</form>
+{% endblock %}

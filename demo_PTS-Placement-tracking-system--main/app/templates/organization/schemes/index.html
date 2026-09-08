@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Schemes{% endblock %}
+
+{% block content %}
+<style>
+  .sa-scheme-table th, .sa-scheme-table td {
+    padding: 12px 14px;
+  }
+  .sa-scheme-table tbody tr:hover {
+    background: #f9fafb;
+  }
+  .sa-scheme-name {
+    font-weight: 600;
+    color: #111827;
+  }
+  .sa-scheme-desc {
+    color: #6b7280;
+    max-width: 480px;
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Schemes</h2>
+    <p>Manage government/training schemes.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.organization_scheme_create') }}">Add Scheme</a>
+</div>
+
+<div class="panel-card">
+  <table class="data-table sa-scheme-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for scheme in schemes %}
+      <tr>
+        <td class="sa-scheme-name">{{ scheme.name }}</td>
+        <td class="sa-scheme-desc">{{ scheme.description or '-' }}</td>
+        <td class="inline-actions">
+          <a href="{{ url_for('frontend.organization_scheme_edit', scheme_id=scheme.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('frontend.organization_scheme_delete', scheme_id=scheme.id) }}" onsubmit="return confirm('Delete this scheme?');" style="display:inline;">
+            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No schemes yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

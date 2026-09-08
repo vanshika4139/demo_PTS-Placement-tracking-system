@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% set show_sidebar = false %}
+{% set show_navbar = false %}
+
+{% block title %}Login - Codevocado{% endblock %}
+
+{% block content %}
+<div class="login-shell">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-mark large">C</div>
+      <h1>Codevocado</h1>
+      <p>Placement Tracking System</p>
+    </div>
+
+    <form class="auth-form" method="post" action="{{ url_for('frontend.login') }}">
+      <label for="email">Email / Mobile</label>
+      <input id="email" name="email" type="text" required>
+
+      <label for="password">Password</label>
+      <div class="password-field-wrapper">
+        <input id="password" name="password" type="password" required>
+        <span id="togglePassword" class="password-toggle-icon">👁️</span>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-row"><input type="checkbox" name="remember"> Remember me</label>
+        <a href="{{ url_for('frontend.forgot_password') }}">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="primary-btn">Login</button>
+      {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    </form>
+  </div>
+</div>
+
+<style>
+  .password-field-wrapper {
+    position: relative;
+    width: 100%;
+  }
+
+  .password-field-wrapper input {
+    width: 100%;
+    padding-right: 40px;
+    box-sizing: border-box;
+  }
+
+  .password-toggle-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    user-select: none;
+    font-size: 16px;
+    line-height: 1;
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+
+    togglePassword.addEventListener('click', function () {
+      const isPassword = passwordInput.getAttribute('type') === 'password';
+      passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+      togglePassword.textContent = isPassword ? '🙈' : '👁️';
+    });
+  });
+</script>
+{% endblock %}

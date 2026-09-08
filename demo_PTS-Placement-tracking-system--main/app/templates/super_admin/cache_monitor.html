@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% block title %}Cache Monitor{% endblock %}
+
+{% block content %}
+<style>
+  html { scroll-behavior: smooth; }
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .sa-stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+  .cm-key-table th, .cm-key-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.88rem;
+  }
+  .cm-key-table th {
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+  }
+  .cm-key-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+  }
+  .cm-clear-form { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+  .cm-clear-btn {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .cm-clear-btn:hover { background: #fecaca; }
+  .cm-namespace-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.9rem;
+  }
+  .cm-namespace-row:last-child { border-bottom: none; }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Cache Monitor</h2>
+    <p>Live visibility into the Redis report/dashboard cache.</p>
+  </div>
+  <span class="sa-pill {{ 'sa-pill-green' if overview.redis_available else 'sa-pill-red' }}">
+    {{ 'Redis Connected' if overview.redis_available else 'Redis Unreachable' }}
+  </span>
+</div>
+
+{% if not overview.redis_available %}
+<div class="panel-card">
+  <p>Redis is currently unreachable. The app is running fine - it is simply
+     bypassing the cache and querying the database directly for every
+     request until Redis comes back.</p>
+</div>
+{% else %}
+
+<div class="sa-stats-grid">
+  <a href="#cm-key-table-section" class="sa-stat-card" style="--accent:#2563eb; text-decoration:none; color:inherit; display:block;">
+    <h3>Active Cache Keys</h3>
+    <p class="stat-value">{{ overview.total_keys }}</p>
+  </a>
+  <a href="#cm-key-table-section" class="sa-stat-card" style="--accent:#16a34a; text-decoration:none; color:inherit; display:block;">
+    <h3>Cache Hits</h3>
+    <p class="stat-value">{{ overview.hits }}</p>
+  </a>
+  <a href="#cm-key-table-section" class="sa-stat-card" style="--accent:#f59e0b; text-decoration:none; color:inherit; display:block;">
+    <h3>Cache Misses</h3>
+    <p class="stat-value">{{ overview.misses }}</p>
+  </a>
+  <a href="#cm-key-table-section" class="sa-stat-card" style="--accent:#8b5cf6; text-decoration:none; color:inherit; display:block;">
+    <h3>Hit Rate</h3>
+    <p class="stat-value">{{ overview.hit_rate }}%</p>
+  </a>
+</div>
+<p style="color:#6b7280; font-size:0.82rem; margin-top:4px;">
+  Click any card to jump to the key list below - click "View" on a key to see its actual cached data.
+</p>
+
+{% if overview.other_namespaces %}
+<div class="panel-card" style="margin-top:20px;">
+  <h3>Other Redis Namespaces</h3>
+  <p style="color:#6b7280; font-size:0.85rem; margin-top:-6px;">
+    Permission cache, rate limiting, etc. - shown for visibility, not cleared by the button below.
+  </p>
+  {% for ns in overview.other_namespaces %}
+  <div class="cm-namespace-row">
+    <span class="cm-key-name">{{ ns.namespace }}:*</span>
+    <span>{{ ns.key_count }} key(s)</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="panel-card" id="cm-key-table-section" style="margin-top:20px; scroll-margin-top: 20px;">
+  <div class="cm-clear-form">
+    <form method="post" action="{{ url_for('frontend.super_admin_cache_clear') }}"
+          onsubmit="return confirm('Clear all report/dashboard cache entries? Pages will reload data fresh from the database until the cache warms back up.');">
+      <button type="submit" class="cm-clear-btn">Clear Cache</button>
+    </form>
+  </div>
+
+  <table class="data-table cm-key-table">
+    <thead>
+      <tr><th>Cache Key</th><th>TTL Remaining</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for item in overview.cache_keys %}
+      <tr>
+        <td class="cm-key-name">{{ item.key }}</td>
+        <td>
+          {% if item.ttl_seconds is none or item.ttl_seconds < 0 %}
+          <span class="sa-pill sa-pill-gray">No expiry</span>
+          {% else %}
+          {{ item.ttl_seconds }}s
+          {% endif %}
+        </td>
+        <td class="inline-actions">
+          <a href="{{ url_for('frontend.super_admin_cache_inspect', key=item.key) }}">View</a>
+          <form method="post" action="{{ url_for('frontend.super_admin_cache_delete_key') }}" style="display:inline;"
+                onsubmit="return confirm('Delete this single cache key? It will be recomputed fresh next time it is needed.');">
+            <input type="hidden" name="key" value="{{ item.key }}">
+            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No cached report/dashboard entries right now.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

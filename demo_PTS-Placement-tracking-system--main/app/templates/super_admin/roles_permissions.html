@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Roles & Permissions{% endblock %}
+
+{% block content %}
+<style>
+  .rp-role-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+  .rp-role-tab {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid #e5e7eb;
+    text-decoration: none; color: #374151; font-size: 0.9rem;
+  }
+  .rp-role-tab.active { background: #2563eb; color: white; border-color: #2563eb; }
+  .rp-resource-block { margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .rp-resource-header {
+    background: #f9fafb; padding: 10px 16px; font-weight: 600;
+    text-transform: capitalize; border-bottom: 1px solid #e5e7eb;
+  }
+  .rp-permission-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-bottom: 1px solid #f3f4f6;
+  }
+  .rp-permission-row:last-child { border-bottom: none; }
+  .rp-permission-row input[type="checkbox"] { width: 16px; height: 16px; }
+  .rp-permission-desc { color: #6b7280; font-size: 0.85rem; }
+  .rp-create-role-form { display: flex; gap: 8px; margin-left: auto; }
+  .rp-create-role-form input[type="text"] {
+    padding: 7px 10px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.85rem;
+  }
+  .rp-role-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+  .rp-deactivate-btn {
+    background: none; border: 1px solid #fca5a5; color: #b91c1c;
+    padding: 6px 12px; border-radius: 6px; font-size: 0.82rem; cursor: pointer;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Roles &amp; Permissions</h2>
+  <p>Control what each role can see and do across the system.</p>
+</div>
+
+<div class="panel-card">
+  <div class="rp-role-tabs">
+    {% for role in roles %}
+    <a class="rp-role-tab {{ 'active' if selected_role and selected_role.id == role.id }}"
+       href="{{ url_for('frontend.super_admin_roles_permissions', role_id=role.id) }}">
+      {{ role.name }}
+    </a>
+    {% endfor %}
+
+    <form class="rp-create-role-form" method="post" action="{{ url_for('frontend.super_admin_role_create') }}">
+      <input type="text" name="name" placeholder="New role name" required>
+      <button type="submit" class="primary-btn">+ Create Role</button>
+    </form>
+  </div>
+
+  {% if selected_role %}
+  <div class="rp-role-actions">
+    <form method="post" action="{{ url_for('frontend.super_admin_role_deactivate', role_id=selected_role.id) }}"
+          onsubmit="return confirm('Deactivate the role {{ selected_role.name }}? Users must be reassigned first if any are still on it.');">
+      <button type="submit" class="rp-deactivate-btn">Deactivate '{{ selected_role.name }}'</button>
+    </form>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="role_id" value="{{ selected_role.id }}">
+
+    {% for resource, permissions in grouped_permissions.items() %}
+    <div class="rp-resource-block">
+      <div class="rp-resource-header">{{ resource.replace('_', ' ') }}</div>
+      {% for perm in permissions %}
+      <label class="rp-permission-row">
+        <input type="checkbox" name="permission_ids" value="{{ perm.id }}"
+               {{ 'checked' if perm.id in assigned_permission_ids }}>
+        <span>{{ perm.code }}</span>
+        {% if perm.description %}<span class="rp-permission-desc">— {{ perm.description }}</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save Permissions</button>
+    </div>
+  </form>
+  {% else %}
+  <p>No roles found. Create one above, or run the seed script for defaults.</p>
+  {% endif %}
+</div>
+{% endblock %}

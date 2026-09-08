@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Organization' if organization else 'Create Organization' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit Organization' if organization else 'Create Organization' }}</h2>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Organization Code<input type="text" name="organization_code" value="{{ organization.organization_code if organization else '' }}" {{ 'readonly' if organization else '' }} required></label>
+      <label>Organization Name<input type="text" name="organization_name" value="{{ organization.organization_name if organization else '' }}" required></label>
+      <label>Registration Number<input type="text" name="registration_number" value="{{ organization.registration_number if organization else '' }}"></label>
+      <label>GST Number<input type="text" name="gst_number" value="{{ organization.gst_number if organization else '' }}"></label>
+      <label>PAN Number<input type="text" name="pan_number" value="{{ organization.pan_number if organization else '' }}"></label>
+      <label>Contact Person<input type="text" name="contact_person" value="{{ organization.contact_person if organization else '' }}"></label>
+      <label>Email<input type="email" name="email" value="{{ organization.email if organization else '' }}"></label>
+      <label>Mobile<input type="text" name="mobile" value="{{ organization.mobile if organization else '' }}"></label>
+      <label>Address<input type="text" name="address" value="{{ organization.address if organization else '' }}"></label>
+      {% if organization %}
+      <label>KYC Status
+        <select name="kyc_status">
+          <option value="PENDING" {{ 'selected' if organization.kyc_status == 'PENDING' }}>Pending</option>
+          <option value="VERIFIED" {{ 'selected' if organization.kyc_status == 'VERIFIED' }}>Verified</option>
+          <option value="REJECTED" {{ 'selected' if organization.kyc_status == 'REJECTED' }}>Rejected</option>
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="active" {{ 'selected' if organization.status == 1 }}>Active</option>
+          <option value="inactive" {{ 'selected' if organization.status == 0 }}>Inactive</option>
+        </select>
+      </label>
+      {% endif %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organizations') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

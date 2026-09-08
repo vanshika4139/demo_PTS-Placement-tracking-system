@@ -1,0 +1,49 @@
+<div class="sidebar-inner">
+  <div class="sidebar-logo">Codevocado</div>
+  <ul class="nav-list">
+    {% if session.user.is_super_admin %}
+    <li><a href="/super-admin/dashboard">Dashboard</a></li>
+    {% else %}
+    <li><a href="/organization/dashboard">Dashboard</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'organization.view') %}
+    <li><a href="/super-admin/organizations">Organization</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'candidate.view') %}
+    <li><a href="/organization/candidates">Candidates</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'batch.view') %}
+    <li><a href="/organization/batches">Batches</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'scheme.view') %}
+    <li><a href="/organization/schemes">Schemes</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'placement.view') %}
+    <li><a href="/organization/placements">Placements</a></li>
+    <li><a href="/organization/feedback">Feedback</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'tracking.view') %}
+    <li><a href="/organization/tracking">Tracking</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'report.view') %}
+    <li><a href="/reports">Reports</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'notification.view') %}
+    <li><a href="/notifications">Notifications</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'user.view') %}
+    <li><a href="/super-admin/users">Users</a></li>
+    {% endif %}
+    {% if session.user.is_super_admin %}
+    <li><a href="/super-admin/roles-permissions">Roles &amp; Permissions</a></li>
+    <li><a href="/super-admin/modules">Modules</a></li>
+    <li><a href="/super-admin/activity-log">Activity Log</a></li>
+    <li><a href="/super-admin/cache-monitor">Cache Monitor</a></li>
+    <li><a href="/super-admin/rate-limit-monitor">Rate Limit Monitor</a></li>
+    <li><a href="/super-admin/settings/integrations">Integrations</a></li>
+    {% endif %}
+    {% if has_permission(session.user, 'settings.view') %}
+    <li><a href="/settings/profile">Settings</a></li>
+    {% endif %}
+  </ul>
+</div>

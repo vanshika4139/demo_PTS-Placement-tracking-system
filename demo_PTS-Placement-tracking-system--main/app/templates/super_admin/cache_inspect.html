@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Inspect Cache Key{% endblock %}
+
+{% block content %}
+<style>
+  .ci-key-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+    background: #f3f4f6;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    display: inline-block;
+  }
+  .ci-json-box {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px;
+    border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Inspect Cache Key</h2>
+  <p>What's currently stored under this key - use this to decide whether it's safe to delete.</p>
+</div>
+
+<div class="panel-card">
+  <h3>Key</h3>
+  <p class="ci-key-name">{{ key }}</p>
+</div>
+
+<div class="panel-card" style="margin-top:20px;">
+  <h3>Cached Value</h3>
+  {% if value is none %}
+  <p>This key no longer exists in Redis - it may have expired or already been deleted.</p>
+  {% else %}
+  <pre class="ci-json-box">{{ value | tojson(indent=2) }}</pre>
+  {% endif %}
+</div>
+
+<div class="form-actions" style="margin-top:16px;">
+  {% if value is not none %}
+  <form method="post" action="{{ url_for('frontend.super_admin_cache_delete_key') }}"
+        onsubmit="return confirm('Delete this cache key?');">
+    <input type="hidden" name="key" value="{{ key }}">
+    <button type="submit" class="primary-btn" style="background:#dc2626; border-color:#dc2626;">Delete This Key</button>
+  </form>
+  {% endif %}
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_cache_monitor') }}">Back to Cache Monitor</a>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+/* ============================================================
+   CODEVOCADO — Dashboard-specific styles
+   ============================================================ */
+
+.page-header h2 + p { margin-bottom: 4px; }
+
+/* Section labels above stat groups (e.g. "Organizations", "Operations") */
+.page-content h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 28px 0 12px;
+}
+.page-content h3:first-of-type { margin-top: 0; }
+
+/* Chart panel cards */
+.panel-card canvas { max-width: 100%; }
+.panel-card h3, .panel-card h4 {
+  margin-top: 0;
+  color: var(--avocado-dark);
+  font-size: 1.05rem;
+}
+
+/* Trend indicators (if used inline in stat cards) */
+.trend-up { color: var(--avocado); font-weight: 600; }
+.trend-down { color: #b5493c; font-weight: 600; }
+
+/* Recently registered / activity list rows */
+.activity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.activity-row:last-child { border-bottom: none; }

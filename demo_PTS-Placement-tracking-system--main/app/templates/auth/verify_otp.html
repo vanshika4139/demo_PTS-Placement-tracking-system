@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% set show_sidebar = false %}
+{% set show_navbar = false %}
+
+{% block title %}Verify OTP - Codevocado{% endblock %}
+
+{% block content %}
+<div class="login-shell">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-mark large">C</div>
+      <h1>Codevocado</h1>
+      <p>Enter the OTP sent to {{ email }}</p>
+    </div>
+
+    <form class="auth-form" method="post">
+      <label for="otp">6-digit OTP</label>
+      <input id="otp" name="otp" type="text" maxlength="6" pattern="[0-9]{6}" required autocomplete="one-time-code">
+
+      <button type="submit" class="primary-btn">Verify OTP</button>
+      {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    </form>
+
+    <p style="text-align:center; margin-top: 16px;">
+      <a href="{{ url_for('frontend.forgot_password') }}">Resend OTP</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

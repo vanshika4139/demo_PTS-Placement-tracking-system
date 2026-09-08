@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% block title %}Organization Detail{% endblock %}
+
+{% block content %}
+<style>
+  .sa-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .sa-stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .sa-stat-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sa-stat-card .stat-value {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .sa-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .sa-pill-green { background: #dcfce7; color: #16a34a; }
+  .sa-pill-red { background: #fee2e2; color: #dc2626; }
+  .sa-pill-amber { background: #fef3c7; color: #d97706; }
+  .sa-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .sa-detail-table th, .sa-detail-table td {
+    text-align: left;
+    padding: 8px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.92rem;
+  }
+  .sa-detail-table th {
+    color: #6b7280;
+    font-weight: 600;
+    white-space: nowrap;
+    width: 200px;
+  }
+
+  /* --- Feature Flags panel --- */
+  .ff-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 4px;
+    border-bottom: 1px solid #f3f4f6;
+    gap: 16px;
+  }
+  .ff-row:last-child { border-bottom: none; }
+  .ff-label { font-weight: 600; color: #111827; font-size: 0.92rem; }
+  .ff-desc { color: #6b7280; font-size: 0.82rem; margin-top: 2px; }
+  .ff-toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .ff-toggle input { opacity: 0; width: 0; height: 0; }
+  .ff-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #d1d5db;
+    border-radius: 999px;
+    transition: 0.2s;
+  }
+  .ff-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .ff-toggle input:checked + .ff-toggle-slider {
+    background-color: #16a34a;
+  }
+  .ff-toggle input:checked + .ff-toggle-slider:before {
+    transform: translateX(20px);
+  }
+</style>
+
+{% set is_active = (organization.status == 1) or (organization.status|string|lower == 'active') %}
+{% set kyc_value = (organization.kyc_status or '-')|string %}
+{% set kyc_upper = kyc_value|upper %}
+{% set payment_value = (organization.payment_status or '-')|string %}
+{% set payment_upper = payment_value|upper %}
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>{{ organization.organization_name }}</h2>
+    <p>Manage tenant profile, subscription, and KYC states.</p>
+  </div>
+  <div class="inline-actions">
+    <a class="ghost-btn" href="{{ url_for('frontend.super_admin_edit_organization', organization_id=organization.id) }}">Edit</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization.id) }}">View Activity</a>
+    <a class="primary-btn" href="{{ url_for('frontend.super_admin_subscription', organization_id=organization.id) }}">Subscription</a>
+  </div>
+</div>
+
+<div class="sa-stats-grid">
+  <div class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>KYC Status</h3>
+    <p class="stat-value"><span class="sa-pill {{ 'sa-pill-green' if kyc_upper == 'APPROVED' else ('sa-pill-red' if kyc_upper == 'REJECTED' else 'sa-pill-amber') }}">{{ kyc_value }}</span></p>
+  </div>
+  <div class="sa-stat-card" style="--accent:#06b6d4;">
+    <h3>Payment Status</h3>
+    <p class="stat-value"><span class="sa-pill {{ 'sa-pill-green' if payment_upper == 'APPROVED' else ('sa-pill-red' if payment_upper == 'REJECTED' else 'sa-pill-amber') }}">{{ payment_value }}</span></p>
+  </div>
+  <div class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>Status</h3>
+    <p class="stat-value"><span class="sa-pill {{ 'sa-pill-green' if is_active else 'sa-pill-red' }}">{{ 'Active' if is_active else 'Inactive' }}</span></p>
+  </div>
+</div>
+
+<div class="panel-card">
+  <h3>Basic Information</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>Code</th><td>{{ organization.organization_code }}</td></tr>
+      <tr><th>Registration No.</th><td>{{ organization.registration_number or '-' }}</td></tr>
+      <tr><th>GST Number</th><td>{{ organization.gst_number or '-' }}</td></tr>
+      <tr><th>PAN Number</th><td>{{ organization.pan_number or '-' }}</td></tr>
+      <tr><th>Website</th><td>{{ organization.website or '-' }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Contact</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>Contact Person</th><td>{{ organization.contact_person or '-' }}</td></tr>
+      <tr><th>Designation</th><td>{{ organization.designation or '-' }}</td></tr>
+      <tr><th>Email</th><td>{{ organization.email or '-' }}</td></tr>
+      <tr><th>Mobile</th><td>{{ organization.mobile or '-' }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Address</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>Address</th><td>{{ organization.address or '-' }}</td></tr>
+      <tr><th>Country ID</th><td>{{ organization.country_id or '-' }}</td></tr>
+      <tr><th>State ID</th><td>{{ organization.state_id or '-' }}</td></tr>
+      <tr><th>District ID</th><td>{{ organization.district_id or '-' }}</td></tr>
+      <tr><th>Pincode</th><td>{{ organization.pincode or '-' }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Subscription &amp; Limits</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>Plan ID</th><td>{{ organization.subscription_plan_id or '-' }}</td></tr>
+      <tr><th>Expiry Date</th><td>{{ organization.subscription_expiry_date.strftime('%d-%m-%Y') if organization.subscription_expiry_date else '-' }}</td></tr>
+      <tr><th>Candidate Limit</th><td>{{ organization.candidate_limit }}</td></tr>
+      <tr><th>Storage Used</th><td>{{ organization.storage_used }}</td></tr>
+      <tr><th>WhatsApp Credits</th><td>{{ organization.whatsapp_credits }}</td></tr>
+      <tr><th>SMS Credits</th><td>{{ organization.sms_credits }}</td></tr>
+      <tr><th>Email Credits</th><td>{{ organization.email_credits }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Feature Flags</h3>
+  <p style="color:#6b7280; font-size:0.85rem; margin-top:-8px; margin-bottom:12px;">
+    Turn individual features on or off for this organization only. Changes apply immediately.
+  </p>
+  {% for key, config in available_features.items() %}
+  <div class="ff-row">
+    <div>
+      <div class="ff-label">{{ config.label }}</div>
+      <div class="ff-desc">{{ config.description }}</div>
+    </div>
+    <form method="post" action="{{ url_for('frontend.super_admin_organization_feature_toggle', organization_id=organization.id) }}" onchange="this.submit()">
+      <input type="hidden" name="feature_key" value="{{ key }}">
+      <input type="hidden" name="is_enabled" value="{{ '1' if feature_map.get(key) else '0' }}">
+      <label class="ff-toggle">
+        <input type="checkbox" {{ 'checked' if feature_map.get(key) }} onclick="this.form.is_enabled.value = this.checked ? '1' : '0';">
+        <span class="ff-toggle-slider"></span>
+      </label>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="panel-card">
+  <h3>Integration</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>API Key</th><td>{{ organization.api_key or '-' }}</td></tr>
+      <tr><th>Webhook URL</th><td>{{ organization.webhook_url or '-' }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Meta</h3>
+  <table class="sa-detail-table">
+    <tbody>
+      <tr><th>Created At</th><td>{{ organization.created_at }}</td></tr>
+      <tr><th>Modified At</th><td>{{ organization.modified_at or '-' }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

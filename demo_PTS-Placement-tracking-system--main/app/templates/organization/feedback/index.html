@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Candidate Feedback{% endblock %}
+
+{% block content %}
+<style>
+  .fb-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .fb-star-row { display: flex; align-items: center; gap: 2px; }
+  .fb-star-row .filled { color: #f59e0b; }
+  .fb-star-row .empty { color: var(--border); }
+  .fb-comment-cell { color: var(--muted); font-style: italic; max-width: 320px; }
+  .fb-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .fb-bar-track { flex: 1; background: var(--border); border-radius: 999px; height: 8px; overflow: hidden; }
+  .fb-bar-fill { height: 100%; background: #f59e0b; }
+</style>
+
+<div class="page-header">
+  <h2>Candidate Feedback</h2>
+  <p>Placement experience ratings submitted by candidates.</p>
+</div>
+
+<div class="fb-summary-grid">
+  <div class="stat-card">
+    <div>Average Rating</div>
+    <p class="stat-value">{{ avg_rating or '—' }} / 5</p>
+  </div>
+  <div class="stat-card">
+    <div>Total Responses</div>
+    <p class="stat-value">{{ total_feedback }}</p>
+  </div>
+</div>
+
+<div class="panel-card" style="margin-bottom:20px;">
+  <h3>Rating Distribution</h3>
+  {% for star in [5,4,3,2,1] %}
+  <div class="fb-bar-row">
+    <span style="width:60px;">{{ star }} star</span>
+    <div class="fb-bar-track">
+      <div class="fb-bar-fill" style="width: {{ (rating_counts[star] / total_feedback * 100) if total_feedback else 0 }}%;"></div>
+    </div>
+    <span style="width:30px; text-align:right;">{{ rating_counts[star] }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead>
+      <tr><th>Candidate</th><th>Employer</th><th>Rating</th><th>Comment</th><th>Submitted</th></tr>
+    </thead>
+    <tbody>
+      {% for fb in feedback_rows %}
+      {% set candidate = candidates_by_id.get(fb.candidate_id) %}
+      <tr>
+        <td>{{ candidate.full_name if candidate else '—' }}</td>
+        <td>{{ candidate.employer_name if candidate else '—' }}</td>
+        <td>
+          <span class="fb-star-row">
+            {% for i in range(1, 6) %}
+            <span class="{{ 'filled' if i <= fb.rating else 'empty' }}">★</span>
+            {% endfor %}
+          </span>
+        </td>
+        <td class="fb-comment-cell">{{ fb.comment or '—' }}</td>
+        <td>{{ fb.created_at.strftime('%d-%m-%Y') if fb.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No feedback submitted yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

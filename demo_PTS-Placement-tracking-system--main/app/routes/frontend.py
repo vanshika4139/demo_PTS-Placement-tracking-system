@@ -23,6 +23,7 @@ from app.models import (
     Role,
     Scheme,
     User,
+    UserPermissionOverride,
     UserRole,
     UserSettings,
 )
@@ -32,6 +33,7 @@ from app.utils.permissions import has_permission, invalidate_role_permission_cac
 from app.utils.rate_limit import rate_limit, get_rate_limit_overview, clear_rate_limit_key
 from app.utils.feature_flags import AVAILABLE_FEATURES, get_organization_feature_map, is_feature_enabled, set_organization_feature
 from app.utils.platform_settings import get_platform_settings, update_platform_settings
+from app.utils.system_health import get_system_health
 from app.utils.report_cache import (
     cached_report,
     clear_all_report_cache,
@@ -598,6 +600,13 @@ def super_admin_rate_limit_monitor():
     return render_template("super_admin/rate_limit_monitor.html", overview=overview)
 
 
+@frontend_bp.route("/super-admin/system-health")
+@super_admin_required
+def super_admin_system_health():
+    health = get_system_health()
+    return render_template("super_admin/system_health.html", health=health)
+
+
 @frontend_bp.route("/super-admin/rate-limit-monitor/reset", methods=["POST"])
 @super_admin_required
 def super_admin_rate_limit_reset():
@@ -791,6 +800,83 @@ def super_admin_organizations():
         organizations=organizations,
         active_filter=filter_type,
         today=datetime.utcnow().date(),
+    )
+
+
+@frontend_bp.route("/super-admin/organizations/export.xlsx")
+@super_admin_required
+def super_admin_organizations_export():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from io import BytesIO
+    from flask import send_file
+
+    filter_type = request.args.get("filter", "").strip()
+
+    query = Organization.query
+    if filter_type == "active":
+        query = query.filter_by(status=1)
+    elif filter_type == "pending_kyc":
+        query = query.filter_by(kyc_status="PENDING")
+    elif filter_type == "pending_payment":
+        query = query.filter_by(payment_status="PENDING")
+
+    organizations = query.order_by(Organization.created_at.desc()).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Organizations"
+
+    headers = [
+        "Code", "Name", "Registration No.", "GST Number", "PAN Number",
+        "Contact Person", "Email", "Mobile", "Address",
+        "KYC Status", "Payment Status", "Status",
+        "Subscription Expiry", "Candidate Limit",
+        "WhatsApp Credits", "SMS Credits", "Email Credits",
+        "Created At",
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for o in organizations:
+        is_active = (o.status == 1)
+        ws.append([
+            o.organization_code or "-",
+            o.organization_name or "-",
+            o.registration_number or "-",
+            o.gst_number or "-",
+            o.pan_number or "-",
+            o.contact_person or "-",
+            o.email or "-",
+            o.mobile or "-",
+            o.address or "-",
+            o.kyc_status or "-",
+            o.payment_status or "-",
+            "Active" if is_active else "Inactive",
+            o.subscription_expiry_date.strftime("%d-%m-%Y") if o.subscription_expiry_date else "-",
+            o.candidate_limit or 0,
+            o.whatsapp_credits or 0,
+            o.sms_credits or 0,
+            o.email_credits or 0,
+            o.created_at.strftime("%d-%m-%Y %H:%M") if o.created_at else "-",
+        ])
+
+    for col_cells in ws.columns:
+        max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col_cells)
+        ws.column_dimensions[col_cells[0].column_letter].width = min(max_length + 2, 40)
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    _log_activity("Exported organizations to Excel", f"{len(organizations)} organization(s)")
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="organizations_export.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -1078,12 +1164,44 @@ def super_admin_roles_permissions():
         resource = perm.code.split(".")[0]
         grouped_permissions.setdefault(resource, []).append(perm)
 
+    # Permission Change Audit Timeline - pulled from the same ActivityLog
+    # rows already written by the role/permission-editing routes above, no
+    # separate audit table needed. Capped at 20 - this is a quick recent
+    # history view, not a full report (use the main Activity Log page with
+    # its 'role'/'permission' action search for anything older).
+    PERMISSION_AUDIT_ACTIONS = (
+        "Updated role permissions",
+        "Created role",
+        "Deactivated role",
+        "Updated user permission overrides",
+    )
+    audit_entries_raw = (
+        ActivityLog.query.filter(ActivityLog.action.in_(PERMISSION_AUDIT_ACTIONS))
+        .order_by(ActivityLog.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    audit_user_ids = {e.user_id for e in audit_entries_raw if e.user_id}
+    audit_user_names = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(audit_user_ids)).all()
+    } if audit_user_ids else {}
+    permission_audit_entries = [
+        {
+            "actor_name": audit_user_names.get(entry.user_id, "System"),
+            "action": entry.action,
+            "details": entry.details,
+            "created_at": entry.created_at,
+        }
+        for entry in audit_entries_raw
+    ]
+
     return render_template(
         "super_admin/roles_permissions.html",
         roles=roles,
         selected_role=selected_role,
         grouped_permissions=grouped_permissions,
         assigned_permission_ids=assigned_permission_ids,
+        permission_audit_entries=permission_audit_entries,
     )
 
 
@@ -1650,6 +1768,58 @@ def super_admin_delete_user(user_id):
     _log_activity("Deleted user", f"{user.full_name} ({user.email})")
     flash("User deleted successfully", "success")
     return redirect(url_for("frontend.super_admin_users"))
+
+
+@frontend_bp.route("/super-admin/users/deleted")
+@super_admin_required
+def super_admin_users_deleted():
+    """Soft-deleted users - shown separately so their email/username can be
+    freed up (via permanent delete) or the account restored, instead of
+    them sitting invisible while still blocking that email/username forever."""
+    deleted_users = User.query.filter_by(is_deleted=True).order_by(User.full_name).all()
+    org_map = {o.id: o.organization_name for o in Organization.query.all()}
+    return render_template("super_admin/users/deleted.html", users=deleted_users, org_map=org_map)
+
+
+@frontend_bp.route("/super-admin/users/<user_id>/restore", methods=["POST"])
+@super_admin_required
+def super_admin_user_restore(user_id):
+    user = User.query.filter_by(id=user_id, is_deleted=True).first_or_404()
+    user.is_deleted = False
+    db.session.commit()
+    _log_activity("Restored user", f"{user.full_name} ({user.email})")
+    flash(f"{user.full_name} restored successfully.", "success")
+    return redirect(url_for("frontend.super_admin_users_deleted"))
+
+
+@frontend_bp.route("/super-admin/users/<user_id>/purge", methods=["POST"])
+@super_admin_required
+def super_admin_user_purge(user_id):
+    """Permanently removes a soft-deleted user AND every row that references
+    them by foreign key (user_roles, user_settings, notifications), so the
+    hard DELETE doesn't fail on a constraint violation. Their email and
+    username become reusable again immediately after this.
+
+    activity_logs rows are kept for the audit trail, but their user_id is
+    set to NULL (the column is nullable=True) instead of being deleted, so
+    the history of what was done isn't lost just because the actor's
+    account is gone."""
+    user = User.query.filter_by(id=user_id, is_deleted=True).first_or_404()
+
+    full_name, email = user.full_name, user.email
+
+    UserRole.query.filter_by(user_id=user.id).delete()
+    UserPermissionOverride.query.filter_by(user_id=user.id).delete()
+    UserSettings.query.filter_by(user_id=user.id).delete()
+    Notification.query.filter_by(user_id=user.id).delete()
+    ActivityLog.query.filter_by(user_id=user.id).update({"user_id": None})
+
+    db.session.delete(user)
+    db.session.commit()
+
+    _log_activity("Permanently deleted user", f"{full_name} ({email}) - email/username freed for reuse")
+    flash(f"{full_name} ({email}) permanently deleted. That email and username can be reused now.", "success")
+    return redirect(url_for("frontend.super_admin_users_deleted"))
 
 
 @frontend_bp.route("/super-admin/users/<user_id>/impersonate", methods=["POST"])

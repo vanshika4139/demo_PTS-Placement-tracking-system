@@ -84,6 +84,7 @@
       <option value="pending_payment" {{ 'selected' if active_filter == 'pending_payment' }}>Pending Payment</option>
     </select>
     <button type="submit" class="ghost-btn">Filter</button>
+    <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organizations_export', filter=active_filter) }}">Export to Excel</a>
   </form>
 
   <form method="post" action="{{ url_for('frontend.super_admin_organizations_bulk_topup') }}" id="bulkTopupForm"

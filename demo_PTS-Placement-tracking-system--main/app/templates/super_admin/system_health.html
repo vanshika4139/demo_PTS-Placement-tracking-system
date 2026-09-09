@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}System Health{% endblock %}
+
+{% block content %}
+<style>
+  html { scroll-behavior: smooth; }
+  .sh-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .sh-status-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    border-left: 4px solid var(--accent, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .sh-status-card h3 {
+    margin: 0 0 8px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sh-status-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sh-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .sh-dot-green { background: #16a34a; }
+  .sh-dot-red { background: #dc2626; }
+  .sh-error-detail {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: #b91c1c;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-word;
+  }
+  .sh-counts-table th, .sh-counts-table td {
+    padding: 10px 14px;
+  }
+  .sh-count-value {
+    font-weight: 700;
+    color: #111827;
+  }
+  .sh-count-unavailable {
+    color: #dc2626;
+    font-style: italic;
+    font-weight: 500;
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>System Health</h2>
+    <p>Live connectivity and basic operational stats.</p>
+  </div>
+</div>
+
+<div class="sh-status-grid">
+  <div class="sh-status-card" style="--accent:{{ '#16a34a' if health.mysql.available else '#dc2626' }};">
+    <h3>MySQL Database</h3>
+    <div class="sh-status-value">
+      <span class="sh-dot {{ 'sh-dot-green' if health.mysql.available else 'sh-dot-red' }}"></span>
+      {{ 'Connected' if health.mysql.available else 'Unreachable' }}
+    </div>
+    {% if not health.mysql.available and health.mysql.error %}
+    <div class="sh-error-detail">{{ health.mysql.error }}</div>
+    {% endif %}
+  </div>
+
+  <div class="sh-status-card" style="--accent:{{ '#16a34a' if health.redis.available else '#dc2626' }};">
+    <h3>Redis</h3>
+    <div class="sh-status-value">
+      <span class="sh-dot {{ 'sh-dot-green' if health.redis.available else 'sh-dot-red' }}"></span>
+      {{ 'Connected' if health.redis.available else 'Unreachable' }}
+    </div>
+    {% if not health.redis.available and health.redis.error %}
+    <div class="sh-error-detail">{{ health.redis.error }}</div>
+    {% endif %}
+    {% if not health.redis.available %}
+    <div style="margin-top:8px; font-size:0.78rem; color:#6b7280;">
+      Report caching, rate limiting, and permission caching are all fail-open -
+      the app keeps working, just slower and without throttling.
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="sh-status-card" style="--accent:#8b5cf6;">
+    <h3>App Uptime (since last restart)</h3>
+    <div class="sh-status-value" style="color:#111827;">{{ health.uptime_display }}</div>
+  </div>
+</div>
+
+<div class="panel-card">
+  <h3>Table Row Counts</h3>
+  <p style="color:#6b7280; font-size:0.85rem; margin-top:-6px; margin-bottom:14px;">
+    A quick sanity check - useful after a migration, restore, or bulk operation to confirm nothing looks unexpectedly empty.
+  </p>
+  <table class="data-table sh-counts-table">
+    <thead>
+      <tr><th>Table</th><th>Row Count</th></tr>
+    </thead>
+    <tbody>
+      {% for label, count in health.table_counts.items() %}
+      <tr>
+        <td>{{ label }}</td>
+        <td>
+          {% if count is none %}
+          <span class="sh-count-unavailable">Unavailable</span>
+          {% else %}
+          <span class="sh-count-value">{{ count }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

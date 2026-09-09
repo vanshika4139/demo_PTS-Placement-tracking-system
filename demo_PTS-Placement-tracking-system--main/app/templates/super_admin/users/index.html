@@ -38,7 +38,10 @@
     <h2>Users</h2>
     <p>Manage super admins and organization users.</p>
   </div>
-  <a href="{{ url_for('frontend.super_admin_create_user') }}" class="primary-btn">Add User</a>
+  <div class="inline-actions">
+    <a href="{{ url_for('frontend.super_admin_users_deleted') }}" class="ghost-btn">Deleted Users</a>
+    <a href="{{ url_for('frontend.super_admin_create_user') }}" class="primary-btn">Add User</a>
+  </div>
 </div>
 <div class="panel-card">
   <table class="data-table sa-users-table">

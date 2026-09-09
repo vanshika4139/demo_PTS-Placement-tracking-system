@@ -30,6 +30,37 @@
     background: none; border: 1px solid #fca5a5; color: #b91c1c;
     padding: 6px 12px; border-radius: 6px; font-size: 0.82rem; cursor: pointer;
   }
+
+  /* --- Permission Change Audit Timeline --- */
+  .rp-timeline-item {
+    display: flex;
+    gap: 14px;
+    padding: 12px 4px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .rp-timeline-item:last-child { border-bottom: none; }
+  .rp-timeline-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2563eb;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .rp-timeline-action {
+    font-weight: 600;
+    color: #111827;
+    font-size: 0.9rem;
+  }
+  .rp-timeline-meta {
+    color: #6b7280;
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+  .rp-timeline-actor {
+    font-weight: 600;
+    color: #2563eb;
+  }
 </style>
 
 <div class="page-header">
@@ -83,6 +114,32 @@
   </form>
   {% else %}
   <p>No roles found. Create one above, or run the seed script for defaults.</p>
+  {% endif %}
+</div>
+
+<div class="panel-card" style="margin-top:20px;">
+  <h3 style="margin-top:0;">Recent Permission Changes</h3>
+  <p style="color:#6b7280; font-size:0.85rem; margin-top:-6px; margin-bottom:16px;">
+    Last 20 changes across all roles and user overrides. For older history, use the
+    <a href="{{ url_for('frontend.super_admin_activity_log', action='role') }}">Activity Log</a>.
+  </p>
+
+  {% if permission_audit_entries %}
+  {% for entry in permission_audit_entries %}
+  <div class="rp-timeline-item">
+    <div class="rp-timeline-dot"></div>
+    <div>
+      <div class="rp-timeline-action">{{ entry.action }}</div>
+      <div class="rp-timeline-meta">
+        <span class="rp-timeline-actor">{{ entry.actor_name }}</span>
+        {% if entry.details %} — {{ entry.details }}{% endif %}
+        &middot; {{ entry.created_at.strftime('%d-%m-%Y %H:%M') if entry.created_at else '—' }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p style="color:#6b7280;">No permission changes recorded yet.</p>
   {% endif %}
 </div>
 {% endblock %}

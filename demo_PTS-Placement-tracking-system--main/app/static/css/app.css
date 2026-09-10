@@ -145,6 +145,29 @@ h1, h2, h3, h4, .brand-block, .sidebar-logo, .stat-value {
 .primary-btn:hover { background: #1d4ed8; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); }
 .primary-btn:active { transform: translateY(1px); }
 
+/* .ghost-btn / .primary-btn are also used on <a> tags (e.g. the Subscription
+   and Create Organization links). A plain class selector like ".primary-btn"
+   has specificity (0,1,0), but the browser's built-in a:link/a:visited rules
+   have specificity (0,1,1) - one level higher - so once a link had been
+   visited, the browser's default purple/navy visited-link color (and its
+   underline) won out over our white/navy text and no-underline intent.
+   These rules match that specificity so our button styling always wins,
+   regardless of link state. */
+a.ghost-btn:link,
+a.ghost-btn:visited,
+a.ghost-btn:hover,
+a.ghost-btn:active {
+  color: var(--avocado-dark);
+  text-decoration: none;
+}
+a.primary-btn:link,
+a.primary-btn:visited,
+a.primary-btn:hover,
+a.primary-btn:active {
+  color: white;
+  text-decoration: none;
+}
+
 /* ---------- Page layout ---------- */
 .page-content { padding: 28px; }
 .page-header { margin-bottom: 24px; }

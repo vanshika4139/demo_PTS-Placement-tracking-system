@@ -102,6 +102,38 @@
   .ff-toggle input:checked + .ff-toggle-slider:before {
     transform: translateX(20px);
   }
+
+  .sa-danger-btn {
+    background: none;
+    border: 1px solid #fca5a5;
+    color: #b91c1c;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font: inherit;
+  }
+  .sa-warn-btn {
+    background: none;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font: inherit;
+  }
+  .sa-ok-btn {
+    background: none;
+    border: 1px solid #86efac;
+    color: #15803d;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font: inherit;
+  }
+
 </style>
 
 {% set is_active = (organization.status == 1) or (organization.status|string|lower == 'active') %}
@@ -119,6 +151,20 @@
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_edit_organization', organization_id=organization.id) }}">Edit</a>
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization.id) }}">View Activity</a>
     <a class="primary-btn" href="{{ url_for('frontend.super_admin_subscription', organization_id=organization.id) }}">Subscription</a>
+
+    {% if is_active %}
+    <form method="post" action="{{ url_for('frontend.super_admin_suspend_organization', organization_id=organization.id) }}" onsubmit="return confirm('Suspend ' + '{{ organization.organization_name }}' + '? Their users will lose access until reactivated.');">
+      <button type="submit" class="sa-warn-btn">Suspend</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('frontend.super_admin_activate_organization', organization_id=organization.id) }}">
+      <button type="submit" class="sa-ok-btn">Activate</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('frontend.super_admin_delete_organization', organization_id=organization.id) }}" onsubmit="return confirm('Delete ' + '{{ organization.organization_name }}' + '? This hides it from the organizations list but keeps its data. This cannot be undone from the UI.');">
+      <button type="submit" class="sa-danger-btn">Delete</button>
+    </form>
   </div>
 </div>
 

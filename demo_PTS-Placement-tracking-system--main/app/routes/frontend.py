@@ -20,6 +20,7 @@ from app.models import (
     Notification,
     Organization,
     PasswordResetOTP,
+    Plan,
     Role,
     Scheme,
     User,
@@ -123,13 +124,93 @@ def candidate_login_required(view_func):
     return wrapped
 
 
-def _create_notification(title, message, notif_type="info", user_id=None, organization_id=None):
+def _scope_candidates_to_creator(query, user):
+    """Restrict a Candidate query to rows the current user is allowed to see.
+
+    - Super admins and anyone with candidate.view_all on their role see every
+      candidate (within whatever organization filter the caller already applied).
+    - Everyone else only sees candidates where created_by == their own user id.
+
+    Callers are still responsible for the organization_id filter (super admin
+    routes usually don't scope by org at all) - this only adds the
+    created_by restriction on top.
+    """
+    if not user or user.get("is_super_admin"):
+        return query
+    if has_permission(user, "candidate.view_all"):
+        return query
+    return query.filter(Candidate.created_by == user.get("id"))
+
+
+def _can_access_candidate(candidate, user):
+    """Ownership check for single-candidate routes (detail/edit/delete/etc.)
+    reached directly by id, where a list-level filter can't help - a user
+    could otherwise type/guess another candidate's URL and bypass the
+    created_by restriction entirely."""
+    if not user or user.get("is_super_admin"):
+        return True
+    if has_permission(user, "candidate.view_all"):
+        return True
+    return candidate.created_by == user.get("id")
+
+
+def _scope_batches_to_creator(query, user):
+    """Same creator-scoping pattern as _scope_candidates_to_creator, applied
+    to Batch. Anyone with batch.view_all (or super admin) sees every batch
+    in scope; everyone else only sees batches they personally created.
+
+    Note: this intentionally is NOT applied to the batch dropdowns used when
+    creating/editing a candidate or filtering tracking - those need to show
+    every batch in the organization so a candidate can be assigned to a
+    batch someone else set up. It only guards the Batches management
+    list/edit/delete routes."""
+    if not user or user.get("is_super_admin"):
+        return query
+    if has_permission(user, "batch.view_all"):
+        return query
+    return query.filter(Batch.created_by == user.get("id"))
+
+
+def _can_access_batch(batch, user):
+    """Ownership check for single-batch routes (edit/delete), so a user
+    can't bypass the list-level restriction by guessing a batch's URL."""
+    if not user or user.get("is_super_admin"):
+        return True
+    if has_permission(user, "batch.view_all"):
+        return True
+    return batch.created_by == user.get("id")
+
+
+def _scope_schemes_to_creator(query, user):
+    """Same creator-scoping pattern as _scope_candidates_to_creator/
+    _scope_batches_to_creator, applied to Scheme. Anyone with
+    scheme.view_all (or super admin) sees every scheme in scope; everyone
+    else only sees schemes they personally created."""
+    if not user or user.get("is_super_admin"):
+        return query
+    if has_permission(user, "scheme.view_all"):
+        return query
+    return query.filter(Scheme.created_by == user.get("id"))
+
+
+def _can_access_scheme(scheme, user):
+    """Ownership check for single-scheme routes (edit/delete), so a user
+    can't bypass the list-level restriction by guessing a scheme's URL."""
+    if not user or user.get("is_super_admin"):
+        return True
+    if has_permission(user, "scheme.view_all"):
+        return True
+    return scheme.created_by == user.get("id")
+
+
+def _create_notification(title, message, notif_type="info", user_id=None, organization_id=None, candidate_id=None):
     notif = Notification(
         title=title,
         message=message,
         type=notif_type,
         user_id=user_id,
         organization_id=str(organization_id) if organization_id else None,
+        candidate_id=candidate_id,
     )
     db.session.add(notif)
     db.session.commit()
@@ -184,6 +265,42 @@ def _log_activity(action, details=None):
     db.session.commit()
 
 
+def _check_and_suspend_expired_subscriptions():
+    """FR-11 (Auto-Suspend on Expiry). Har baar super admin dashboard load
+    hota hai, yeh un organizations ko dhoondta hai jinki subscription
+    expire ho chuki hai but abhi bhi status=1 (Active) hai, aur unhe
+    suspend kar deta hai. Data touch nahi hota - sirf status flip hota hai,
+    jaisa manual Suspend button karta hai.
+
+    Note: yeh request-triggered hai, cron job nahi hai - agar kai din tak
+    koi super admin login hi nahi karta, tab tak check nahi chalega. Real
+    cron/scheduler abhi is codebase mein nahi hai (Celery ya APScheduler
+    jaisa kuch nahi dikha), to yeh ek stopgap hai jab tak proper scheduler
+    add na ho.
+    """
+    from datetime import date
+
+    expired = Organization.query.filter(
+        Organization.status == 1,
+        Organization.is_deleted.is_(False),
+        Organization.subscription_expiry_date.isnot(None),
+        Organization.subscription_expiry_date < date.today(),
+    ).all()
+
+    for org in expired:
+        org.status = 0
+        _log_activity(
+            "organization.auto_suspended",
+            f"{org.organization_name} - subscription expired on {org.subscription_expiry_date}",
+        )
+
+    if expired:
+        db.session.commit()
+        invalidate_report_cache("dashboard:super_admin")
+
+    return len(expired)
+
+
 def _sync_overdue_notifications(user):
     """Create notifications for overdue checkpoints that don't already have one."""
     from datetime import datetime
@@ -210,7 +327,16 @@ def _sync_overdue_notifications(user):
         if not candidate:
             continue
         title = f"Overdue: {cp.label} for {candidate.full_name}"
-        existing = Notification.query.filter_by(title=title, is_read=False).first()
+        # NOTE: intentionally NOT filtering by is_read=False here. If we only
+        # checked for an *unread* match, marking a notification as read (or
+        # clearing/deleting it) would make this loop think "no notification
+        # exists yet" on the very next page load and immediately recreate a
+        # fresh unread duplicate - which made Mark Read/Delete/Clear Read look
+        # broken, since the item would instantly reappear. Checking for any
+        # match regardless of read state means once a notification has been
+        # created for this checkpoint, it stays resolved until it's actually
+        # removed (see skip_sync handling in the notifications route).
+        existing = Notification.query.filter_by(title=title).first()
         if existing:
             continue
         _create_notification(
@@ -218,6 +344,7 @@ def _sync_overdue_notifications(user):
             message=f"{candidate.full_name}'s {cp.label} follow-up was due on {cp.due_date.strftime('%d-%m-%Y')}.",
             notif_type="warning",
             organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
         )
 
 
@@ -394,6 +521,7 @@ def reset_password():
 @frontend_bp.route("/super-admin/dashboard")
 @super_admin_required
 def super_admin_dashboard():
+    _check_and_suspend_expired_subscriptions()
     data = get_super_admin_dashboard_data()
     return render_template("super_admin/dashboard.html", **data)
 
@@ -403,10 +531,10 @@ def get_super_admin_dashboard_data():
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
 
-    total = Organization.query.count()
-    active = Organization.query.filter_by(status=1).count()
-    pending_kyc = Organization.query.filter_by(kyc_status="PENDING").count()
-    pending_payment = Organization.query.filter_by(payment_status="PENDING").count()
+    total = Organization.query.filter_by(is_deleted=False).count()
+    active = Organization.query.filter_by(status=1, is_deleted=False).count()
+    pending_kyc = Organization.query.filter_by(kyc_status="PENDING", is_deleted=False).count()
+    pending_payment = Organization.query.filter_by(payment_status="PENDING", is_deleted=False).count()
 
     total_batches = Batch.query.count()
     total_schemes = Scheme.query.count()
@@ -437,7 +565,7 @@ def get_super_admin_dashboard_data():
 
     org_growth_labels = []
     org_growth_data = []
-    all_orgs = Organization.query.all()
+    all_orgs = Organization.query.filter_by(is_deleted=False).all()
     for month_key in months:
         year, month = map(int, month_key.split("-"))
         count = sum(1 for o in all_orgs if o.created_at and o.created_at.year == year and o.created_at.month == month)
@@ -469,7 +597,7 @@ def get_super_admin_dashboard_data():
     payment_status_labels = list(payment_status_counts.keys())
     payment_status_data = list(payment_status_counts.values())
 
-    recent_organizations_raw = Organization.query.order_by(Organization.created_at.desc()).limit(5).all()
+    recent_organizations_raw = Organization.query.filter_by(is_deleted=False).order_by(Organization.created_at.desc()).limit(5).all()
     recent_organizations = [
         {
             "id": o.id,
@@ -703,18 +831,26 @@ def no_access():
 def organization_dashboard():
     user = session.get("user")
     org_id = user.get("organization_id")
-    data = get_organization_dashboard_data(org_id)
+    # created_by_filter is part of the cache key (see report_cache._build_cache_key),
+    # so users with candidate.view_all keep one shared org-wide cached entry,
+    # while everyone else gets their own per-user cached entry.
+    created_by_filter = None
+    if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
+        created_by_filter = user.get("id")
+    data = get_organization_dashboard_data(org_id, created_by_filter)
     return render_template("organization/dashboard.html", **data)
 
 
 @cached_report(key_prefix="dashboard:org")
-def get_organization_dashboard_data(organization_id):
+def get_organization_dashboard_data(organization_id, created_by_filter=None):
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
 
     base_query = Candidate.query.filter_by(is_deleted=False)
     if organization_id:
         base_query = base_query.filter_by(organization_id=organization_id)
+    if created_by_filter:
+        base_query = base_query.filter(Candidate.created_by == created_by_filter)
 
     all_candidates = base_query.all()
     total_candidates = len(all_candidates)
@@ -786,7 +922,7 @@ def get_organization_dashboard_data(organization_id):
 def super_admin_organizations():
     filter_type = request.args.get("filter", "").strip()
 
-    query = Organization.query
+    query = Organization.query.filter_by(is_deleted=False)
     if filter_type == "active":
         query = query.filter_by(status=1)
     elif filter_type == "pending_kyc":
@@ -813,7 +949,7 @@ def super_admin_organizations_export():
 
     filter_type = request.args.get("filter", "").strip()
 
-    query = Organization.query
+    query = Organization.query.filter_by(is_deleted=False)
     if filter_type == "active":
         query = query.filter_by(status=1)
     elif filter_type == "pending_kyc":
@@ -1089,13 +1225,195 @@ def super_admin_edit_organization(organization_id):
     return render_template("super_admin/organizations/form.html", organization=organization)
 
 
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/suspend", methods=["POST"])
+@super_admin_required
+def super_admin_suspend_organization(organization_id):
+    """Temporarily disables an organization's access (FR-04). Reversible via
+    the activate route below. Does NOT delete any data - users of this
+    organization simply can't log in while status=0."""
+    organization = Organization.query.get_or_404(organization_id)
+
+    if organization.status == 0:
+        flash(f"{organization.organization_name} is already suspended.", "info")
+        return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
+
+    organization.status = 0
+    db.session.commit()
+
+    _log_activity("organization.suspend", f"Suspended {organization.organization_name}")
+    invalidate_report_cache("dashboard:super_admin")
+    flash(f"{organization.organization_name} has been suspended.", "success")
+    return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/activate", methods=["POST"])
+@super_admin_required
+def super_admin_activate_organization(organization_id):
+    """Re-enables a suspended organization's access (FR-04)."""
+    organization = Organization.query.get_or_404(organization_id)
+
+    if organization.status == 1:
+        flash(f"{organization.organization_name} is already active.", "info")
+        return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
+
+    organization.status = 1
+    db.session.commit()
+
+    _log_activity("organization.activate", f"Activated {organization.organization_name}")
+    invalidate_report_cache("dashboard:super_admin")
+    flash(f"{organization.organization_name} has been activated.", "success")
+    return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/delete", methods=["POST"])
+@super_admin_required
+def super_admin_delete_organization(organization_id):
+    """Soft-deletes an organization record (FR-04). Distinct from suspend:
+    this is intended as a permanent removal from active management, but
+    keeps the row (and all its candidates/users/data) in the database for
+    audit/history purposes - same pattern as candidate/user soft-delete
+    elsewhere in this app. Deleted organizations are hidden from the
+    default organizations list."""
+    organization = Organization.query.get_or_404(organization_id)
+
+    organization.is_deleted = True
+    organization.status = 0  # also suspend, so any lingering sessions lose access immediately
+    db.session.commit()
+
+    _log_activity("organization.delete", f"Deleted (soft) {organization.organization_name}")
+    invalidate_report_cache("dashboard:super_admin")
+    flash(f"{organization.organization_name} has been deleted.", "success")
+    return redirect(url_for("frontend.super_admin_organizations"))
+
+
+@frontend_bp.route("/super-admin/plans")
+@super_admin_required
+def super_admin_plans():
+    plans = Plan.query.order_by(Plan.display_order.asc(), Plan.name.asc()).all()
+    org_counts = {}
+    for org in Organization.query.filter_by(is_deleted=False).all():
+        if org.subscription_plan_id:
+            org_counts[org.subscription_plan_id] = org_counts.get(org.subscription_plan_id, 0) + 1
+    return render_template("super_admin/plans/index.html", plans=plans, org_counts=org_counts)
+
+
+@frontend_bp.route("/super-admin/plans/create", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_plan_create():
+    if request.method == "POST":
+        actor = session.get("user") or {}
+        name = request.form.get("name", "").strip()
+        code = request.form.get("code", "").strip().lower()
+
+        if not name or not code:
+            flash("Plan name and code are required.", "error")
+            return render_template("super_admin/plans/form.html", plan=None)
+
+        if Plan.query.filter_by(code=code).first():
+            flash(f"A plan with code '{code}' already exists.", "error")
+            return render_template("super_admin/plans/form.html", plan=None)
+
+        plan = Plan(
+            name=name,
+            code=code,
+            price=_parse_int(request.form.get("price")) or 0,
+            default_billing_cycle=request.form.get("default_billing_cycle", "monthly"),
+            candidate_limit=_parse_int(request.form.get("candidate_limit")) or 0,
+            whatsapp_credits=_parse_int(request.form.get("whatsapp_credits")) or 0,
+            sms_credits=_parse_int(request.form.get("sms_credits")) or 0,
+            email_credits=_parse_int(request.form.get("email_credits")) or 0,
+            storage_limit_mb=_parse_int(request.form.get("storage_limit_mb")),
+            api_access=bool(request.form.get("api_access")),
+            custom_branding=bool(request.form.get("custom_branding")),
+            report_access_level=request.form.get("report_access_level", "basic"),
+            display_order=_parse_int(request.form.get("display_order")) or 0,
+            created_by=actor.get("id"),
+        )
+        db.session.add(plan)
+        db.session.commit()
+        _log_activity("plan.created", f"Created plan '{plan.name}' ({plan.code})")
+        flash("Plan created successfully.", "success")
+        return redirect(url_for("frontend.super_admin_plans"))
+
+    return render_template("super_admin/plans/form.html", plan=None)
+
+
+@frontend_bp.route("/super-admin/plans/<plan_id>/edit", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_plan_edit(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+
+    if request.method == "POST":
+        actor = session.get("user") or {}
+        plan.name = request.form.get("name", "").strip() or plan.name
+        plan.price = _parse_int(request.form.get("price")) or 0
+        plan.default_billing_cycle = request.form.get("default_billing_cycle", plan.default_billing_cycle)
+        plan.candidate_limit = _parse_int(request.form.get("candidate_limit")) or 0
+        plan.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0
+        plan.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
+        plan.email_credits = _parse_int(request.form.get("email_credits")) or 0
+        plan.storage_limit_mb = _parse_int(request.form.get("storage_limit_mb"))
+        plan.api_access = bool(request.form.get("api_access"))
+        plan.custom_branding = bool(request.form.get("custom_branding"))
+        plan.report_access_level = request.form.get("report_access_level", plan.report_access_level)
+        plan.display_order = _parse_int(request.form.get("display_order")) or 0
+        plan.modified_by = actor.get("id")
+        # NOTE: code is intentionally not editable after creation - it may be
+        # referenced elsewhere (e.g. future billing-gateway plan mapping).
+        db.session.commit()
+        _log_activity("plan.updated", f"Updated plan '{plan.name}' ({plan.code})")
+        flash("Plan updated successfully.", "success")
+        return redirect(url_for("frontend.super_admin_plans"))
+
+    return render_template("super_admin/plans/form.html", plan=plan)
+
+
+@frontend_bp.route("/super-admin/plans/<plan_id>/deactivate", methods=["POST"])
+@super_admin_required
+def super_admin_plan_deactivate(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    plan.status = 0
+    db.session.commit()
+    _log_activity("plan.deactivated", f"Deactivated plan '{plan.name}'")
+    flash(f"Plan '{plan.name}' deactivated. Organizations already on it are unaffected.", "success")
+    return redirect(url_for("frontend.super_admin_plans"))
+
+
+@frontend_bp.route("/super-admin/plans/<plan_id>/activate", methods=["POST"])
+@super_admin_required
+def super_admin_plan_activate(plan_id):
+    plan = Plan.query.get_or_404(plan_id)
+    plan.status = 1
+    db.session.commit()
+    _log_activity("plan.activated", f"Reactivated plan '{plan.name}'")
+    flash(f"Plan '{plan.name}' reactivated.", "success")
+    return redirect(url_for("frontend.super_admin_plans"))
+
+
+@frontend_bp.route("/super-admin/plans/<plan_id>/details.json")
+@super_admin_required
+def super_admin_plan_details_json(plan_id):
+    from flask import jsonify
+
+    plan = Plan.query.get_or_404(plan_id)
+    return jsonify({
+        "candidate_limit": plan.candidate_limit,
+        "whatsapp_credits": plan.whatsapp_credits,
+        "sms_credits": plan.sms_credits,
+        "email_credits": plan.email_credits,
+        "default_billing_cycle": plan.default_billing_cycle,
+    })
+
+
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>/subscription", methods=["GET", "POST"])
 @super_admin_required
 def super_admin_subscription(organization_id):
     organization = Organization.query.get_or_404(organization_id)
+    plans = Plan.query.filter_by(status=1).order_by(Plan.display_order.asc()).all()
 
     if request.method == "POST":
-        organization.subscription_plan_id = _parse_int(request.form.get("subscription_plan_id"))
+        organization.subscription_plan_id = request.form.get("subscription_plan_id") or None
+        organization.billing_cycle = request.form.get("billing_cycle", "monthly")
         organization.subscription_expiry_date = _parse_date(request.form.get("subscription_expiry_date"))
         organization.candidate_limit = _parse_int(request.form.get("candidate_limit")) or 0
         organization.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0
@@ -1108,13 +1426,41 @@ def super_admin_subscription(organization_id):
         flash("Subscription updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
 
-    return render_template("super_admin/subscription.html", organization=organization)
+    return render_template("super_admin/subscription.html", organization=organization, plans=plans)
+
+
+def _ensure_permission_exists(code, description):
+    """Get-or-create a Permission row by code.
+
+    This codebase has no admin UI (or seed script we have access to) for
+    creating brand-new permission codes - Permission rows are just assumed to
+    already exist in the database. scheme.view_all is new (added alongside
+    Scheme creator-scoping), so it needs to exist before it can show up on
+    the Roles & Permissions page for a role to be granted it. Calling this
+    once at the top of that page is a lazy, idempotent equivalent of a seed
+    script: harmless if the row already exists, and self-healing if it
+    doesn't (e.g. after this code ships to an existing database).
+    """
+    from app.models import Permission
+
+    existing = Permission.query.filter_by(code=code).first()
+    if existing:
+        return existing
+    perm = Permission(code=code, description=description)
+    db.session.add(perm)
+    db.session.commit()
+    return perm
 
 
 @frontend_bp.route("/super-admin/roles-permissions", methods=["GET", "POST"])
 @super_admin_required
 def super_admin_roles_permissions():
     from app.models import Permission, Role, RolePermission
+
+    _ensure_permission_exists(
+        "scheme.view_all",
+        "See every scheme in the organization, not just ones this user created",
+    )
 
     roles = Role.query.filter_by(is_deleted=False).order_by(Role.name).all()
 
@@ -1582,6 +1928,31 @@ def super_admin_activity_log():
     )
 
 
+@frontend_bp.route("/super-admin/activity-log/purge", methods=["POST"])
+@super_admin_required
+def super_admin_activity_log_purge():
+    from datetime import datetime, timedelta
+    from app.models import ActivityLog
+
+    days = _parse_int(request.form.get("older_than_days")) or 90
+    if days < 1:
+        days = 90
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    deleted_count = ActivityLog.query.filter(ActivityLog.created_at < cutoff).delete(synchronize_session=False)
+    db.session.commit()
+
+    _log_activity("Purged activity log", f"Removed {deleted_count} entries older than {days} day(s)")
+
+    flash(f"Deleted {deleted_count} activity log entries older than {days} day(s).", "success")
+    return redirect(url_for(
+        "frontend.super_admin_activity_log",
+        action=request.form.get("action_filter"),
+        user_id=request.form.get("user_filter"),
+        organization_id=request.form.get("organization_filter"),
+    ))
+
+
 @frontend_bp.route("/super-admin/users")
 @super_admin_required
 def super_admin_users():
@@ -1901,8 +2272,22 @@ def organization_batches():
     query = Batch.query
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_batches_to_creator(query, user)
     batches = query.order_by(Batch.created_at.desc()).all()
-    return render_template("organization/batches/index.html", batches=batches)
+
+    creator_ids = {b.created_by for b in batches if b.created_by}
+    creator_name_by_id = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(creator_ids)).all()
+    } if creator_ids else {}
+
+    show_creator_column = user.get("is_super_admin") or has_permission(user, "batch.view_all")
+
+    return render_template(
+        "organization/batches/index.html",
+        batches=batches,
+        creator_name_by_id=creator_name_by_id,
+        show_creator_column=show_creator_column,
+    )
 
 
 @frontend_bp.route("/organization/batches/create", methods=["GET", "POST"])
@@ -1924,6 +2309,7 @@ def organization_batch_create():
             training_center=request.form.get("training_center"),
             start_date=_parse_date(request.form.get("start_date")),
             end_date=_parse_date(request.form.get("end_date")),
+            created_by=user.get("id"),
         )
         db.session.add(batch)
         db.session.commit()
@@ -1941,6 +2327,9 @@ def organization_batch_create():
 def organization_batch_edit(batch_id):
     user = session.get("user")
     batch = Batch.query.get_or_404(batch_id)
+    if not _can_access_batch(batch, user):
+        flash("You do not have permission to edit this batch.", "error")
+        return redirect(url_for("frontend.organization_batches"))
     organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
 
     if request.method == "POST":
@@ -1965,7 +2354,11 @@ def organization_batch_edit(batch_id):
 @login_required
 @require_permission("batch.delete")
 def organization_batch_delete(batch_id):
+    user = session.get("user")
     batch = Batch.query.get_or_404(batch_id)
+    if not _can_access_batch(batch, user):
+        flash("You do not have permission to delete this batch.", "error")
+        return redirect(url_for("frontend.organization_batches"))
     name = batch.name
     db.session.delete(batch)
     db.session.commit()
@@ -1982,8 +2375,22 @@ def organization_schemes():
     query = Scheme.query
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_schemes_to_creator(query, user)
     schemes = query.order_by(Scheme.created_at.desc()).all()
-    return render_template("organization/schemes/index.html", schemes=schemes)
+
+    creator_ids = {s.created_by for s in schemes if s.created_by}
+    creator_name_by_id = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(creator_ids)).all()
+    } if creator_ids else {}
+
+    show_creator_column = user.get("is_super_admin") or has_permission(user, "scheme.view_all")
+
+    return render_template(
+        "organization/schemes/index.html",
+        schemes=schemes,
+        creator_name_by_id=creator_name_by_id,
+        show_creator_column=show_creator_column,
+    )
 
 
 @frontend_bp.route("/organization/schemes/create", methods=["GET", "POST"])
@@ -2003,6 +2410,7 @@ def organization_scheme_create():
             organization_id=org_id,
             name=request.form.get("name"),
             description=request.form.get("description"),
+            created_by=user.get("id"),
         )
         db.session.add(scheme)
         db.session.commit()
@@ -2020,6 +2428,9 @@ def organization_scheme_create():
 def organization_scheme_edit(scheme_id):
     user = session.get("user")
     scheme = Scheme.query.get_or_404(scheme_id)
+    if not _can_access_scheme(scheme, user):
+        flash("You do not have permission to edit this scheme.", "error")
+        return redirect(url_for("frontend.organization_schemes"))
     organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
 
     if request.method == "POST":
@@ -2043,6 +2454,10 @@ def organization_scheme_edit(scheme_id):
 @require_permission("scheme.delete")
 def organization_scheme_delete(scheme_id):
     scheme = Scheme.query.get_or_404(scheme_id)
+    user = session.get("user")
+    if not _can_access_scheme(scheme, user):
+        flash("You do not have permission to delete this scheme.", "error")
+        return redirect(url_for("frontend.organization_schemes"))
     name = scheme.name
     db.session.delete(scheme)
     db.session.commit()
@@ -2068,6 +2483,7 @@ def organization_candidates():
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
 
     if q:
         query = query.filter(
@@ -2101,6 +2517,14 @@ def organization_candidates():
         query = query.filter_by(account_status=account_status_filter)
 
     candidates = query.order_by(Candidate.created_at.desc()).all()
+
+    creator_ids = {c.created_by for c in candidates if c.created_by}
+    creator_name_by_id = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(creator_ids)).all()
+    } if creator_ids else {}
+
+    show_creator_column = user.get("is_super_admin") or has_permission(user, "candidate.view_all")
+
     return render_template(
         "organization/candidates/index.html",
         candidates=candidates,
@@ -2108,6 +2532,8 @@ def organization_candidates():
         training_status=training_status,
         verification_status=verification_status,
         account_status=account_status_filter,
+        creator_name_by_id=creator_name_by_id,
+        show_creator_column=show_creator_column,
     )
 
 
@@ -2261,6 +2687,7 @@ def organization_candidate_create():
             offer_letter_url=offer_letter_url,
             placement_proof_uploaded=request.form.get("placement_proof_uploaded") == "on",
             password_hash=generate_password_hash(default_password),
+            created_by=user.get("id"),
         )
         db.session.add(candidate)
         db.session.commit()
@@ -2269,6 +2696,7 @@ def organization_candidate_create():
             message=f"{candidate.full_name} was added to the candidate pool.",
             notif_type="info",
             organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
         )
         _log_activity("Created candidate", f"{candidate.full_name} ({candidate.registration_number or 'no reg. no.'})")
         invalidate_report_cache("reports")
@@ -2284,7 +2712,11 @@ def organization_candidate_create():
 @login_required
 @require_permission("candidate.view")
 def organization_candidate_detail(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     return render_template("organization/candidates/detail.html", candidate=candidate)
 
 
@@ -2294,6 +2726,9 @@ def organization_candidate_detail(candidate_id):
 def organization_candidate_edit(candidate_id):
     user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to edit this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
 
     batch_query = Batch.query
@@ -2423,6 +2858,7 @@ def organization_candidate_edit(candidate_id):
                 message=f"{candidate.full_name} was placed at {candidate.employer_name} as {candidate.job_role or 'N/A'}.",
                 notif_type="success",
                 organization_id=candidate.organization_id,
+                candidate_id=candidate.id,
             )
             _send_placement_email(candidate)
 
@@ -2441,7 +2877,11 @@ def organization_candidate_edit(candidate_id):
 @login_required
 @require_permission("candidate.delete")
 def organization_candidate_delete(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to delete this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     candidate.is_deleted = True
     db.session.commit()
     _log_activity("Deleted candidate", f"{candidate.full_name} ({candidate.registration_number or 'no reg. no.'})")
@@ -2460,6 +2900,7 @@ def organization_candidates_deleted():
     query = Candidate.query.filter_by(is_deleted=True)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
     candidates = query.order_by(Candidate.updated_at.desc()).all()
     return render_template("organization/candidates/deleted.html", candidates=candidates)
 
@@ -2468,7 +2909,11 @@ def organization_candidates_deleted():
 @login_required
 @require_permission("candidate.update")
 def organization_candidate_restore(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to restore this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     candidate.is_deleted = False
     db.session.commit()
     _log_activity("Restored candidate", f"{candidate.full_name} ({candidate.registration_number or 'no reg. no.'})")
@@ -2498,6 +2943,7 @@ def organization_candidates_bulk_action():
     query = Candidate.query.filter(Candidate.id.in_(candidate_ids))
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
     candidates = query.all()
 
     if not candidates:
@@ -2553,6 +2999,7 @@ def organization_candidates_export():
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
 
     search_query = request.args.get("q", "").strip()
     training_status = request.args.get("training_status", "").strip()
@@ -2639,6 +3086,7 @@ def organization_candidates_export_pdf():
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
 
     search_query = request.args.get("q", "").strip()
     training_status = request.args.get("training_status", "").strip()
@@ -2742,7 +3190,11 @@ def organization_candidate_certificate_pdf(candidate_id):
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from flask import send_file
 
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     if not candidate.employer_name:
         flash("This candidate has not been placed yet - certificate not available.", "error")
         return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate_id))
@@ -2820,7 +3272,11 @@ def organization_candidate_certificate_pdf(candidate_id):
 @login_required
 @require_permission("candidate.update")
 def organization_candidate_toggle_status(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to update this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     candidate.account_status = "blocked" if candidate.account_status == "active" else "active"
     db.session.commit()
     _log_activity("Toggled candidate account status", f"{candidate.full_name} -> {candidate.account_status}")
@@ -2833,7 +3289,11 @@ def organization_candidate_toggle_status(candidate_id):
 @login_required
 @require_permission("candidate.update")
 def organization_candidate_reset_password(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to update this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     if not candidate.mobile:
         flash("Cannot reset password - candidate has no mobile number on file", "error")
         return redirect(url_for("frontend.organization_candidates"))
@@ -2855,6 +3315,7 @@ def organization_candidates_bulk_set_passwords():
     query = Candidate.query.filter_by(is_deleted=False, password_hash=None)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
 
     candidates = query.all()
     updated = 0
@@ -3042,7 +3503,18 @@ def candidate_dashboard():
         return redirect(url_for("frontend.candidate_dashboard"))
 
     existing_feedback = CandidateFeedback.query.filter_by(candidate_id=candidate.id).first()
-    return render_template("candidate/dashboard.html", candidate=candidate, existing_feedback=existing_feedback)
+
+    checkpoints = []
+    if candidate.employer_name:
+        _ensure_checkpoints(candidate)
+        checkpoints = FollowUpCheckpoint.query.filter_by(candidate_id=candidate.id).order_by(FollowUpCheckpoint.due_date.asc()).all()
+
+    return render_template(
+        "candidate/dashboard.html",
+        candidate=candidate,
+        existing_feedback=existing_feedback,
+        checkpoints=checkpoints,
+    )
 
 
 @frontend_bp.route("/candidate/change-password", methods=["POST"])
@@ -3102,9 +3574,112 @@ def candidate_feedback_submit():
         message=f"{candidate.full_name} rated their placement experience {rating}/5 stars.",
         notif_type="info",
         organization_id=candidate.organization_id,
+        candidate_id=candidate.id,
     )
 
     flash(translate("feedback_thanks"), "success")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+ALLOWED_PROOF_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
+
+
+def _allowed_proof_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_PROOF_EXTENSIONS
+
+
+@frontend_bp.route("/candidate/upload-proof", methods=["POST"])
+@candidate_login_required
+def candidate_upload_proof():
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+
+    if not candidate.employer_name:
+        flash(translate("proof_upload_requires_placement"), "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    proof_file = request.files.get("placement_proof")
+    if not proof_file or not proof_file.filename:
+        flash(translate("proof_upload_no_file"), "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    if not _allowed_proof_file(proof_file.filename):
+        flash(translate("proof_upload_invalid_type"), "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    filename = secure_filename(proof_file.filename)
+    unique_name = f"{uuid.uuid4().hex}_{filename}"
+    upload_dir = os.path.join("app", "static", "uploads", "placement_proofs")
+    os.makedirs(upload_dir, exist_ok=True)
+    proof_file.save(os.path.join(upload_dir, unique_name))
+
+    candidate.offer_letter_url = f"/static/uploads/placement_proofs/{unique_name}"
+    candidate.placement_proof_uploaded = True
+    db.session.commit()
+
+    invalidate_report_cache("reports")
+    invalidate_report_cache("dashboard:org")
+    invalidate_report_cache("dashboard:super_admin")
+
+    _create_notification(
+        title=f"Placement proof uploaded: {candidate.full_name}",
+        message=f"{candidate.full_name} uploaded their placement proof document for verification.",
+        notif_type="info",
+        organization_id=candidate.organization_id,
+        candidate_id=candidate.id,
+    )
+
+    flash(translate("proof_upload_success"), "success")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/candidate/report-placement", methods=["POST"])
+@candidate_login_required
+def candidate_report_placement():
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+
+    if candidate.employer_name:
+        flash("Your placement details are already recorded.", "info")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    employer_name = (request.form.get("employer_name") or "").strip()
+    job_role = (request.form.get("job_role") or "").strip()
+    joining_date = _parse_date(request.form.get("joining_date"))
+    location = (request.form.get("location") or "").strip()
+    salary = (request.form.get("salary") or "").strip()
+
+    if not employer_name or not job_role or not joining_date:
+        flash("Please fill Employer Name, Job Role, and Joining Date.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    candidate.employer_name = employer_name
+    candidate.job_role = job_role
+    candidate.joining_date = joining_date
+    candidate.location = location or None
+    candidate.salary = salary or None
+    candidate.working_status = "Working"
+    db.session.commit()
+
+    _ensure_checkpoints(candidate)
+
+    invalidate_report_cache("reports")
+    invalidate_report_cache("dashboard:org")
+    invalidate_report_cache("dashboard:super_admin")
+
+    _create_notification(
+        title=f"Candidate self-reported placement: {candidate.full_name}",
+        message=(
+            f"{candidate.full_name} reported they joined {employer_name} as {job_role}."
+            + ("" if salary else " Salary was not provided yet.")
+        ),
+        notif_type="success" if salary else "warning",
+        organization_id=candidate.organization_id,
+        candidate_id=candidate.id,
+    )
+    _send_placement_email(candidate)
+
+    flash("Thank you! Your placement details have been saved.", "success")
     return redirect(url_for("frontend.candidate_dashboard"))
 
 
@@ -3149,6 +3724,7 @@ def organization_placements():
     )
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))
+    query = _scope_candidates_to_creator(query, user)
     placements = query.order_by(Candidate.joining_date.desc()).all()
 
     placement_data = []
@@ -3164,7 +3740,11 @@ def organization_placements():
 @login_required
 @require_permission("placement.view")
 def organization_placement_detail(candidate_id):
+    user = session.get("user")
     candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
     _ensure_checkpoints(candidate)
     checkpoints = FollowUpCheckpoint.query.filter_by(candidate_id=candidate.id).order_by(FollowUpCheckpoint.due_date.asc()).all()
     return render_template("organization/placements/detail.html", candidate=candidate, checkpoints=checkpoints)
@@ -3230,6 +3810,7 @@ def organization_tracking():
     candidate_query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         candidate_query = candidate_query.filter_by(organization_id=user.get("organization_id"))
+    candidate_query = _scope_candidates_to_creator(candidate_query, user)
 
     if batch_filter:
         candidate_query = candidate_query.filter_by(batch_id=batch_filter)
@@ -3283,6 +3864,7 @@ def organization_tracking():
     training_center_query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         training_center_query = training_center_query.filter_by(organization_id=user.get("organization_id"))
+    training_center_query = _scope_candidates_to_creator(training_center_query, user)
     training_centers = sorted(set(
         c.training_center for c in training_center_query.all() if c.training_center
     ))
@@ -3338,7 +3920,10 @@ def organization_tracking_checkpoint_delete(checkpoint_id):
 @require_permission("report.view")
 def reports():
     user = session.get("user")
-    data = get_reports_data(user.get("is_super_admin"), user.get("organization_id"))
+    created_by_filter = None
+    if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
+        created_by_filter = user.get("id")
+    data = get_reports_data(user.get("is_super_admin"), user.get("organization_id"), created_by_filter)
     return render_template(
         "reports/index.html",
         is_super_admin=user.get("is_super_admin"),
@@ -3347,10 +3932,12 @@ def reports():
 
 
 @cached_report(key_prefix="reports")
-def get_reports_data(is_super_admin, organization_id):
+def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
     query = Candidate.query.filter_by(is_deleted=False)
     if not is_super_admin:
         query = query.filter_by(organization_id=organization_id)
+    if created_by_filter:
+        query = query.filter(Candidate.created_by == created_by_filter)
     all_candidates = query.all()
 
     total = len(all_candidates)
@@ -3475,7 +4062,13 @@ def get_reports_data(is_super_admin, organization_id):
 @require_permission("notification.view")
 def notifications():
     user = session.get("user")
-    _sync_overdue_notifications(user)
+    # Skip re-syncing overdue-checkpoint notifications when we just redirected
+    # here from Mark Read / Delete / Clear Read / Mark All Read. Without this,
+    # an overdue checkpoint that's still pending would get a fresh notification
+    # recreated for it the instant the page reloads, making the action the
+    # user just took look like it had no effect.
+    if not request.args.get("skip_sync"):
+        _sync_overdue_notifications(user)
 
     if user.get("is_super_admin"):
         all_notifs = Notification.query.order_by(Notification.created_at.desc()).all()
@@ -3497,7 +4090,54 @@ def notification_mark_read(notification_id):
     notif = Notification.query.get_or_404(notification_id)
     notif.is_read = True
     db.session.commit()
-    return redirect(url_for("frontend.notifications"))
+    return redirect(url_for("frontend.notifications", skip_sync="1"))
+
+
+def _can_access_notification(notif, user):
+    if user.get("is_super_admin"):
+        return True
+    if notif.user_id and notif.user_id == user.get("id"):
+        return True
+    if notif.organization_id and notif.organization_id == str(user.get("organization_id")):
+        return True
+    return False
+
+
+@frontend_bp.route("/notifications/<notification_id>/delete", methods=["POST"])
+@login_required
+@require_permission("notification.view")
+def notification_delete(notification_id):
+    notif = Notification.query.get_or_404(notification_id)
+    user = session.get("user")
+    if not _can_access_notification(notif, user):
+        flash("You don't have access to that notification", "error")
+        return redirect(url_for("frontend.notifications"))
+
+    db.session.delete(notif)
+    db.session.commit()
+    flash("Notification deleted", "success")
+    return redirect(url_for("frontend.notifications", skip_sync="1"))
+
+
+@frontend_bp.route("/notifications/clear-read", methods=["POST"])
+@login_required
+@require_permission("notification.view")
+def notifications_clear_read():
+    user = session.get("user")
+
+    if user.get("is_super_admin"):
+        query = Notification.query.filter_by(is_read=True)
+    else:
+        query = Notification.query.filter(
+            Notification.is_read == True,
+            (Notification.user_id == user.get("id"))
+            | (Notification.organization_id == str(user.get("organization_id")))
+        )
+
+    deleted_count = query.delete(synchronize_session=False)
+    db.session.commit()
+    flash(f"Cleared {deleted_count} read notification(s)", "success")
+    return redirect(url_for("frontend.notifications", skip_sync="1"))
 
 
 @frontend_bp.route("/notifications/<notification_id>/open")
@@ -3510,6 +4150,12 @@ def notification_open(notification_id):
         db.session.commit()
 
     user = session.get("user")
+
+    if notif.candidate_id:
+        candidate = Candidate.query.filter_by(id=notif.candidate_id, is_deleted=False).first()
+        if candidate and _can_access_candidate(candidate, user):
+            return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate.id))
+
     if notif.organization_id:
         if user.get("is_super_admin"):
             try:
@@ -3537,7 +4183,7 @@ def notifications_mark_all_read():
     query.update({"is_read": True}, synchronize_session=False)
     db.session.commit()
     flash("All notifications marked as read", "success")
-    return redirect(url_for("frontend.notifications"))
+    return redirect(url_for("frontend.notifications", skip_sync="1"))
 
 
 @frontend_bp.route("/api/notifications/unread-count")
@@ -3659,6 +4305,42 @@ def settings_profile():
         recent_logins=recent_logins,
         display_role_name=display_role_name,
     )
+
+
+@frontend_bp.route("/settings/login-history/<login_id>/delete", methods=["POST"])
+@login_required
+@require_permission("settings.view")
+def settings_login_history_delete(login_id):
+    user = session.get("user")
+    login_record = LoginHistory.query.get_or_404(login_id)
+
+    if not user.get("is_super_admin") and login_record.user_id != user.get("id"):
+        flash("You do not have permission to delete this login record.", "error")
+        return redirect(url_for("frontend.settings_profile"))
+
+    db.session.delete(login_record)
+    db.session.commit()
+    _log_activity("Deleted login history record", login_record.email)
+    flash("Login record deleted", "success")
+    return redirect(url_for("frontend.settings_profile"))
+
+
+@frontend_bp.route("/settings/activity-log/<log_id>/delete", methods=["POST"])
+@login_required
+@require_permission("settings.view")
+def settings_activity_log_delete(log_id):
+    user = session.get("user")
+    log_entry = ActivityLog.query.get_or_404(log_id)
+
+    if not user.get("is_super_admin") and log_entry.user_id != user.get("id"):
+        flash("You do not have permission to delete this activity record.", "error")
+        return redirect(url_for("frontend.settings_profile"))
+
+    db.session.delete(log_entry)
+    db.session.commit()
+    _log_activity("Deleted activity log entry", log_entry.action)
+    flash("Activity record deleted", "success")
+    return redirect(url_for("frontend.settings_profile"))
 
 
 @frontend_bp.route("/help")

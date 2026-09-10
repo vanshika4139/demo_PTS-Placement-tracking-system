@@ -1,4 +1,94 @@
-<!doctype html>
+"""
+One-time patch: adds Phase 1 of the candidate self-service placement flow.
+
+What this does:
+1. Adds a new route `candidate_report_placement` to app/routes/frontend.py,
+   right after the existing candidate_upload_proof route. This lets a
+   logged-in candidate submit their own employer/job/joining date/salary
+   (salary is optional - leaving it blank is how we track "salary pending"
+   for Phase 2 later, with no new DB column needed).
+2. Overwrites app/templates/candidate/dashboard.html with the same file plus
+   a new "Are you currently employed?" section (Yes/No buttons -> reveals a
+   placement form on Yes) inserted between the "Update Contact & Bank" card
+   and the feedback card.
+
+Safe to re-run:
+- frontend.py: skipped if `def candidate_report_placement` already present.
+- dashboard.html: skipped if `employment-status-card` already present.
+
+Run this from the project root (same place you ran the other scripts):
+    python apply_phase1_candidate_placement.py
+"""
+
+import os
+
+FRONTEND_PY_PATH = os.path.join("app", "routes", "frontend.py")
+DASHBOARD_HTML_PATH = os.path.join("app", "templates", "candidate", "dashboard.html")
+
+FRONTEND_ANCHOR = '''    flash(translate("proof_upload_success"), "success")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/organization/feedback")'''
+
+FRONTEND_NEW_BLOCK = '''    flash(translate("proof_upload_success"), "success")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/candidate/report-placement", methods=["POST"])
+@candidate_login_required
+def candidate_report_placement():
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+
+    if candidate.employer_name:
+        flash("Your placement details are already recorded.", "info")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    employer_name = (request.form.get("employer_name") or "").strip()
+    job_role = (request.form.get("job_role") or "").strip()
+    joining_date = _parse_date(request.form.get("joining_date"))
+    location = (request.form.get("location") or "").strip()
+    salary = (request.form.get("salary") or "").strip()
+
+    if not employer_name or not job_role or not joining_date:
+        flash("Please fill Employer Name, Job Role, and Joining Date.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    candidate.employer_name = employer_name
+    candidate.job_role = job_role
+    candidate.joining_date = joining_date
+    candidate.location = location or None
+    candidate.salary = salary or None
+    candidate.working_status = "Working"
+    db.session.commit()
+
+    _ensure_checkpoints(candidate)
+
+    invalidate_report_cache("reports")
+    invalidate_report_cache("dashboard:org")
+    invalidate_report_cache("dashboard:super_admin")
+
+    _create_notification(
+        title=f"Candidate self-reported placement: {candidate.full_name}",
+        message=(
+            f"{candidate.full_name} reported they joined {employer_name} as {job_role}."
+            + ("" if salary else " Salary was not provided yet.")
+        ),
+        notif_type="success" if salary else "warning",
+        organization_id=candidate.organization_id,
+        candidate_id=candidate.id,
+    )
+    _send_placement_email(candidate)
+
+    flash("Thank you! Your placement details have been saved.", "success")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/organization/feedback")'''
+
+
+DASHBOARD_HTML_FULL = r'''<!doctype html>
 <html lang="{{ current_language() }}">
 <head>
   <meta charset="utf-8">
@@ -253,3 +343,54 @@
   </div>
 </body>
 </html>
+'''
+
+
+def patch_frontend_py():
+    if not os.path.exists(FRONTEND_PY_PATH):
+        print(f"[SKIP] Could not find {FRONTEND_PY_PATH}. Run this script from the project root.")
+        return
+
+    with open(FRONTEND_PY_PATH, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if "def candidate_report_placement" in content:
+        print("[SKIP] frontend.py already has candidate_report_placement route. Nothing to do.")
+        return
+
+    if FRONTEND_ANCHOR not in content:
+        print("[ERROR] Could not find the expected anchor text in frontend.py.")
+        print("        The file may have changed since this script was written.")
+        print("        No changes were made to frontend.py.")
+        return
+
+    content = content.replace(FRONTEND_ANCHOR, FRONTEND_NEW_BLOCK, 1)
+
+    with open(FRONTEND_PY_PATH, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print("[OK] Added candidate_report_placement route to frontend.py")
+
+
+def patch_dashboard_html():
+    if not os.path.exists(DASHBOARD_HTML_PATH):
+        print(f"[SKIP] Could not find {DASHBOARD_HTML_PATH}. Run this script from the project root.")
+        return
+
+    with open(DASHBOARD_HTML_PATH, "r", encoding="utf-8") as f:
+        existing = f.read()
+
+    if "employment-status-card" in existing:
+        print("[SKIP] dashboard.html already has the employment status section. Nothing to do.")
+        return
+
+    with open(DASHBOARD_HTML_PATH, "w", encoding="utf-8") as f:
+        f.write(DASHBOARD_HTML_FULL)
+
+    print("[OK] Updated candidate/dashboard.html with the employment status section.")
+
+
+if __name__ == "__main__":
+    patch_frontend_py()
+    patch_dashboard_html()
+    print("Done.")

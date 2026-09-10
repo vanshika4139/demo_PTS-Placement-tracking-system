@@ -9,6 +9,7 @@
     border-radius: 999px;
     font-size: 0.75rem;
     font-weight: 600;
+    white-space: nowrap;
   }
   .sa-pill-purple { background: #ede9fe; color: #7c3aed; }
   .sa-pill-blue { background: #dbeafe; color: #2563eb; }
@@ -20,6 +21,41 @@
     border-radius: 10px;
     font-size: 0.88rem;
     margin-bottom: 16px;
+  }
+
+  .sa-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sa-du-table {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+    margin: 0;
+  }
+  .sa-du-table th, .sa-du-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #f0f1f3;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .sa-du-table thead th {
+    background: #f9fafb;
+    color: #6b7280;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sa-du-table tbody tr:last-child td { border-bottom: none; }
+  .sa-du-table tbody tr:hover { background: #f9fafb; }
+  .sa-du-table td.sa-du-actions {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
   }
 </style>
 
@@ -38,34 +74,36 @@
 </div>
 
 <div class="panel-card">
-  <table class="data-table">
-    <thead>
-      <tr><th>Name</th><th>Email</th><th>Role</th><th>Organization</th><th>Actions</th></tr>
-    </thead>
-    <tbody>
-      {% for user in users %}
-      <tr>
-        <td>{{ user.full_name }}</td>
-        <td>{{ user.email }}</td>
-        <td>
-          <span class="sa-pill {{ 'sa-pill-purple' if user.is_super_admin else 'sa-pill-blue' }}">
-            {{ 'Super Admin' if user.is_super_admin else 'Org User' }}
-          </span>
-        </td>
-        <td>{{ org_map.get(user.organization_id, '-') if user.organization_id else '-' }}</td>
-        <td class="inline-actions">
-          <form method="post" action="{{ url_for('frontend.super_admin_user_restore', user_id=user.id) }}" style="display:inline;" onsubmit="return confirm('Restore {{ user.full_name }}? They will be able to log in again.');">
-            <button type="submit" class="ghost-btn">Restore</button>
-          </form>
-          <form method="post" action="{{ url_for('frontend.super_admin_user_purge', user_id=user.id) }}" style="display:inline;" onsubmit="return confirm('Permanently delete {{ user.full_name }} ({{ user.email }})? This cannot be undone, but frees up their email/username for reuse.');">
-            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete Permanently</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5">No deleted users.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="sa-table-scroll">
+    <table class="data-table sa-du-table">
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Role</th><th>Organization</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>{{ user.full_name }}</td>
+          <td>{{ user.email }}</td>
+          <td>
+            <span class="sa-pill {{ 'sa-pill-purple' if user.is_super_admin else 'sa-pill-blue' }}">
+              {{ 'Super Admin' if user.is_super_admin else 'Org User' }}
+            </span>
+          </td>
+          <td>{{ org_map.get(user.organization_id, '-') if user.organization_id else '-' }}</td>
+          <td class="sa-du-actions">
+            <form method="post" action="{{ url_for('frontend.super_admin_user_restore', user_id=user.id) }}" onsubmit="return confirm('Restore {{ user.full_name }}? They will be able to log in again.');">
+              <button type="submit" class="ghost-btn">Restore</button>
+            </form>
+            <form method="post" action="{{ url_for('frontend.super_admin_user_purge', user_id=user.id) }}" onsubmit="return confirm('Permanently delete {{ user.full_name }} ({{ user.email }})? This cannot be undone, but frees up their email/username for reuse.');">
+              <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete Permanently</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No deleted users.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

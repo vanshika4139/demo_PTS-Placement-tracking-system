@@ -27,6 +27,26 @@
     flex-wrap: wrap;
     gap: 10px;
   }
+  .al-purge-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: #92400e;
+  }
+  .al-purge-bar select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #fde68a;
+    font-size: 0.85rem;
+    background: #fff;
+  }
 </style>
 
 <div class="page-header">
@@ -57,6 +77,20 @@
     {% if action_filter or user_filter %}
     <a href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization_filter) }}" class="ghost-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Clear</a>
     {% endif %}
+  </form>
+
+  <form class="al-purge-bar" method="post" action="{{ url_for('frontend.super_admin_activity_log_purge') }}" onsubmit="return confirm('Permanently delete all log entries older than the selected period? This cannot be undone.');">
+    <input type="hidden" name="action_filter" value="{{ action_filter }}">
+    <input type="hidden" name="user_filter" value="{{ user_filter }}">
+    <input type="hidden" name="organization_filter" value="{{ organization_filter }}">
+    <span>Clean up old entries:</span>
+    <select name="older_than_days">
+      <option value="30">Older than 30 days</option>
+      <option value="90" selected>Older than 90 days</option>
+      <option value="180">Older than 180 days</option>
+      <option value="365">Older than 1 year</option>
+    </select>
+    <button type="submit" class="ghost-btn" style="color:#92400e; border-color:#fde68a;">Delete</button>
   </form>
 
   <table class="data-table">

@@ -13,5 +13,6 @@ class Scheme(db.Model):
     organization_id = Column(BigInteger, ForeignKey("organizations.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(String(500), nullable=True)
+    created_by = Column(MySQLCHAR(32), ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -5,7 +5,7 @@
 <div class="page-header page-header-inline">
   <div>
     <h2>Subscription - {{ organization.organization_name }}</h2>
-    <p>Manage plan, credits, and payment status.</p>
+    <p>Manage plan, billing cycle, credits, and payment status.</p>
   </div>
   <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organization_detail', organization_id=organization.id) }}">Back</a>
 </div>
@@ -13,12 +13,28 @@
 <div class="panel-card form-card">
   <form method="post" class="full-form">
     <div class="form-grid">
-      <label>Subscription Plan ID<input type="number" name="subscription_plan_id" value="{{ organization.subscription_plan_id or '' }}"></label>
+      <label>Subscription Plan
+        <select name="subscription_plan_id" id="plan-select" onchange="applyPlanDefaults()">
+          <option value="">— No plan —</option>
+          {% for plan in plans %}
+          <option value="{{ plan.id }}" {{ 'selected' if organization.subscription_plan_id == plan.id }}>
+            {{ plan.name }} (₹{{ '{:,.0f}'.format(plan.price) }}/{{ plan.default_billing_cycle }})
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Billing Cycle
+        <select name="billing_cycle">
+          {% for cycle in ['monthly', 'quarterly', 'yearly'] %}
+          <option value="{{ cycle }}" {{ 'selected' if organization.billing_cycle == cycle }}>{{ cycle|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label>Subscription Expiry<input type="date" name="subscription_expiry_date" value="{{ organization.subscription_expiry_date.strftime('%Y-%m-%d') if organization.subscription_expiry_date else '' }}"></label>
-      <label>Candidate Limit<input type="number" name="candidate_limit" value="{{ organization.candidate_limit or 0 }}"></label>
-      <label>WhatsApp Credits<input type="number" name="whatsapp_credits" value="{{ organization.whatsapp_credits or 0 }}"></label>
-      <label>SMS Credits<input type="number" name="sms_credits" value="{{ organization.sms_credits or 0 }}"></label>
-      <label>Email Credits<input type="number" name="email_credits" value="{{ organization.email_credits or 0 }}"></label>
+      <label>Candidate Limit<input type="number" id="candidate_limit" name="candidate_limit" value="{{ organization.candidate_limit or 0 }}"></label>
+      <label>WhatsApp Credits<input type="number" id="whatsapp_credits" name="whatsapp_credits" value="{{ organization.whatsapp_credits or 0 }}"></label>
+      <label>SMS Credits<input type="number" id="sms_credits" name="sms_credits" value="{{ organization.sms_credits or 0 }}"></label>
+      <label>Email Credits<input type="number" id="email_credits" name="email_credits" value="{{ organization.email_credits or 0 }}"></label>
       <label>Payment Status
         <select name="payment_status">
           <option value="PENDING" {{ 'selected' if organization.payment_status == 'PENDING' }}>Pending</option>
@@ -27,9 +43,38 @@
         </select>
       </label>
     </div>
+    <p style="color:var(--muted); font-size:0.82rem; margin-top:-8px;">
+      Picking a plan doesn't auto-fill the fields below by itself - click "Use plan defaults" to pull its limits in, then adjust if this organization needs something custom.
+    </p>
+    <button type="button" class="ghost-btn" onclick="applyPlanDefaults(true)">Use plan defaults</button>
     <div class="form-actions">
       <button type="submit" class="primary-btn">Save Subscription</button>
     </div>
   </form>
 </div>
+
+<div class="panel-card" style="margin-top:16px;">
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_plans') }}">Manage Plans →</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function applyPlanDefaults(force) {
+  const select = document.getElementById('plan-select');
+  const planId = select.value;
+  if (!planId) return;
+  if (!force) return; // only pull defaults on explicit button click, not on every dropdown change
+
+  fetch(`/super-admin/plans/${planId}/details.json`)
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('candidate_limit').value = data.candidate_limit;
+      document.getElementById('whatsapp_credits').value = data.whatsapp_credits;
+      document.getElementById('sms_credits').value = data.sms_credits;
+      document.getElementById('email_credits').value = data.email_credits;
+    })
+    .catch(() => {});
+}
+</script>
 {% endblock %}

@@ -24,6 +24,56 @@
     font-weight: 600;
     color: #111827;
   }
+  .sa-batch-table th:last-child,
+  .sa-batch-table td:last-child { text-align: right; }
+
+  .row-menu { position: relative; display: inline-block; }
+  .row-menu-trigger {
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+  }
+  .row-menu-trigger:hover { background: #f0f1f3; }
+  .row-menu-trigger svg { pointer-events: none; }
+  .row-menu-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    min-width: 130px;
+    z-index: 20;
+    overflow: hidden;
+  }
+  .row-menu.open .row-menu-dropdown { display: block; }
+  .row-menu-dropdown a,
+  .row-menu-dropdown button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 9px 14px;
+    font-size: 0.86rem;
+    font-weight: 500;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    color: #1f2328;
+  }
+  .row-menu-dropdown a:hover,
+  .row-menu-dropdown button:hover { background: #f5f5f5; }
+  .row-menu-dropdown .action-danger { color: #dc2626; }
+  .row-menu-dropdown form { margin: 0; }
 </style>
 
 <div class="page-header page-header-inline">
@@ -43,7 +93,8 @@
         <th>Start Date</th>
         <th>End Date</th>
         <th>Status</th>
-        <th>Actions</th>
+        {% if show_creator_column %}<th>Created By</th>{% endif %}
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -67,17 +118,62 @@
             <span class="sa-pill sa-pill-gray">-</span>
           {% endif %}
         </td>
-        <td class="inline-actions">
-          <a href="{{ url_for('frontend.organization_batch_edit', batch_id=batch.id) }}">Edit</a>
-          <form method="post" action="{{ url_for('frontend.organization_batch_delete', batch_id=batch.id) }}" onsubmit="return confirm('Delete this batch?');" style="display:inline;">
-            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>
-          </form>
+        {% if show_creator_column %}
+        <td>{{ creator_name_by_id.get(batch.created_by, '-') }}</td>
+        {% endif %}
+        <td>
+          <div class="row-menu">
+            <button type="button" class="row-menu-trigger" aria-label="Actions for {{ batch.name }}" aria-haspopup="true" aria-expanded="false" onclick="toggleRowMenu(this)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.2"></circle><circle cx="12" cy="12" r="1.2"></circle><circle cx="12" cy="19" r="1.2"></circle></svg>
+            </button>
+            <div class="row-menu-dropdown">
+              <a href="{{ url_for('frontend.organization_batch_edit', batch_id=batch.id) }}">Edit</a>
+              <form method="post" action="{{ url_for('frontend.organization_batch_delete', batch_id=batch.id) }}" onsubmit="return confirm('Delete this batch?');">
+                <button type="submit" class="action-danger">Delete</button>
+              </form>
+            </div>
+          </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6">No batches yet.</td></tr>
+      <tr><td colspan="{{ 7 if show_creator_column else 6 }}">No batches yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+{% block scripts %}
+<script>
+  function toggleRowMenu(btn) {
+    const menu = btn.closest('.row-menu');
+    const isOpen = menu.classList.contains('open');
+    document.querySelectorAll('.row-menu.open').forEach(function (m) {
+      m.classList.remove('open');
+      m.querySelector('.row-menu-trigger').setAttribute('aria-expanded', 'false');
+    });
+    if (!isOpen) {
+      menu.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.row-menu')) {
+      document.querySelectorAll('.row-menu.open').forEach(function (m) {
+        m.classList.remove('open');
+        m.querySelector('.row-menu-trigger').setAttribute('aria-expanded', 'false');
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.row-menu.open').forEach(function (m) {
+        m.classList.remove('open');
+        m.querySelector('.row-menu-trigger').setAttribute('aria-expanded', 'false');
+      });
+    }
+  });
+</script>
+{% endblock %}
 {% endblock %}

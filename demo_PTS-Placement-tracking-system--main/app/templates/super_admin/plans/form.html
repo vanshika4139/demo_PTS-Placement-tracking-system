@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Plan' if plan else 'Create Plan' }}{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>{{ 'Edit Plan' if plan else 'Create Plan' }}</h2>
+    <p>{{ 'Update this plan\'s limits and pricing.' if plan else 'Define a new subscription plan.' }}</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_plans') }}">Back</a>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Plan Name<input type="text" name="name" value="{{ plan.name if plan else '' }}" required></label>
+      <label>Plan Code
+        <input type="text" name="code" value="{{ plan.code if plan else '' }}" placeholder="e.g. starter, professional" {{ 'readonly' if plan }} {{ '' if plan else 'required' }}>
+      </label>
+      <label>Price (₹)<input type="number" step="1" name="price" value="{{ plan.price if plan else 0 }}"></label>
+      <label>Default Billing Cycle
+        <select name="default_billing_cycle">
+          {% for cycle in ['monthly', 'quarterly', 'yearly'] %}
+          <option value="{{ cycle }}" {{ 'selected' if plan and plan.default_billing_cycle == cycle }}>{{ cycle|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Candidate Limit<input type="number" name="candidate_limit" value="{{ plan.candidate_limit if plan else 0 }}"></label>
+      <label>WhatsApp Credits<input type="number" name="whatsapp_credits" value="{{ plan.whatsapp_credits if plan else 0 }}"></label>
+      <label>SMS Credits<input type="number" name="sms_credits" value="{{ plan.sms_credits if plan else 0 }}"></label>
+      <label>Email Credits<input type="number" name="email_credits" value="{{ plan.email_credits if plan else 0 }}"></label>
+      <label>Storage Limit (MB)<input type="number" name="storage_limit_mb" value="{{ plan.storage_limit_mb if plan and plan.storage_limit_mb else '' }}"></label>
+      <label>Report Access Level
+        <select name="report_access_level">
+          {% for level in ['basic', 'advanced', 'full'] %}
+          <option value="{{ level }}" {{ 'selected' if plan and plan.report_access_level == level }}>{{ level|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Display Order<input type="number" name="display_order" value="{{ plan.display_order if plan else 0 }}"></label>
+      <label style="display:flex; align-items:center; gap:8px; flex-direction:row;">
+        <input type="checkbox" name="api_access" style="width:auto;" {{ 'checked' if plan and plan.api_access }}> API Access
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; flex-direction:row;">
+        <input type="checkbox" name="custom_branding" style="width:auto;" {{ 'checked' if plan and plan.custom_branding }}> Custom Branding
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">{{ 'Save Changes' if plan else 'Create Plan' }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -57,6 +57,23 @@ TRANSLATIONS = {
         "feedback_submit": "Submit Feedback",
         "feedback_thanks": "Thank you for your feedback!",
         "feedback_already_submitted": "You've already submitted feedback. Thank you!",
+
+        "placement_timeline_title": "My Placement Timeline",
+        "placement_timeline_subtitle": "Follow-up checkpoints your training center tracks after your placement.",
+        "checkpoint_status_pending": "Upcoming",
+        "checkpoint_status_completed": "Completed",
+        "checkpoint_status_missed": "Missed",
+        "checkpoint_due_label": "Due",
+
+        "upload_proof_title": "Upload Placement Proof",
+        "upload_proof_body": "Upload your offer letter or joining proof for your training center to verify.",
+        "upload_proof_button": "Upload Document",
+        "upload_proof_choose_file": "Choose file (PDF, JPG, or PNG)",
+        "proof_already_uploaded": "Document uploaded. You can upload a new one to replace it.",
+        "proof_upload_requires_placement": "Document upload is available once you've been placed.",
+        "proof_upload_no_file": "Please choose a file to upload.",
+        "proof_upload_invalid_type": "Only PDF, JPG, or PNG files are allowed.",
+        "proof_upload_success": "Your document was uploaded successfully.",
     },
     "hi": {
         "candidate_portal": "उम्मीदवार पोर्टल",
@@ -105,6 +122,23 @@ TRANSLATIONS = {
         "feedback_submit": "प्रतिक्रिया भेजें",
         "feedback_thanks": "आपकी प्रतिक्रिया के लिए धन्यवाद!",
         "feedback_already_submitted": "आप पहले ही प्रतिक्रिया दे चुके हैं। धन्यवाद!",
+
+        "placement_timeline_title": "मेरी प्लेसमेंट समयरेखा",
+        "placement_timeline_subtitle": "आपकी नियुक्ति के बाद प्रशिक्षण केंद्र द्वारा ट्रैक किए गए फॉलो-अप चेकपॉइंट।",
+        "checkpoint_status_pending": "आगामी",
+        "checkpoint_status_completed": "पूर्ण",
+        "checkpoint_status_missed": "छूट गया",
+        "checkpoint_due_label": "नियत तारीख",
+
+        "upload_proof_title": "प्लेसमेंट प्रमाण अपलोड करें",
+        "upload_proof_body": "सत्यापन के लिए अपना ऑफर लेटर या जॉइनिंग प्रूफ अपलोड करें।",
+        "upload_proof_button": "दस्तावेज़ अपलोड करें",
+        "upload_proof_choose_file": "फ़ाइल चुनें (PDF, JPG, या PNG)",
+        "proof_already_uploaded": "दस्तावेज़ अपलोड हो चुका है। बदलने के लिए नया अपलोड करें।",
+        "proof_upload_requires_placement": "दस्तावेज़ अपलोड आपकी नियुक्ति होने के बाद उपलब्ध होगा।",
+        "proof_upload_no_file": "कृपया अपलोड करने के लिए एक फ़ाइल चुनें।",
+        "proof_upload_invalid_type": "केवल PDF, JPG, या PNG फ़ाइलों की अनुमति है।",
+        "proof_upload_success": "आपका दस्तावेज़ सफलतापूर्वक अपलोड हो गया।",
     },
 }
 

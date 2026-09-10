@@ -79,6 +79,7 @@ class Candidate(db.Model):
     password_hash = Column(String(255), nullable=True)
     account_status = Column(String(20), nullable=False, default="active")
     last_login_at = Column(DateTime, nullable=True)
+    created_by = Column(MySQLCHAR(32), ForeignKey("users.id"), nullable=True, index=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -17,3 +17,4 @@ class Batch(db.Model):
     end_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_by = Column(MySQLCHAR(32), ForeignKey("users.id"), nullable=True, index=True)

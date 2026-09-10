@@ -1,4 +1,5 @@
-from sqlalchemy import Column, BigInteger, Date, DateTime, Integer, SmallInteger, String, Text, func
+from sqlalchemy import Column, BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, SmallInteger, String, Text, func
+from sqlalchemy.dialects.mysql import CHAR as MySQLCHAR
 
 from app.extensions import db
 
@@ -23,7 +24,8 @@ class Organization(db.Model):
     district_id = Column(BigInteger, nullable=True)
     pincode = Column(String(10), nullable=True)
     logo = Column(String(500), nullable=True)
-    subscription_plan_id = Column(BigInteger, nullable=True)
+    subscription_plan_id = Column(MySQLCHAR(32), ForeignKey("plans.id"), nullable=True, index=True)
+    billing_cycle = Column(String(20), nullable=True, default="monthly")  # monthly | quarterly | yearly
     subscription_expiry_date = Column(Date, nullable=True)
     storage_used = Column(BigInteger, nullable=True, default=0)
     candidate_limit = Column(Integer, nullable=True, default=0)
@@ -34,7 +36,8 @@ class Organization(db.Model):
     webhook_url = Column(String(500), nullable=True)
     kyc_status = Column(String(30), nullable=True, default="PENDING")
     payment_status = Column(String(30), nullable=True, default="PENDING")
-    status = Column(SmallInteger, nullable=False, default=1)
+    status = Column(SmallInteger, nullable=False, default=1)  # 1 = Active, 0 = Suspended
+    is_deleted = Column(Boolean, nullable=False, default=False)  # soft-delete, separate from suspend
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     created_by = Column(BigInteger, nullable=True)
     modified_at = Column(DateTime, nullable=True)

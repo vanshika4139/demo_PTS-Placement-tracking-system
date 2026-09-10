@@ -10,17 +10,80 @@
     font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
+    text-align: center;
   }
   .sa-pill-green { background: #dcfce7; color: #16a34a; }
   .sa-pill-red { background: #fee2e2; color: #dc2626; }
   .sa-pill-amber { background: #fef3c7; color: #d97706; }
   .sa-pill-gray { background: #f3f4f6; color: #6b7280; }
+
+  /* --- table toolbar: keep filters/actions from wrapping into a jumbled mess --- */
+  .table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .table-toolbar input[type="search"] {
+    flex: 1 1 200px;
+    min-width: 160px;
+  }
+  .table-toolbar select {
+    flex: 0 0 auto;
+  }
+  .table-toolbar .inline-actions {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .bulk-action-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  /* --- table container: scroll lives INSIDE this box, never leaks into the page --- */
+  .sa-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sa-cand-table {
+    width: 100%;
+    min-width: 1080px;
+    border-collapse: collapse;
+    margin: 0;
+  }
   .sa-cand-table th, .sa-cand-table td {
     padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #f0f1f3;
+    vertical-align: middle;
   }
-  .sa-cand-table tbody tr:hover {
+  .sa-cand-table thead th {
+    position: sticky;
+    top: 0;
     background: #f9fafb;
+    color: #6b7280;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    z-index: 1;
   }
+  .sa-cand-table tbody tr:last-child td { border-bottom: none; }
+  .sa-cand-table tbody tr:hover { background: #f9fafb; }
+  .sa-cand-table td { white-space: nowrap; }
+  .sa-cand-table td.sa-cand-name { white-space: normal; }
+
   .sa-cand-name {
     font-weight: 600;
     color: #111827;
@@ -32,6 +95,75 @@
   .sa-cand-name a:hover {
     color: #2563eb;
     text-decoration: underline;
+  }
+  .sa-cand-sub {
+    display: block;
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: #6b7280;
+  }
+
+  .col-checkbox { width: 36px; }
+  .col-actions { width: 64px; text-align: center; }
+
+  /* --- actions: one compact menu instead of 4 crammed buttons --- */
+  .row-menu {
+    position: relative;
+    display: inline-block;
+  }
+  .row-menu > summary {
+    list-style: none;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: #6b7280;
+    font-size: 1.1rem;
+    letter-spacing: 2px;
+    user-select: none;
+  }
+  .row-menu > summary::-webkit-details-marker { display: none; }
+  .row-menu > summary:hover { background: #f3f4f6; color: #111827; }
+  .row-menu[open] > summary { background: #f3f4f6; color: #111827; }
+
+  .row-menu-panel {
+    position: absolute;
+    right: 0;
+    top: 34px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    min-width: 170px;
+    padding: 6px;
+    z-index: 20;
+  }
+  .row-menu-panel a,
+  .row-menu-panel button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 0.85rem;
+    color: #111827;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .row-menu-panel a:hover,
+  .row-menu-panel button:hover { background: #f3f4f6; }
+  .row-menu-panel button.danger { color: #dc2626; }
+  .row-menu-panel .menu-divider {
+    height: 1px;
+    background: #f0f1f3;
+    margin: 4px 2px;
   }
 </style>
 
@@ -66,20 +198,21 @@
       <option value="blocked" {{ 'selected' if account_status == 'blocked' }}>Blocked</option>
     </select>
 
-    <div class="inline-actions">
-      <button type="submit" class="ghost-btn">Filter</button>
-      <a class="ghost-btn" href="{{ url_for('frontend.candidate_import') }}">Bulk Import</a>
-      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to Excel</a>
-      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export_pdf', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to PDF</a>
-      <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_deleted') }}">Deleted Candidates</a>
-      <form method="post" action="{{ url_for('frontend.organization_candidates_bulk_set_passwords') }}" style="display:inline;" onsubmit="return confirm('This will set login passwords (mobile number) for all candidates who don\'t have one yet. Continue?');">
-        <button type="submit" class="ghost-btn">Set Passwords</button>
-      </form>
-    </div>
+    <button type="submit" class="ghost-btn">Filter</button>
   </form>
 
+  <div class="inline-actions" style="margin-bottom:16px;">
+    <a class="ghost-btn" href="{{ url_for('frontend.candidate_import') }}">Bulk Import</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to Excel</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_export_pdf', q=search_query, training_status=training_status, verification_status=verification_status, account_status=account_status) }}">Export to PDF</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.organization_candidates_deleted') }}">Deleted Candidates</a>
+    <form method="post" action="{{ url_for('frontend.organization_candidates_bulk_set_passwords') }}" style="display:inline;" onsubmit="return confirm('This will set login passwords (mobile number) for all candidates who don\'t have one yet. Continue?');">
+      <button type="submit" class="ghost-btn">Set Passwords</button>
+    </form>
+  </div>
+
   <form method="post" action="{{ url_for('frontend.organization_candidates_bulk_action') }}" id="bulkActionForm" onsubmit="return confirm('Apply this action to all selected candidates?');">
-    <div class="inline-actions" style="margin-bottom:12px;">
+    <div class="bulk-action-bar">
       <select name="action" required>
         <option value="">Bulk action for selected...</option>
         <option value="verify">Mark as Verified</option>
@@ -91,66 +224,79 @@
       <span id="selectedCount" style="color:#6b7280; font-size:0.85rem;"></span>
     </div>
 
-    <table class="data-table sa-cand-table">
-      <thead>
-        <tr>
-          <th><input type="checkbox" id="selectAll" aria-label="Select all"></th>
-          <th>Registration No.</th>
-          <th>Name</th>
-          <th>Mobile</th>
-          <th>Training Center</th>
-          <th>Course</th>
-          <th>Sector</th>
-          <th>Employer</th>
-          <th>Training Status</th>
-          <th>Verification</th>
-          <th>Account Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for candidate in candidates %}
-        {% set training_val = (candidate.training_status or 'pending')|string %}
-        {% set training_upper = training_val|upper %}
-        {% set verif_val = (candidate.verification_status or 'pending')|string %}
-        {% set verif_upper = verif_val|upper %}
-        <tr>
-          <td><input type="checkbox" name="candidate_ids" value="{{ candidate.id }}" class="rowCheckbox"></td>
-          <td>{{ candidate.registration_number or '-' }}</td>
-          <td class="sa-cand-name"><a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">{{ candidate.full_name }}</a></td>
-          <td>{{ candidate.mobile or '-' }}</td>
-          <td>{{ candidate.training_center or '-' }}</td>
-          <td>{{ candidate.course or '-' }}</td>
-          <td>{{ candidate.sector or '-' }}</td>
-          <td>{{ candidate.employer_name or '-' }}</td>
-          <td>
-            <span class="sa-pill {{ 'sa-pill-green' if training_upper == 'TRAINING_COMPLETED' else ('sa-pill-red' if training_upper == 'DROPPED_OUT' else 'sa-pill-amber') }}">
-              {{ candidate.training_status or '-' }}
-            </span>
-          </td>
-          <td>
-            <span class="sa-pill {{ 'sa-pill-green' if verif_upper == 'VERIFIED' else 'sa-pill-amber' }}">
-              {{ candidate.verification_status or '-' }}
-            </span>
-          </td>
-          <td>
-            <span class="sa-pill {{ 'sa-pill-green' if candidate.account_status == 'active' else 'sa-pill-red' }}">
-              {{ candidate.account_status|capitalize }}
-            </span>
-          </td>
-          <td class="inline-actions">
-            <a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">View</a>
-            <a href="{{ url_for('frontend.organization_candidate_edit', candidate_id=candidate.id) }}">Edit</a>
-            <button type="button" style="background:none; border:none; color:#e11d48; text-decoration:underline; cursor:pointer; padding:0; font:inherit;" onclick="deleteRow('{{ candidate.id }}')">Delete</button>
-            <button type="button" class="ghost-btn" style="padding:2px 6px; font-size:0.85rem;" onclick="toggleStatusRow('{{ candidate.id }}')">{{ 'Block' if candidate.account_status == 'active' else 'Unblock' }}</button>
-            <button type="button" class="ghost-btn" style="padding:2px 6px; font-size:0.85rem;" onclick="resetPasswordRow('{{ candidate.id }}')">Reset Password</button>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="12">No candidates found.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="sa-table-scroll">
+      <table class="data-table sa-cand-table">
+        <thead>
+          <tr>
+            <th class="col-checkbox"><input type="checkbox" id="selectAll" aria-label="Select all"></th>
+            <th>Candidate</th>
+            <th>Mobile</th>
+            <th>Training Center</th>
+            <th>Course / Sector</th>
+            <th>Employer</th>
+            <th>Training Status</th>
+            <th>Verification</th>
+            <th>Account</th>
+            {% if show_creator_column %}
+            <th>Created By</th>
+            {% endif %}
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for candidate in candidates %}
+          {% set training_val = (candidate.training_status or 'pending')|string %}
+          {% set training_upper = training_val|upper %}
+          {% set verif_val = (candidate.verification_status or 'pending')|string %}
+          {% set verif_upper = verif_val|upper %}
+          <tr>
+            <td class="col-checkbox"><input type="checkbox" name="candidate_ids" value="{{ candidate.id }}" class="rowCheckbox"></td>
+            <td class="sa-cand-name">
+              <a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">{{ candidate.full_name }}</a>
+              <span class="sa-cand-sub">{{ candidate.registration_number or 'No Reg. No.' }}</span>
+            </td>
+            <td>{{ candidate.mobile or '-' }}</td>
+            <td>{{ candidate.training_center or '-' }}</td>
+            <td>{{ candidate.course or '-' }}{% if candidate.sector %} &middot; {{ candidate.sector }}{% endif %}</td>
+            <td>{{ candidate.employer_name or '-' }}</td>
+            <td>
+              <span class="sa-pill {{ 'sa-pill-green' if training_upper == 'TRAINING_COMPLETED' else ('sa-pill-red' if training_upper == 'DROPPED_OUT' else 'sa-pill-amber') }}">
+                {{ candidate.training_status or '-' }}
+              </span>
+            </td>
+            <td>
+              <span class="sa-pill {{ 'sa-pill-green' if verif_upper == 'VERIFIED' else 'sa-pill-amber' }}">
+                {{ candidate.verification_status or '-' }}
+              </span>
+            </td>
+            <td>
+              <span class="sa-pill {{ 'sa-pill-green' if candidate.account_status == 'active' else 'sa-pill-red' }}">
+                {{ candidate.account_status|capitalize }}
+              </span>
+            </td>
+            {% if show_creator_column %}
+            <td>{{ creator_name_by_id.get(candidate.created_by, '-') }}</td>
+            {% endif %}
+            <td class="col-actions">
+              <details class="row-menu">
+                <summary aria-label="Row actions">&#8942;</summary>
+                <div class="row-menu-panel">
+                  <a href="{{ url_for('frontend.organization_candidate_detail', candidate_id=candidate.id) }}">View</a>
+                  <a href="{{ url_for('frontend.organization_candidate_edit', candidate_id=candidate.id) }}">Edit</a>
+                  <button type="button" onclick="resetPasswordRow('{{ candidate.id }}')">Reset Password</button>
+                  <button type="button" onclick="toggleStatusRow('{{ candidate.id }}')">{{ 'Block' if candidate.account_status == 'active' else 'Unblock' }}</button>
+                  <div class="menu-divider"></div>
+                  <button type="button" class="danger" onclick="deleteRow('{{ candidate.id }}')">Delete</button>
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ 11 if show_creator_column else 10 }}">No candidates found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </form>
 </div>
 
@@ -205,6 +351,27 @@
     }
     rowCheckboxes.forEach(function (cb) {
       cb.addEventListener('change', updateCount);
+    });
+  })();
+
+  // Row action menus: only one open at a time, and close when clicking outside.
+  (function () {
+    var menus = document.querySelectorAll('.row-menu');
+
+    document.addEventListener('click', function (e) {
+      menus.forEach(function (menu) {
+        if (!menu.contains(e.target)) menu.removeAttribute('open');
+      });
+    });
+
+    menus.forEach(function (menu) {
+      menu.addEventListener('toggle', function () {
+        if (menu.open) {
+          menus.forEach(function (other) {
+            if (other !== menu) other.removeAttribute('open');
+          });
+        }
+      });
     });
   })();
 </script>

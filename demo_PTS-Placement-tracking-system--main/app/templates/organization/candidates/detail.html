@@ -109,6 +109,16 @@
             <tr><th>Joining Date</th><td>{{ candidate.joining_date.strftime('%d-%m-%Y') if candidate.joining_date else '-' }}</td></tr>
             <tr><th>Working Status</th><td>{{ candidate.working_status or '-' }}</td></tr>
             <tr><th>Location</th><td>{{ candidate.location or '-' }}</td></tr>
+            <tr>
+              <th>Placement Proof</th>
+              <td>
+                {% if candidate.placement_proof_uploaded and candidate.offer_letter_url %}
+                  <a class="ghost-btn" href="{{ candidate.offer_letter_url }}" target="_blank" rel="noopener">View Document</a>
+                {% else %}
+                  Not uploaded
+                {% endif %}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

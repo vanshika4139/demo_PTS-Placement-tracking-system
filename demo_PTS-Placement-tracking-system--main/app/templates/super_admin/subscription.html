@@ -56,6 +56,62 @@
 <div class="panel-card" style="margin-top:16px;">
   <a class="ghost-btn" href="{{ url_for('frontend.super_admin_plans') }}">Manage Plans →</a>
 </div>
+
+<div class="panel-card" style="margin-top:16px;">
+  <div class="page-header page-header-inline" style="margin-bottom:14px;">
+    <h3 style="margin:0;">Invoice History</h3>
+    <form method="post" action="{{ url_for('frontend.super_admin_generate_invoice', organization_id=organization.id) }}">
+      <button type="submit" class="ghost-btn">Generate Invoice Now</button>
+    </form>
+  </div>
+
+  {% if not gateway_configured %}
+  <p style="color:var(--muted); font-size:0.82rem; margin-top:-6px;">
+    No payment gateway configured — invoices can only be settled manually via "Mark as Paid" below.
+    <a href="{{ url_for('frontend.super_admin_integrations') }}">Configure one →</a>
+  </p>
+  {% endif %}
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Invoice #</th>
+        <th>Period</th>
+        <th>Amount</th>
+        <th>Status</th>
+        <th>Due Date</th>
+        <th>Paid At</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for invoice in invoices %}
+      <tr>
+        <td>{{ invoice.invoice_number }}{% if invoice.is_prorated %} <span style="color:var(--muted); font-size:0.78rem;">(prorated)</span>{% endif %}</td>
+        <td>{{ invoice.period_start.strftime('%d-%m-%Y') }} – {{ invoice.period_end.strftime('%d-%m-%Y') }}</td>
+        <td>₹{{ '{:,.2f}'.format(invoice.amount) }}</td>
+        <td>
+          <span class="ig-status-pill {{ 'ig-status-set' if invoice.status == 'PAID' else 'ig-status-env' }}"
+                style="{% if invoice.status == 'OVERDUE' %}background:#fee2e2; color:#dc2626;{% elif invoice.status == 'CANCELLED' %}background:#f3f4f6; color:#9ca3af;{% endif %}">
+            {{ invoice.status|capitalize }}
+          </span>
+        </td>
+        <td>{{ invoice.due_date.strftime('%d-%m-%Y') }}</td>
+        <td>{{ invoice.paid_at.strftime('%d-%m-%Y %H:%M') if invoice.paid_at else '—' }}</td>
+        <td>
+          {% if invoice.status in ('PENDING', 'OVERDUE') %}
+          <form method="post" action="{{ url_for('frontend.super_admin_mark_invoice_paid', organization_id=organization.id, invoice_id=invoice.id) }}" onsubmit="return confirm('Mark invoice {{ invoice.invoice_number }} as paid? This assumes payment was received outside the gateway (bank transfer, cheque, etc.).');">
+            <button type="submit" class="ghost-btn" style="padding:4px 12px; font-size:0.82rem;">Mark as Paid</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No invoices generated for this organization yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
 
 {% block scripts %}

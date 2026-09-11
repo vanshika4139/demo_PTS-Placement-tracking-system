@@ -20,11 +20,19 @@ from app.models.user_permission_override import UserPermissionOverride
 from app.models.candidate_feedback import CandidateFeedback
 from app.models.organization_feature import OrganizationFeature
 from app.models.platform_settings import PlatformSettings
+from app.models.kyc_document import KycDocument
+# app/models/__init__.py — add these two lines:
+
+# 1. Add this import alongside the other model imports:
+from app.models.invoice import Invoice
+
+# 2. Add "Invoice" to the __all__ list.
 
 __all__ = [
     "Candidate",
     "FollowUpCheckpoint",
     "Organization",
+    "Invoice",
     "Permission",
     "Plan",
     "Role",
@@ -44,4 +52,5 @@ __all__ = [
     "CandidateFeedback",
     "OrganizationFeature",
     "PlatformSettings",
+    "KycDocument",
 ]

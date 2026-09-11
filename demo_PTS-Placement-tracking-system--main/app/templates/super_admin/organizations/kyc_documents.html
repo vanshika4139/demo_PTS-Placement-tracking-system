@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block title %}KYC Documents - {{ organization.organization_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .kd-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 11px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .kd-pill-green { background: #dcfce7; color: #16a34a; }
+  .kd-pill-red { background: #fee2e2; color: #dc2626; }
+  .kd-pill-amber { background: #fef3c7; color: #d97706; }
+  .kd-pill-gray { background: #f3f4f6; color: #6b7280; }
+
+  .kd-intro {
+    color: #6b7280;
+    font-size: 0.85rem;
+    margin: -4px 0 18px 0;
+    line-height: 1.5;
+  }
+
+  .kd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+
+  .kd-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #fff;
+  }
+  .kd-card.is-approved { border-color: #bbf7d0; background: #f7fdf9; }
+  .kd-card.is-rejected { border-color: #fecaca; background: #fffafa; }
+
+  .kd-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .kd-title { font-weight: 600; color: #111827; font-size: 0.95rem; line-height: 1.3; }
+  .kd-type-code { display: block; color: #9ca3af; font-size: 0.72rem; font-weight: 400; margin-top: 2px; }
+
+  .kd-meta {
+    color: #6b7280;
+    font-size: 0.8rem;
+  }
+  .kd-empty { color: #9ca3af; font-size: 0.82rem; }
+  .kd-remarks {
+    color: #b91c1c;
+    font-size: 0.8rem;
+    background: #fef2f2;
+    border-radius: 6px;
+    padding: 6px 9px;
+  }
+
+  .kd-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .kd-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    font-family: inherit;
+    border: 1px solid var(--border, #e6e1d6);
+    background: none;
+    color: #374151;
+    white-space: nowrap;
+  }
+  .kd-btn:hover { background: #f9fafb; }
+  .kd-btn-ok { border-color: #86efac; color: #15803d; }
+  .kd-btn-ok:hover { background: #f0fdf4; }
+  .kd-btn-danger { border-color: #fca5a5; color: #b91c1c; }
+  .kd-btn-danger:hover { background: #fef2f2; }
+  .kd-btn-upload { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); }
+  .kd-btn-upload:hover { background: #eff6ff; }
+
+  .kd-file-input { display: none; }
+  .kd-upload-form { display: inline-block; }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>KYC Documents - {{ organization.organization_name }}</h2>
+    <p>Upload and review the documents required for {{ organization.organization_name }}'s KYC approval.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organization_detail', organization_id=organization.id) }}">Back</a>
+</div>
+
+<div class="panel-card">
+  <p class="kd-intro">
+    Overall KYC status is derived from these documents: if any document is <strong>Rejected</strong> the organization is Rejected;
+    once every document below is <strong>Approved</strong> the organization is Approved; otherwise it's Pending.
+  </p>
+
+  <div class="kd-grid">
+    {% for doc_type in doc_types %}
+    {% set doc = documents_by_type.get(doc_type) %}
+    <div class="kd-card {{ 'is-approved' if doc and doc.status == 'APPROVED' else ('is-rejected' if doc and doc.status == 'REJECTED' else '') }}">
+
+      <div class="kd-card-head">
+        <div class="kd-title">
+          {{ doc_type_labels.get(doc_type, doc_type) }}
+          <span class="kd-type-code">{{ doc_type }}</span>
+        </div>
+        {% if doc %}
+          <span class="kd-pill {{ 'kd-pill-green' if doc.status == 'APPROVED' else ('kd-pill-red' if doc.status == 'REJECTED' else 'kd-pill-amber') }}">{{ doc.status }}</span>
+        {% else %}
+          <span class="kd-pill kd-pill-gray">Not uploaded</span>
+        {% endif %}
+      </div>
+
+      {% if doc %}
+        <div class="kd-meta">{{ doc.original_filename or 'file' }} &middot; uploaded {{ doc.uploaded_at.strftime('%d-%m-%Y %H:%M') if doc.uploaded_at else '-' }}</div>
+        {% if doc.status == 'REJECTED' and doc.remarks %}
+        <div class="kd-remarks">Rejected: {{ doc.remarks }}</div>
+        {% endif %}
+      {% else %}
+        <div class="kd-empty">No file uploaded yet.</div>
+      {% endif %}
+
+      <div class="kd-actions">
+        {% if doc %}
+          <a class="kd-btn" href="{{ url_for('frontend.super_admin_kyc_document_download', organization_id=organization.id, document_id=doc.id) }}">Download</a>
+
+          {% if doc.status != 'APPROVED' %}
+          <form method="post" action="{{ url_for('frontend.super_admin_kyc_document_approve', organization_id=organization.id, document_id=doc.id) }}" style="display:inline;">
+            <button type="submit" class="kd-btn kd-btn-ok">Approve</button>
+          </form>
+          {% endif %}
+
+          {% if doc.status != 'REJECTED' %}
+          <form method="post" action="{{ url_for('frontend.super_admin_kyc_document_reject', organization_id=organization.id, document_id=doc.id) }}"
+                class="kd-reject-form" onsubmit="return prepareReject(this);" style="display:inline;">
+            <input type="hidden" name="remarks" value="">
+            <button type="submit" class="kd-btn kd-btn-danger">Reject</button>
+          </form>
+          {% endif %}
+        {% endif %}
+
+        <form method="post" action="{{ url_for('frontend.super_admin_kyc_document_upload', organization_id=organization.id) }}"
+              enctype="multipart/form-data" class="kd-upload-form">
+          <input type="hidden" name="doc_type" value="{{ doc_type }}">
+          <input type="file" name="document_file" id="file-{{ doc_type }}" class="kd-file-input"
+                 accept=".pdf,.jpg,.jpeg,.png" required onchange="this.form.submit()">
+          <label for="file-{{ doc_type }}" class="kd-btn kd-btn-upload">{{ 'Replace file' if doc else 'Upload file' }}</label>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  function prepareReject(form) {
+    var reason = prompt("Reason for rejecting this document:");
+    if (!reason || !reason.trim()) return false;
+    form.querySelector('input[name="remarks"]').value = reason.trim();
+    return true;
+  }
+</script>
+{% endblock %}

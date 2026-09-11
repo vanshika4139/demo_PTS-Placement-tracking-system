@@ -7,22 +7,42 @@
 </div>
 
 <div class="panel-card form-card">
-  <form method="post" class="full-form">
+  <form method="post" class="full-form" enctype="multipart/form-data">
     <div class="form-grid">
-      <label>Organization Code<input type="text" name="organization_code" value="{{ organization.organization_code if organization else '' }}" {{ 'readonly' if organization else '' }} required></label>
-      <label>Organization Name<input type="text" name="organization_name" value="{{ organization.organization_name if organization else '' }}" required></label>
-      <label>Registration Number<input type="text" name="registration_number" value="{{ organization.registration_number if organization else '' }}"></label>
-      <label>GST Number<input type="text" name="gst_number" value="{{ organization.gst_number if organization else '' }}"></label>
-      <label>PAN Number<input type="text" name="pan_number" value="{{ organization.pan_number if organization else '' }}"></label>
-      <label>Contact Person<input type="text" name="contact_person" value="{{ organization.contact_person if organization else '' }}"></label>
-      <label>Email<input type="email" name="email" value="{{ organization.email if organization else '' }}"></label>
-      <label>Mobile<input type="text" name="mobile" value="{{ organization.mobile if organization else '' }}"></label>
-      <label>Address<input type="text" name="address" value="{{ organization.address if organization else '' }}"></label>
+      <label>Organization Code<input type="text" name="organization_code" value="{{ organization.organization_code or '' if organization else '' }}" {{ 'readonly' if organization else '' }} required></label>
+      <label>Organization Name<input type="text" name="organization_name" value="{{ organization.organization_name or '' if organization else '' }}" required></label>
+      <label>Registration Number<input type="text" name="registration_number" value="{{ organization.registration_number or '' if organization else '' }}"></label>
+      <label>GST Number<input type="text" name="gst_number" value="{{ organization.gst_number or '' if organization else '' }}"></label>
+      <label>PAN Number<input type="text" name="pan_number" value="{{ organization.pan_number or '' if organization else '' }}"></label>
+      <label>Website<input type="url" name="website" value="{{ organization.website or '' if organization else '' }}" placeholder="https://example.com"></label>
+      <label>Contact Person<input type="text" name="contact_person" value="{{ organization.contact_person or '' if organization else '' }}"></label>
+      <label>Designation<input type="text" name="designation" value="{{ organization.designation or '' if organization else '' }}" placeholder="e.g. HR Manager"></label>
+      <label>Email<input type="email" name="email" value="{{ organization.email or '' if organization else '' }}"></label>
+      <label>Mobile<input type="text" name="mobile" value="{{ organization.mobile or '' if organization else '' }}"></label>
+      <label>Address<input type="text" name="address" value="{{ organization.address or '' if organization else '' }}"></label>
+      <label>State
+        <select name="state_id">
+          <option value="">-- Select State --</option>
+          {% for state_id, state_label in indian_states %}
+          <option value="{{ state_id }}" {{ 'selected' if organization and organization.state_id == state_id }}>{{ state_label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>District<input type="text" name="district" value="{{ organization.district or '' if organization else '' }}" placeholder="e.g. Ghaziabad"></label>
+      <label>Pincode<input type="text" name="pincode" value="{{ organization.pincode or '' if organization else '' }}" maxlength="10"></label>
+      <label>Logo
+        <input type="file" name="logo_file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+        {% if organization and organization.logo %}
+        <span style="display:block; margin-top:6px; font-size:0.82rem; color:var(--muted);">
+          Current: <img src="{{ organization.logo }}" alt="Current logo" style="height:28px; vertical-align:middle; margin-left:6px; border-radius:4px;">
+        </span>
+        {% endif %}
+      </label>
       {% if organization %}
       <label>KYC Status
         <select name="kyc_status">
           <option value="PENDING" {{ 'selected' if organization.kyc_status == 'PENDING' }}>Pending</option>
-          <option value="VERIFIED" {{ 'selected' if organization.kyc_status == 'VERIFIED' }}>Verified</option>
+          <option value="APPROVED" {{ 'selected' if organization.kyc_status == 'APPROVED' }}>Approved</option>
           <option value="REJECTED" {{ 'selected' if organization.kyc_status == 'REJECTED' }}>Rejected</option>
         </select>
       </label>

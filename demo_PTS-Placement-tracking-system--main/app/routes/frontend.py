@@ -9,6 +9,7 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from app.constants.indian_states import INDIAN_STATES, state_name
 from app.extensions import db
 from app.models import (
     ActivityLog,
@@ -16,6 +17,8 @@ from app.models import (
     Candidate,
     CandidateFeedback,
     FollowUpCheckpoint,
+    Invoice,
+    KycDocument,
     LoginHistory,
     Notification,
     Organization,
@@ -28,6 +31,9 @@ from app.models import (
     UserRole,
     UserSettings,
 )
+from app.services.kyc import recompute_organization_kyc_status
+from app.services.billing import generate_invoice_for_organization, run_billing_cycle
+from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
 from app.utils.permissions import has_permission, invalidate_role_permission_cache, invalidate_user_permission_cache, require_permission
@@ -382,6 +388,29 @@ def login():
             ))
             db.session.commit()
         else:
+            org_block_reason = None
+            if not user.is_super_admin and user.organization_id:
+                organization = Organization.query.get(user.organization_id)
+                if organization:
+                    if organization.status == 0:
+                        org_block_reason = "Your organization's access has been suspended. Contact your account manager."
+                    elif (organization.kyc_status or "").upper() != "APPROVED":
+                        org_block_reason = "Your organization's KYC verification is not yet approved. Contact your account manager."
+
+            if org_block_reason:
+                error = org_block_reason
+                db.session.add(LoginHistory(
+                    email=email,
+                    full_name=user.full_name,
+                    user_id=user.id,
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:500],
+                    success=False,
+                    failure_reason=org_block_reason,
+                ))
+                db.session.commit()
+                return render_template("auth/login.html", error=error)
+
             from datetime import datetime
             user.last_login_at = datetime.utcnow()
             db.session.add(LoginHistory(
@@ -536,6 +565,16 @@ def get_super_admin_dashboard_data():
     pending_kyc = Organization.query.filter_by(kyc_status="PENDING", is_deleted=False).count()
     pending_payment = Organization.query.filter_by(payment_status="PENDING", is_deleted=False).count()
 
+    # FR-01: "Expired Organizations" - subscription_expiry_date in the past.
+    # Orgs with no expiry date set are treated as not-expired (nothing to
+    # expire), matching the dashboard's "Not set" treatment elsewhere.
+    today_date = datetime.utcnow().date()
+    expired_organizations = Organization.query.filter(
+        Organization.is_deleted == False,
+        Organization.subscription_expiry_date.isnot(None),
+        Organization.subscription_expiry_date < today_date,
+    ).count()
+
     total_batches = Batch.query.count()
     total_schemes = Scheme.query.count()
     pending_placement = Candidate.query.filter(
@@ -546,15 +585,30 @@ def get_super_admin_dashboard_data():
         is_deleted=False, placement_proof_uploaded=True
     ).count()
 
+    # FR-01: "Active Candidates" - account_status is the candidate-portal-login
+    # gate (active/blocked), same field the Candidates list already filters on.
+    active_candidates = Candidate.query.filter_by(is_deleted=False, account_status="active").count()
+
+    # FR-01: "Verification-Pending Candidates" - no verification_status row
+    # yet defaults to "pending" everywhere else in this codebase (candidate
+    # list filter, candidate form default), so NULL counts as pending here too.
+    verification_pending_candidates = Candidate.query.filter(
+        Candidate.is_deleted == False,
+        (Candidate.verification_status.is_(None)) | (Candidate.verification_status == "pending"),
+    ).count()
+
     stats = [
         {"title": "Total Organizations", "value": str(total), "link": url_for("frontend.super_admin_organizations")},
         {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active")},
+        {"title": "Expired Organizations", "value": str(expired_organizations), "link": url_for("frontend.super_admin_organizations")},
         {"title": "Pending KYC", "value": str(pending_kyc), "link": url_for("frontend.super_admin_organizations", filter="pending_kyc")},
         {"title": "Pending Payment", "value": str(pending_payment), "link": url_for("frontend.super_admin_organizations", filter="pending_payment")},
         {"title": "Total Batches", "value": str(total_batches), "link": url_for("frontend.organization_batches")},
         {"title": "Total Schemes", "value": str(total_schemes), "link": url_for("frontend.organization_schemes")},
+        {"title": "Active Candidates", "value": str(active_candidates), "link": url_for("frontend.organization_candidates", account_status="active")},
         {"title": "Pending Placement", "value": str(pending_placement), "link": url_for("frontend.organization_candidates", placed="no")},
         {"title": "Placement Proof Uploaded", "value": str(placement_proof_uploaded), "link": url_for("frontend.organization_candidates", placement_proof="yes")},
+        {"title": "Verification-Pending Candidates", "value": str(verification_pending_candidates), "link": url_for("frontend.organization_candidates", verification_status="pending")},
     ]
 
     today = datetime.utcnow()
@@ -583,6 +637,32 @@ def get_super_admin_dashboard_data():
         count = sum(1 for c in placed_candidates if c.joining_date.year == year and c.joining_date.month == month)
         placement_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         placement_data.append(count)
+
+    # FR-03: Candidate Growth (chart) - same 6-month window as Organization
+    # Growth above, counted by Candidate.created_at rather than joining_date
+    # (joining_date is placement-specific and already covers Placement Trend).
+    candidate_growth_labels = []
+    candidate_growth_data = []
+    all_candidates_for_growth = Candidate.query.filter_by(is_deleted=False).all()
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        count = sum(
+            1 for c in all_candidates_for_growth
+            if c.created_at and c.created_at.year == year and c.created_at.month == month
+        )
+        candidate_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        candidate_growth_data.append(count)
+
+    # FR-03: State-wise Organization Distribution (chart) - top 10 states by
+    # organization count; state_id resolved via the same lookup used on the
+    # Organization detail/list pages, so labels match everywhere.
+    state_counts = {}
+    for o in all_orgs:
+        label = state_name(o.state_id) if o.state_id else "Not set"
+        state_counts[label] = state_counts.get(label, 0) + 1
+    top_states = sorted(state_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    state_distribution_labels = [s[0] for s in top_states]
+    state_distribution_data = [s[1] for s in top_states]
 
     kyc_status_counts = {}
     payment_status_counts = {}
@@ -699,6 +779,10 @@ def get_super_admin_dashboard_data():
         "stats": stats,
         "org_growth_labels": org_growth_labels,
         "org_growth_data": org_growth_data,
+        "candidate_growth_labels": candidate_growth_labels,
+        "candidate_growth_data": candidate_growth_data,
+        "state_distribution_labels": state_distribution_labels,
+        "state_distribution_data": state_distribution_data,
         "placement_labels": placement_labels,
         "placement_data": placement_data,
         "kyc_status_labels": kyc_status_labels,
@@ -763,18 +847,66 @@ def super_admin_integrations():
                 "smtp_port": request.form.get("smtp_port", "").strip(),
                 "smtp_username": request.form.get("smtp_username", "").strip(),
                 "smtp_password": request.form.get("smtp_password", "").strip() or settings.smtp_password,
+                "email_enabled": bool(request.form.get("email_enabled")),
+
                 "whatsapp_api_key": request.form.get("whatsapp_api_key", "").strip() or settings.whatsapp_api_key,
                 "whatsapp_phone_number_id": request.form.get("whatsapp_phone_number_id", "").strip(),
+                "whatsapp_enabled": bool(request.form.get("whatsapp_enabled")),
+
                 "sms_api_key": request.form.get("sms_api_key", "").strip() or settings.sms_api_key,
                 "sms_sender_id": request.form.get("sms_sender_id", "").strip(),
+                "sms_enabled": bool(request.form.get("sms_enabled")),
+
+                "voice_provider": request.form.get("voice_provider", "").strip(),
+                "voice_api_key": request.form.get("voice_api_key", "").strip() or settings.voice_api_key,
+                "voice_caller_id": request.form.get("voice_caller_id", "").strip(),
+                "voice_call_enabled": bool(request.form.get("voice_call_enabled")),
+
+                "push_provider": request.form.get("push_provider", "").strip(),
+                "push_server_key": request.form.get("push_server_key", "").strip() or settings.push_server_key,
+                "push_sender_id": request.form.get("push_sender_id", "").strip(),
+                "push_enabled": bool(request.form.get("push_enabled")),
+
+                "payment_gateway_provider": request.form.get("payment_gateway_provider", "").strip(),
+                "payment_gateway_key_id": request.form.get("payment_gateway_key_id", "").strip() or settings.payment_gateway_key_id,
+                "payment_gateway_key_secret": request.form.get("payment_gateway_key_secret", "").strip() or settings.payment_gateway_key_secret,
+                "payment_gateway_webhook_secret": request.form.get("payment_gateway_webhook_secret", "").strip() or settings.payment_gateway_webhook_secret,
+                "payment_gateway_enabled": bool(request.form.get("payment_gateway_enabled")),
             },
             actor_id=actor.get("id"),
         )
-        _log_activity("platform.integrations_updated", "Updated platform integration settings (SMTP / WhatsApp / SMS)")
+        _log_activity("platform.integrations_updated", "Updated platform integration settings (Email / WhatsApp / SMS / Voice Call / Push / Payment Gateway)")
         flash("Integration settings saved.", "success")
         return redirect(url_for("frontend.super_admin_integrations"))
 
     return render_template("super_admin/integrations.html", settings=settings)
+
+
+@frontend_bp.route("/super-admin/billing/run-now", methods=["POST"])
+@super_admin_required
+def super_admin_run_billing_cycle():
+    """Manual trigger for the same job app/services/scheduler.py runs
+    automatically once a day (02:00 by default) - invoice generation,
+    renewal reminders, marking overdue invoices, and auto-suspending
+    expired organizations. Exists so this can be tested/demoed on demand
+    instead of waiting for the scheduled time."""
+    results = run_billing_cycle(actor_id=(session.get("user") or {}).get("id"))
+    _log_activity(
+        "billing.cycle_run_manually",
+        f"Invoices generated: {results['invoices_generated']}, "
+        f"Reminders sent: {results['reminders_sent']}, "
+        f"Marked overdue: {results['invoices_marked_overdue']}, "
+        f"Auto-suspended: {len(results['organizations_suspended'])}",
+    )
+    invalidate_report_cache("dashboard:super_admin")
+    flash(
+        f"Billing cycle ran: {results['invoices_generated']} invoice(s) generated, "
+        f"{results['reminders_sent']} renewal reminder(s) sent, "
+        f"{results['invoices_marked_overdue']} invoice(s) marked overdue, "
+        f"{len(results['organizations_suspended'])} organization(s) auto-suspended.",
+        "success",
+    )
+    return redirect(url_for("frontend.super_admin_integrations"))
 
 
 @frontend_bp.route("/super-admin/cache-monitor/clear", methods=["POST"])
@@ -931,11 +1063,13 @@ def super_admin_organizations():
         query = query.filter_by(payment_status="PENDING")
 
     organizations = query.order_by(Organization.created_at.desc()).all()
+    state_names = {org.id: state_name(org.state_id) for org in organizations}
     return render_template(
         "super_admin/organizations/index.html",
         organizations=organizations,
         active_filter=filter_type,
         today=datetime.utcnow().date(),
+        state_names=state_names,
     )
 
 
@@ -1102,6 +1236,16 @@ def super_admin_organizations_bulk_topup():
 @super_admin_required
 def super_admin_create_organization():
     if request.method == "POST":
+        logo_url = None
+        logo_file = request.files.get("logo_file")
+        if logo_file and logo_file.filename:
+            filename = secure_filename(logo_file.filename)
+            unique_name = f"{uuid.uuid4().hex}_{filename}"
+            upload_dir = os.path.join("app", "static", "uploads", "org_logos")
+            os.makedirs(upload_dir, exist_ok=True)
+            logo_file.save(os.path.join(upload_dir, unique_name))
+            logo_url = f"/static/uploads/org_logos/{unique_name}"
+
         org = Organization(
             organization_code=request.form.get("organization_code"),
             organization_name=request.form.get("organization_name"),
@@ -1116,9 +1260,9 @@ def super_admin_create_organization():
             address=request.form.get("address"),
             country_id=_parse_int(request.form.get("country_id")),
             state_id=_parse_int(request.form.get("state_id")),
-            district_id=_parse_int(request.form.get("district_id")),
+            district=request.form.get("district"),
             pincode=request.form.get("pincode"),
-            logo=request.form.get("logo"),
+            logo=logo_url,
             subscription_plan_id=_parse_int(request.form.get("subscription_plan_id")),
             subscription_expiry_date=_parse_date(request.form.get("subscription_expiry_date")),
             storage_used=0,
@@ -1143,7 +1287,7 @@ def super_admin_create_organization():
         invalidate_report_cache("dashboard:super_admin")
         flash("Organization created successfully", "success")
         return redirect(url_for("frontend.super_admin_organizations"))
-    return render_template("super_admin/organizations/form.html", organization=None)
+    return render_template("super_admin/organizations/form.html", organization=None, indian_states=INDIAN_STATES)
 
 
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>")
@@ -1156,6 +1300,256 @@ def super_admin_organization_detail(organization_id):
         organization=organization,
         feature_map=feature_map,
         available_features=AVAILABLE_FEATURES,
+        state_display=state_name(organization.state_id),
+    )
+
+
+ALLOWED_KYC_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
+
+
+def _allowed_kyc_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_KYC_EXTENSIONS
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents")
+@super_admin_required
+def super_admin_kyc_documents(organization_id):
+    organization = Organization.query.get_or_404(organization_id)
+    documents = KycDocument.query.filter_by(organization_id=organization_id).all()
+    documents_by_type = {doc.doc_type: doc for doc in documents}
+    return render_template(
+        "super_admin/organizations/kyc_documents.html",
+        organization=organization,
+        doc_types=KycDocument.DOC_TYPES,
+        doc_type_labels=KycDocument.DOC_TYPE_LABELS,
+        documents_by_type=documents_by_type,
+    )
+
+
+def _save_kyc_document(organization_id, doc_type, upload_file, actor):
+    """Shared upload handler used by both the super-admin side (uploading on
+    an organization's behalf) and the organization's own self-serve upload.
+    Saves the file, upserts the one-row-per-doc_type record, resets it to
+    PENDING for re-review, and keeps kyc_status + caches in sync.
+
+    Returns (ok: bool, message: str). Does not redirect - callers own that.
+    """
+    if doc_type not in KycDocument.DOC_TYPES:
+        return False, "Unknown document type."
+
+    if not upload_file or not upload_file.filename:
+        return False, "Please choose a file to upload."
+
+    if not _allowed_kyc_file(upload_file.filename):
+        return False, "Only PDF, JPG, and PNG files are allowed."
+
+    organization = Organization.query.get(organization_id)
+    if not organization:
+        return False, "Organization not found."
+
+    # Stored outside app/static (unlike the org logo / offer-letter uploads)
+    # since these are sensitive identity/financial documents (PAN, Aadhaar,
+    # bank details) - they should only be reachable through a gated
+    # download route, not a guessable public URL.
+    original_filename = secure_filename(upload_file.filename)
+    unique_name = f"{uuid.uuid4().hex}_{original_filename}"
+    upload_dir = os.path.join("app", "private_uploads", "kyc_documents", str(organization_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, unique_name)
+    upload_file.save(file_path)
+
+    # One row per (organization, doc_type): re-uploading replaces the
+    # previous document and resets it back to PENDING for re-review,
+    # rather than piling up history rows. See kyc.py's
+    # recompute_organization_kyc_status - it looks at "any REJECTED row"
+    # across all rows for the org, so keeping one row per doc_type avoids
+    # a stale REJECTED row permanently blocking approval after re-upload.
+    document = KycDocument.query.filter_by(organization_id=organization_id, doc_type=doc_type).first()
+    old_file_path = document.file_path if document else None
+
+    if document is None:
+        document = KycDocument(organization_id=organization_id, doc_type=doc_type)
+        db.session.add(document)
+
+    document.file_path = file_path
+    document.original_filename = original_filename
+    document.status = "PENDING"
+    document.remarks = None
+    document.uploaded_at = datetime.utcnow()
+    document.uploaded_by = actor.get("id")
+    document.reviewed_at = None
+    document.reviewed_by = None
+    db.session.commit()
+
+    if old_file_path and os.path.exists(old_file_path):
+        try:
+            os.remove(old_file_path)
+        except OSError:
+            pass
+
+    recompute_organization_kyc_status(organization_id)
+    invalidate_report_cache("dashboard:super_admin")
+
+    label = KycDocument.DOC_TYPE_LABELS.get(doc_type, doc_type)
+    return True, label
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents/upload", methods=["POST"])
+@super_admin_required
+def super_admin_kyc_document_upload(organization_id):
+    organization = Organization.query.get_or_404(organization_id)
+    doc_type = request.form.get("doc_type")
+    upload_file = request.files.get("document_file")
+    actor = session.get("user") or {}
+
+    ok, result = _save_kyc_document(organization_id, doc_type, upload_file, actor)
+    if not ok:
+        flash(result, "error")
+        return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+    label = result
+    _log_activity("kyc_document.upload", f"Uploaded '{label}' for {organization.organization_name}")
+    flash(f"'{label}' uploaded and marked Pending review.", "success")
+    return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents/<document_id>/approve", methods=["POST"])
+@super_admin_required
+def super_admin_kyc_document_approve(organization_id, document_id):
+    organization = Organization.query.get_or_404(organization_id)
+    document = KycDocument.query.filter_by(id=document_id, organization_id=organization_id).first_or_404()
+
+    actor = session.get("user") or {}
+    document.status = "APPROVED"
+    document.remarks = None
+    document.reviewed_at = datetime.utcnow()
+    document.reviewed_by = actor.get("id")
+    db.session.commit()
+
+    recompute_organization_kyc_status(organization_id)
+    invalidate_report_cache("dashboard:super_admin")
+
+    label = KycDocument.DOC_TYPE_LABELS.get(document.doc_type, document.doc_type)
+    _log_activity("kyc_document.approve", f"Approved '{label}' for {organization.organization_name}")
+    flash(f"'{label}' approved.", "success")
+    return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents/<document_id>/reject", methods=["POST"])
+@super_admin_required
+def super_admin_kyc_document_reject(organization_id, document_id):
+    organization = Organization.query.get_or_404(organization_id)
+    document = KycDocument.query.filter_by(id=document_id, organization_id=organization_id).first_or_404()
+
+    remarks = (request.form.get("remarks") or "").strip()
+    if not remarks:
+        flash("Please provide a reason for rejecting this document.", "error")
+        return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+    actor = session.get("user") or {}
+    document.status = "REJECTED"
+    document.remarks = remarks
+    document.reviewed_at = datetime.utcnow()
+    document.reviewed_by = actor.get("id")
+    db.session.commit()
+
+    recompute_organization_kyc_status(organization_id)
+    invalidate_report_cache("dashboard:super_admin")
+
+    label = KycDocument.DOC_TYPE_LABELS.get(document.doc_type, document.doc_type)
+    _log_activity("kyc_document.reject", f"Rejected '{label}' for {organization.organization_name}: {remarks}")
+    flash(f"'{label}' rejected.", "success")
+    return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents/<document_id>/download")
+@super_admin_required
+def super_admin_kyc_document_download(organization_id, document_id):
+    from flask import send_file
+
+    document = KycDocument.query.filter_by(id=document_id, organization_id=organization_id).first_or_404()
+    if not os.path.exists(document.file_path):
+        flash("This document's file could not be found on disk.", "error")
+        return redirect(url_for("frontend.super_admin_kyc_documents", organization_id=organization_id))
+
+    return send_file(
+        document.file_path,
+        as_attachment=True,
+        download_name=document.original_filename or os.path.basename(document.file_path),
+    )
+
+
+@frontend_bp.route("/organization/kyc-documents")
+@login_required
+@require_permission("kyc.view")
+def organization_kyc_documents():
+    """Self-serve KYC page for an organization's own users: they can see
+    each document's status/rejection remarks and upload/replace files.
+    Approve/Reject stays super-admin-only (see super_admin_kyc_document_*
+    above) - this route never changes a document's review status."""
+    user = session.get("user") or {}
+    organization_id = user.get("organization_id")
+    if not organization_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.organization_dashboard"))
+
+    organization = Organization.query.get_or_404(organization_id)
+    documents = KycDocument.query.filter_by(organization_id=organization_id).all()
+    documents_by_type = {doc.doc_type: doc for doc in documents}
+    return render_template(
+        "organization/kyc_documents.html",
+        organization=organization,
+        doc_types=KycDocument.DOC_TYPES,
+        doc_type_labels=KycDocument.DOC_TYPE_LABELS,
+        documents_by_type=documents_by_type,
+    )
+
+
+@frontend_bp.route("/organization/kyc-documents/upload", methods=["POST"])
+@login_required
+@require_permission("kyc.upload")
+def organization_kyc_document_upload():
+    user = session.get("user") or {}
+    organization_id = user.get("organization_id")
+    if not organization_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.organization_dashboard"))
+
+    organization = Organization.query.get_or_404(organization_id)
+    doc_type = request.form.get("doc_type")
+    upload_file = request.files.get("document_file")
+
+    ok, result = _save_kyc_document(organization_id, doc_type, upload_file, user)
+    if not ok:
+        flash(result, "error")
+        return redirect(url_for("frontend.organization_kyc_documents"))
+
+    label = result
+    _log_activity("kyc_document.upload", f"Uploaded '{label}' for {organization.organization_name}")
+    flash(f"'{label}' uploaded and marked Pending review.", "success")
+    return redirect(url_for("frontend.organization_kyc_documents"))
+
+
+@frontend_bp.route("/organization/kyc-documents/<document_id>/download")
+@login_required
+@require_permission("kyc.view")
+def organization_kyc_document_download(document_id):
+    from flask import send_file
+
+    user = session.get("user") or {}
+    organization_id = user.get("organization_id")
+    # Scoped to the caller's own organization_id from the session (not a
+    # URL parameter) so one organization can never download another
+    # organization's KYC documents by guessing a document_id.
+    document = KycDocument.query.filter_by(id=document_id, organization_id=organization_id).first_or_404()
+    if not os.path.exists(document.file_path):
+        flash("This document's file could not be found on disk.", "error")
+        return redirect(url_for("frontend.organization_kyc_documents"))
+
+    return send_file(
+        document.file_path,
+        as_attachment=True,
+        download_name=document.original_filename or os.path.basename(document.file_path),
     )
 
 
@@ -1191,6 +1585,15 @@ def super_admin_organization_feature_toggle(organization_id):
 def super_admin_edit_organization(organization_id):
     organization = Organization.query.get_or_404(organization_id)
     if request.method == "POST":
+        logo_file = request.files.get("logo_file")
+        if logo_file and logo_file.filename:
+            filename = secure_filename(logo_file.filename)
+            unique_name = f"{uuid.uuid4().hex}_{filename}"
+            upload_dir = os.path.join("app", "static", "uploads", "org_logos")
+            os.makedirs(upload_dir, exist_ok=True)
+            logo_file.save(os.path.join(upload_dir, unique_name))
+            organization.logo = f"/static/uploads/org_logos/{unique_name}"
+
         organization.organization_name = request.form.get("organization_name")
         organization.registration_number = request.form.get("registration_number")
         organization.gst_number = request.form.get("gst_number")
@@ -1203,9 +1606,8 @@ def super_admin_edit_organization(organization_id):
         organization.address = request.form.get("address")
         organization.country_id = _parse_int(request.form.get("country_id"))
         organization.state_id = _parse_int(request.form.get("state_id"))
-        organization.district_id = _parse_int(request.form.get("district_id"))
+        organization.district = request.form.get("district")
         organization.pincode = request.form.get("pincode")
-        organization.logo = request.form.get("logo")
         organization.subscription_plan_id = _parse_int(request.form.get("subscription_plan_id"))
         organization.subscription_expiry_date = _parse_date(request.form.get("subscription_expiry_date"))
         organization.candidate_limit = _parse_int(request.form.get("candidate_limit")) or 0
@@ -1222,7 +1624,7 @@ def super_admin_edit_organization(organization_id):
         invalidate_report_cache("dashboard:super_admin")
         flash("Organization updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
-    return render_template("super_admin/organizations/form.html", organization=organization)
+    return render_template("super_admin/organizations/form.html", organization=organization, indian_states=INDIAN_STATES)
 
 
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>/suspend", methods=["POST"])
@@ -1426,7 +1828,64 @@ def super_admin_subscription(organization_id):
         flash("Subscription updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
 
-    return render_template("super_admin/subscription.html", organization=organization, plans=plans)
+    invoices = (
+        Invoice.query.filter_by(organization_id=organization.id)
+        .order_by(Invoice.issued_at.desc())
+        .all()
+    )
+
+    return render_template(
+        "super_admin/subscription.html",
+        organization=organization,
+        plans=plans,
+        invoices=invoices,
+        gateway_configured=is_gateway_configured(),
+    )
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/invoices/generate", methods=["POST"])
+@super_admin_required
+def super_admin_generate_invoice(organization_id):
+    """Manual 'Generate Invoice Now' button on the Subscription page - the
+    same invoice-creation logic the daily billing cycle job uses
+    (app/services/billing.py), just triggered on demand for one
+    organization instead of scheduled for all of them."""
+    organization = Organization.query.get_or_404(organization_id)
+    actor = session.get("user") or {}
+
+    invoice = generate_invoice_for_organization(organization, actor_id=actor.get("id"))
+    if invoice:
+        _log_activity(
+            "billing.invoice_generated",
+            f"Manually generated invoice {invoice.invoice_number} for {organization.organization_name}",
+        )
+        flash(f"Invoice {invoice.invoice_number} generated.", "success")
+    else:
+        flash("Could not generate an invoice - this organization has no plan or subscription expiry date set.", "error")
+
+    return redirect(url_for("frontend.super_admin_subscription", organization_id=organization.id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/invoices/<invoice_id>/mark-paid", methods=["POST"])
+@super_admin_required
+def super_admin_mark_invoice_paid(organization_id, invoice_id):
+    """Manual 'Mark as Paid' action for organizations that paid outside the
+    (not-yet-wired) payment gateway - bank transfer, cheque, cash, etc.
+    Routes through the same mark_invoice_paid() a real gateway webhook
+    would call, so the Invoice + Organization.payment_status stay
+    consistent either way (see app/services/payment_gateway.py)."""
+    invoice = Invoice.query.filter_by(id=invoice_id, organization_id=organization_id).first_or_404()
+    actor = session.get("user") or {}
+
+    mark_invoice_paid(invoice, gateway="manual", gateway_reference=None, raw_response=None, actor_id=actor.get("id"))
+    _log_activity(
+        "billing.invoice_marked_paid",
+        f"Manually marked invoice {invoice.invoice_number} as paid for organization {organization_id}",
+    )
+    invalidate_report_cache("dashboard:super_admin")
+    flash(f"Invoice {invoice.invoice_number} marked as paid.", "success")
+
+    return redirect(url_for("frontend.super_admin_subscription", organization_id=organization_id))
 
 
 def _ensure_permission_exists(code, description):
@@ -1460,6 +1919,14 @@ def super_admin_roles_permissions():
     _ensure_permission_exists(
         "scheme.view_all",
         "See every scheme in the organization, not just ones this user created",
+    )
+    _ensure_permission_exists(
+        "kyc.view",
+        "View the organization's own KYC document status and rejection remarks",
+    )
+    _ensure_permission_exists(
+        "kyc.upload",
+        "Upload or replace the organization's own KYC documents",
     )
 
     roles = Role.query.filter_by(is_deleted=False).order_by(Role.name).all()
@@ -4036,6 +4503,38 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
         for key in sector_salary_totals
     }
 
+    # --- State / District / Trainer segmentation (Section 8: Platform-Wide Reporting) ---
+    state_breakdown = {}
+    for c in all_candidates:
+        key = c.state or "Unspecified"
+        state_breakdown[key] = state_breakdown.get(key, 0) + 1
+
+    district_breakdown = {}
+    for c in all_candidates:
+        key = c.district or "Unspecified"
+        district_breakdown[key] = district_breakdown.get(key, 0) + 1
+
+    trainer_breakdown = {}
+    for c in all_candidates:
+        key = c.trainer or "Unassigned"
+        trainer_breakdown[key] = trainer_breakdown.get(key, 0) + 1
+
+    # --- Migration tracking: placed candidates whose job location falls
+    # outside their home state. Heuristic match (home state name found
+    # inside the free-text job location) since both fields are free text
+    # and there's no state_id on Candidate - good enough for a first cut,
+    # revisit if job location ever becomes a structured field.
+    migration_breakdown = {"Within State": 0, "Migrated": 0, "Unknown": 0}
+    for c in all_candidates:
+        if not c.employer_name:
+            continue
+        if not c.location or not c.state:
+            migration_breakdown["Unknown"] += 1
+        elif c.state.strip().lower() in c.location.strip().lower():
+            migration_breakdown["Within State"] += 1
+        else:
+            migration_breakdown["Migrated"] += 1
+
     return {
         "total": total,
         "placed": placed,
@@ -4054,7 +4553,59 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
         "attrition_rate": attrition_rate,
         "exit_reason_breakdown": exit_reason_breakdown,
         "sector_avg_salary": sector_avg_salary,
+        "state_breakdown": state_breakdown,
+        "district_breakdown": district_breakdown,
+        "trainer_breakdown": trainer_breakdown,
+        "migration_breakdown": migration_breakdown,
     }
+
+
+@frontend_bp.route("/reports/export")
+@login_required
+@require_permission("report.view")
+def reports_export():
+    """CSV export for the Reports page (SRS Section 8 - Platform-Wide
+    Reporting requires export; the Reports page had no download option
+    at all before this)."""
+    import csv
+    import io
+
+    from flask import Response
+
+    user = session.get("user")
+    query = Candidate.query.filter_by(is_deleted=False)
+    if not user.get("is_super_admin"):
+        query = query.filter_by(organization_id=user.get("organization_id"))
+    if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
+        query = query.filter(Candidate.created_by == user.get("id"))
+    candidates = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Registration No", "Full Name", "State", "District", "Trainer",
+        "Sector", "Training Status", "Verification Status",
+        "Employer", "Job Location", "Salary", "Joining Date",
+    ])
+    for c in candidates:
+        writer.writerow([
+            c.registration_number or "",
+            c.full_name or "",
+            c.state or "",
+            c.district or "",
+            c.trainer or "",
+            c.sector or "",
+            c.training_status or "",
+            c.verification_status or "",
+            c.employer_name or "",
+            c.location or "",
+            c.salary or "",
+            c.joining_date.strftime("%d-%m-%Y") if c.joining_date else "",
+        ])
+
+    response = Response(output.getvalue(), mimetype="text/csv")
+    response.headers["Content-Disposition"] = "attachment; filename=candidate_report.csv"
+    return response
 
 
 @frontend_bp.route("/notifications")

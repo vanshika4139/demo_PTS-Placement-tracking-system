@@ -98,9 +98,12 @@
   }
 </style>
 
-<div class="page-header">
-  <h2>Reports</h2>
-  <p>Placement performance and candidate lifecycle summary.</p>
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Reports</h2>
+    <p>Placement performance and candidate lifecycle summary.</p>
+  </div>
+  <a href="{{ url_for('frontend.reports_export') }}" class="ghost-btn">Export to CSV</a>
 </div>
 
 <div class="sa-stats-grid">
@@ -148,6 +151,63 @@
       </tr>
       {% else %}
       <tr><td colspan="3">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>State-wise Distribution</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>State</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for state, count in state_breakdown.items() %}
+      <tr><td>{{ state }}</td><td class="sa-report-count">{{ count }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>District-wise Distribution</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>District</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for district, count in district_breakdown.items() %}
+      <tr><td>{{ district }}</td><td class="sa-report-count">{{ count }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Trainer-wise Distribution</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Trainer</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for trainer, count in trainer_breakdown.items() %}
+      <tr><td>{{ trainer }}</td><td class="sa-report-count">{{ count }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3 class="sa-report-section-title">Migration Tracking</h3>
+  <p class="sa-report-section-sub">Placed candidates whose job location is outside their home state, vs. within it.</p>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Category</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for label, count in migration_breakdown.items() %}
+      <tr><td>{{ label }}</td><td class="sa-report-count">{{ count }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

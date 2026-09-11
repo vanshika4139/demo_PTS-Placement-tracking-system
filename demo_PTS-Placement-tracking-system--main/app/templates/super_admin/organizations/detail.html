@@ -150,6 +150,7 @@
   <div class="inline-actions">
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_edit_organization', organization_id=organization.id) }}">Edit</a>
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization.id) }}">View Activity</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.super_admin_kyc_documents', organization_id=organization.id) }}">KYC Documents</a>
     <a class="primary-btn" href="{{ url_for('frontend.super_admin_subscription', organization_id=organization.id) }}">Subscription</a>
 
     {% if is_active %}
@@ -192,6 +193,7 @@
       <tr><th>GST Number</th><td>{{ organization.gst_number or '-' }}</td></tr>
       <tr><th>PAN Number</th><td>{{ organization.pan_number or '-' }}</td></tr>
       <tr><th>Website</th><td>{{ organization.website or '-' }}</td></tr>
+      <tr><th>Logo</th><td>{% if organization.logo %}<img src="{{ organization.logo }}" alt="Organization logo" style="height:36px; border-radius:4px;">{% else %}-{% endif %}</td></tr>
     </tbody>
   </table>
 </div>
@@ -214,8 +216,8 @@
     <tbody>
       <tr><th>Address</th><td>{{ organization.address or '-' }}</td></tr>
       <tr><th>Country ID</th><td>{{ organization.country_id or '-' }}</td></tr>
-      <tr><th>State ID</th><td>{{ organization.state_id or '-' }}</td></tr>
-      <tr><th>District ID</th><td>{{ organization.district_id or '-' }}</td></tr>
+      <tr><th>State</th><td>{{ state_display }}</td></tr>
+      <tr><th>District</th><td>{{ organization.district or '-' }}</td></tr>
       <tr><th>Pincode</th><td>{{ organization.pincode or '-' }}</td></tr>
     </tbody>
   </table>
@@ -251,7 +253,7 @@
       <input type="hidden" name="feature_key" value="{{ key }}">
       <input type="hidden" name="is_enabled" value="{{ '1' if feature_map.get(key) else '0' }}">
       <label class="ff-toggle">
-        <input type="checkbox" {{ 'checked' if feature_map.get(key) }} onclick="this.form.is_enabled.value = this.checked ? '1' : '0';">
+        <input type="checkbox" data-server-checked="{{ '1' if feature_map.get(key) else '0' }}" {{ 'checked' if feature_map.get(key) }} onclick="this.form.is_enabled.value = this.checked ? '1' : '0';">
         <span class="ff-toggle-slider"></span>
       </label>
     </form>
@@ -278,4 +280,24 @@
     </tbody>
   </table>
 </div>
+
+<script>
+  // Same defense used on the Integrations page: back/forward navigation can
+  // let the browser restore a checkbox's visual `checked` state from bfcache
+  // instead of the value the server actually rendered. Each toggle here
+  // auto-submits on click, so this window is already very small, but this
+  // keeps the toggle (and its paired hidden is_enabled field, which the
+  // form actually posts) forced back to the true last-rendered server value
+  // whenever the page is shown - on a fresh load AND after a bfcache restore.
+  function syncFeatureFlagToggles() {
+    document.querySelectorAll('.ff-toggle input[type="checkbox"][data-server-checked]').forEach(function (cb) {
+      var serverChecked = cb.dataset.serverChecked === '1';
+      cb.checked = serverChecked;
+      var hiddenField = cb.form ? cb.form.elements['is_enabled'] : null;
+      if (hiddenField) hiddenField.value = serverChecked ? '1' : '0';
+    });
+  }
+  window.addEventListener('pageshow', syncFeatureFlagToggles);
+  document.addEventListener('DOMContentLoaded', syncFeatureFlagToggles);
+</script>
 {% endblock %}

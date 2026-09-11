@@ -199,6 +199,22 @@
   </a>
 </div>
 
+<div class="sa-section-title">Candidates &amp; Placements</div>
+<div class="sa-stats-grid">
+  <a href="{{ stats[8].link }}" class="sa-stat-card" style="--accent:#ef4444;">
+    <h3>{{ stats[8].title }}</h3>
+    <p class="stat-value">{{ stats[8].value }}</p>
+  </a>
+  <a href="{{ stats[9].link }}" class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>{{ stats[9].title }}</h3>
+    <p class="stat-value">{{ stats[9].value }}</p>
+  </a>
+  <a href="{{ stats[10].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>{{ stats[10].title }}</h3>
+    <p class="stat-value">{{ stats[10].value }}</p>
+  </a>
+</div>
+
 <!-- ================= NEW: Subscription Expiry Alerts ================= -->
 <div class="sa-section-title">Alerts</div>
 <div class="sa-alert-panel">
@@ -331,8 +347,16 @@
     <canvas id="orgGrowthChart" height="200"></canvas>
   </div>
   <div class="panel-card">
+    <h3>Candidate Growth</h3>
+    <canvas id="candidateGrowthChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
     <h3>Placement Trend</h3>
     <canvas id="placementTrendChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>State-wise Organization Distribution</h3>
+    <canvas id="stateDistributionChart" height="200"></canvas>
   </div>
   <div class="panel-card">
     <h3>KYC Status Breakdown</h3>
@@ -398,6 +422,29 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  const candidateGrowthCtx = document.getElementById('candidateGrowthChart');
+  if (candidateGrowthCtx) {
+    new Chart(candidateGrowthCtx, {
+      type: 'line',
+      data: {
+        labels: {{ candidate_growth_labels | tojson }},
+        datasets: [{
+          label: 'New Candidates',
+          data: {{ candidate_growth_data | tojson }},
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139, 92, 246, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
   const placementCtx = document.getElementById('placementTrendChart');
   if (placementCtx) {
     new Chart(placementCtx, {
@@ -416,6 +463,33 @@ document.addEventListener('DOMContentLoaded', function() {
         plugins: { legend: { display: false } }
       }
     });
+  }
+
+  const stateDistCtx = document.getElementById('stateDistributionChart');
+  if (stateDistCtx) {
+    const stateLabels = {{ state_distribution_labels | tojson }};
+    const stateData = {{ state_distribution_data | tojson }};
+    if (stateLabels.length > 0) {
+      new Chart(stateDistCtx, {
+        type: 'bar',
+        data: {
+          labels: stateLabels,
+          datasets: [{
+            label: 'Organizations',
+            data: stateData,
+            backgroundColor: '#06b6d4',
+          }]
+        },
+        options: {
+          responsive: true,
+          indexAxis: 'y',
+          scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    } else {
+      stateDistCtx.parentElement.innerHTML = '<h3>State-wise Organization Distribution</h3><p>No organization data yet.</p>';
+    }
   }
 
   const kycCtx = document.getElementById('kycStatusChart');

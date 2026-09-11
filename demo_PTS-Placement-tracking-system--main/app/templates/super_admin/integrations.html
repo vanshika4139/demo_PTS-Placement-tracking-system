@@ -12,6 +12,10 @@
     margin: 0 0 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
   }
   .ig-hint {
     color: var(--muted);
@@ -26,22 +30,92 @@
     font-size: 0.75rem;
     font-weight: 600;
     margin-left: 8px;
+    text-transform: none;
+    letter-spacing: normal;
   }
   .ig-status-set { background: #dcfce7; color: #16a34a; }
   .ig-status-env { background: #f3f4f6; color: #6b7280; }
+
+  /* --- channel enable/disable toggle, same visual language as the
+     Organization Feature Flags toggle so it feels consistent. --- */
+  .ig-toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .ig-toggle-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: none;
+  }
+  .ig-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+  }
+  .ig-toggle input { opacity: 0; width: 0; height: 0; }
+  .ig-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #d1d5db;
+    border-radius: 999px;
+    transition: 0.2s;
+  }
+  .ig-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .ig-toggle input:checked + .ig-toggle-slider { background-color: #16a34a; }
+  .ig-toggle input:checked + .ig-toggle-slider:before { transform: translateX(18px); }
+
+  .ig-channel-card.is-off { opacity: 0.7; }
 </style>
 
 <div class="page-header">
   <h2>Integrations</h2>
-  <p>Platform-wide credentials for email, WhatsApp, and SMS delivery.</p>
+  <p>Platform-wide credentials and on/off switches for every notification channel.</p>
+</div>
+
+<div class="panel-card" style="margin-bottom:20px;">
+  <div class="ig-section-title" style="border-bottom:none; padding-bottom:0; margin-bottom:6px;">
+    <span>Billing Cycle</span>
+  </div>
+  <p class="ig-hint" style="margin-bottom:14px;">
+    Runs automatically every day at 2:00 AM: generates invoices for organizations due for renewal,
+    sends renewal reminder emails ({{ '14' }}/{{ '3' }} days before expiry), marks overdue invoices, and
+    auto-suspends organizations past their grace period. Use the button below to run it right now instead of waiting.
+  </p>
+  <form method="post" action="{{ url_for('frontend.super_admin_run_billing_cycle') }}" onsubmit="return confirm('Run the billing cycle now? This will generate real invoices, send real renewal reminder emails, and may auto-suspend overdue organizations.');">
+    <button type="submit" class="ghost-btn">Run Billing Cycle Now</button>
+  </form>
 </div>
 
 <form method="post" class="full-form">
 
-  <div class="panel-card" style="margin-bottom:20px;">
+  <div class="panel-card ig-channel-card {{ '' if settings.email_enabled else 'is-off' }}" style="margin-bottom:20px;">
     <div class="ig-section-title">
-      Email (SMTP)
-      {% if settings.smtp_host %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      <span>
+        Email (SMTP)
+        {% if settings.smtp_host %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.email_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="email_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.email_enabled else 0 }}" {{ 'checked' if settings.email_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
     </div>
     <p class="ig-hint">Used for password-reset OTPs and notification emails. Leave a field blank to fall back to the .env value.</p>
     <div class="form-grid">
@@ -54,10 +128,19 @@
     </div>
   </div>
 
-  <div class="panel-card" style="margin-bottom:20px;">
+  <div class="panel-card ig-channel-card {{ '' if settings.whatsapp_enabled else 'is-off' }}" style="margin-bottom:20px;">
     <div class="ig-section-title">
-      WhatsApp Business API
-      {% if settings.whatsapp_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      <span>
+        WhatsApp Business API
+        {% if settings.whatsapp_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.whatsapp_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="whatsapp_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.whatsapp_enabled else 0 }}" {{ 'checked' if settings.whatsapp_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
     </div>
     <p class="ig-hint">Used for sending WhatsApp notifications (deducts from an organization's WhatsApp credits).</p>
     <div class="form-grid">
@@ -68,10 +151,19 @@
     </div>
   </div>
 
-  <div class="panel-card" style="margin-bottom:20px;">
+  <div class="panel-card ig-channel-card {{ '' if settings.sms_enabled else 'is-off' }}" style="margin-bottom:20px;">
     <div class="ig-section-title">
-      SMS Gateway
-      {% if settings.sms_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      <span>
+        SMS Gateway
+        {% if settings.sms_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.sms_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="sms_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.sms_enabled else 0 }}" {{ 'checked' if settings.sms_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
     </div>
     <p class="ig-hint">Used for sending SMS notifications (deducts from an organization's SMS credits).</p>
     <div class="form-grid">
@@ -82,8 +174,108 @@
     </div>
   </div>
 
+  <div class="panel-card ig-channel-card {{ '' if settings.voice_call_enabled else 'is-off' }}" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      <span>
+        Voice Call
+        {% if settings.voice_api_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.voice_call_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="voice_call_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.voice_call_enabled else 0 }}" {{ 'checked' if settings.voice_call_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
+    </div>
+    <p class="ig-hint">Used for automated voice-call reminders (e.g. placement or verification follow-ups) via your telephony provider.</p>
+    <div class="form-grid">
+      <label>Provider<input type="text" name="voice_provider" value="{{ settings.voice_provider or '' }}" placeholder="e.g. Exotel, Twilio"></label>
+      <label>API Key
+        <input type="password" name="voice_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.voice_api_key else 'Enter API key' }}" autocomplete="new-password">
+      </label>
+      <label>Caller ID / From Number<input type="text" name="voice_caller_id" value="{{ settings.voice_caller_id or '' }}" placeholder="e.g. +911140000000"></label>
+    </div>
+  </div>
+
+  <div class="panel-card ig-channel-card {{ '' if settings.push_enabled else 'is-off' }}" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      <span>
+        Push Notification
+        {% if settings.push_server_key %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Using .env fallback</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.push_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="push_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.push_enabled else 0 }}" {{ 'checked' if settings.push_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
+    </div>
+    <p class="ig-hint">Used for mobile/web push notifications (e.g. Firebase Cloud Messaging).</p>
+    <div class="form-grid">
+      <label>Provider<input type="text" name="push_provider" value="{{ settings.push_provider or '' }}" placeholder="e.g. Firebase Cloud Messaging"></label>
+      <label>Server Key
+        <input type="password" name="push_server_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.push_server_key else 'Enter server key' }}" autocomplete="new-password">
+      </label>
+      <label>Sender ID<input type="text" name="push_sender_id" value="{{ settings.push_sender_id or '' }}" placeholder="e.g. 1234567890"></label>
+    </div>
+  </div>
+
+  <div class="panel-card ig-channel-card {{ '' if settings.payment_gateway_enabled else 'is-off' }}" style="margin-bottom:20px;">
+    <div class="ig-section-title">
+      <span>
+        Payment Gateway
+        {% if settings.payment_gateway_key_id %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Not configured</span>{% endif %}
+      </span>
+      <span class="ig-toggle-wrap">
+        <span class="ig-toggle-label">{{ 'Enabled' if settings.payment_gateway_enabled else 'Disabled' }}</span>
+        <label class="ig-toggle">
+          <input type="checkbox" name="payment_gateway_enabled" value="1" autocomplete="off" data-server-checked="{{ 1 if settings.payment_gateway_enabled else 0 }}" {{ 'checked' if settings.payment_gateway_enabled }}>
+          <span class="ig-toggle-slider"></span>
+        </label>
+      </span>
+    </div>
+    <p class="ig-hint">Lets organizations pay invoices online (Razorpay/Cashfree/Stripe) instead of only bank transfer + manual "Mark as Paid". Leave a field blank to keep its current value.</p>
+    <div class="form-grid">
+      <label>Provider
+        <select name="payment_gateway_provider">
+          <option value="" {{ 'selected' if not settings.payment_gateway_provider }}>— Select provider —</option>
+          <option value="razorpay" {{ 'selected' if settings.payment_gateway_provider == 'razorpay' }}>Razorpay</option>
+          <option value="cashfree" {{ 'selected' if settings.payment_gateway_provider == 'cashfree' }}>Cashfree</option>
+          <option value="stripe" {{ 'selected' if settings.payment_gateway_provider == 'stripe' }}>Stripe</option>
+        </select>
+      </label>
+      <label>Key ID / Publishable Key
+        <input type="password" name="payment_gateway_key_id" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_key_id else 'Enter key ID' }}" autocomplete="new-password">
+      </label>
+      <label>Key Secret
+        <input type="password" name="payment_gateway_key_secret" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_key_secret else 'Enter key secret' }}" autocomplete="new-password">
+      </label>
+      <label>Webhook Secret
+        <input type="password" name="payment_gateway_webhook_secret" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_webhook_secret else 'Enter webhook secret' }}" autocomplete="new-password">
+      </label>
+    </div>
+  </div>
+
   <div class="form-actions">
     <button type="submit" class="primary-btn">Save Integration Settings</button>
   </div>
 </form>
+
+<script>
+  // Chrome (and other browsers) restore form control state on back/forward
+  // navigation via the bfcache, independent of the freshly-rendered HTML.
+  // That can leave a toggle showing ON while its label/pill (rendered from
+  // the real DB value) still says "Disabled". `pageshow` fires both on a
+  // normal load AND after a bfcache restore, so re-applying the true
+  // server value here every time closes that gap.
+  function syncIntegrationToggles() {
+    document.querySelectorAll('.ig-toggle input[type="checkbox"][data-server-checked]').forEach(function (cb) {
+      cb.checked = cb.dataset.serverChecked === '1';
+    });
+  }
+  window.addEventListener('pageshow', syncIntegrationToggles);
+  document.addEventListener('DOMContentLoaded', syncIntegrationToggles);
+</script>
 {% endblock %}

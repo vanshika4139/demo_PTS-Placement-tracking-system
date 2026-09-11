@@ -255,7 +255,7 @@
               <span class="sa-org-name">{{ organization.organization_name or organization.name or '-' }}</span>
               <span class="sa-org-sub">{{ organization.registration_number or organization.registration_no or 'No Reg. No.' }}</span>
             </td>
-            <td>{{ organization.state or organization.state_id or '-' }}</td>
+            <td>{{ state_names.get(organization.id, '-') }}</td>
             <td>{{ organization.contact_person or '-' }}</td>
             <td>
               <span class="sa-pill {{ 'sa-pill-green' if kyc_upper == 'APPROVED' else ('sa-pill-red' if kyc_upper == 'REJECTED' else 'sa-pill-amber') }}">

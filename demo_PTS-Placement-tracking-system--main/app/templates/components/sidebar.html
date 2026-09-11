@@ -25,6 +25,9 @@
     {% if has_permission(session.user, 'tracking.view') %}
     <li><a href="/organization/tracking">Tracking</a></li>
     {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'kyc.view') %}
+    <li><a href="/organization/kyc-documents">KYC Documents</a></li>
+    {% endif %}
     {% if has_permission(session.user, 'report.view') %}
     <li><a href="/reports">Reports</a></li>
     {% endif %}

@@ -20,8 +20,8 @@ class Organization(db.Model):
     designation = Column(String(100), nullable=True)
     address = Column(Text, nullable=True)
     country_id = Column(BigInteger, nullable=True)
-    state_id = Column(BigInteger, nullable=True)
-    district_id = Column(BigInteger, nullable=True)
+    state_id = Column(BigInteger, nullable=True)  # see app/constants/indian_states.py for lookup
+    district = Column(String(150), nullable=True)  # free text - no districts master table exists yet
     pincode = Column(String(10), nullable=True)
     logo = Column(String(500), nullable=True)
     subscription_plan_id = Column(MySQLCHAR(32), ForeignKey("plans.id"), nullable=True, index=True)

@@ -12,6 +12,7 @@ from app.config import get_config
 from app.extensions import init_extensions
 from app.routes import health_bp
 from app.routes.frontend import frontend_bp
+from app.services.scheduler import init_scheduler
 from app.utils.error_handlers import register_error_handlers
 from app.utils.logging import configure_logging
 from app.utils.permissions import has_permission
@@ -33,6 +34,12 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(frontend_bp)
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1")
+
+    # Daily billing cycle (invoice generation, renewal reminders, overdue
+    # sweep, auto-suspend) - see app/services/scheduler.py. Registered here,
+    # after extensions/blueprints are set up, so the scheduler thread never
+    # starts against a half-configured app.
+    init_scheduler(app)
 
     @app.context_processor
     def inject_permission_helper():

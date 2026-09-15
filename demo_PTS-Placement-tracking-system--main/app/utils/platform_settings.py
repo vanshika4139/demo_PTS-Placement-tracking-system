@@ -1,4 +1,4 @@
-"""
+﻿"""
 Platform-wide integration settings (SMTP, WhatsApp, SMS), stored in the
 single-row platform_settings table so the super admin can manage these
 credentials from the UI instead of editing .env by hand.
@@ -102,11 +102,13 @@ STRING_FIELDS = (
     "sms_api_key", "sms_sender_id",
     "voice_provider", "voice_api_key", "voice_caller_id",
     "push_provider", "push_server_key", "push_sender_id",
+    "payment_gateway_provider", "payment_gateway_key_id",
+    "payment_gateway_key_secret", "payment_gateway_webhook_secret",
 )
 
 BOOL_FIELDS = (
     "email_enabled", "whatsapp_enabled", "sms_enabled",
-    "voice_call_enabled", "push_enabled",
+    "voice_call_enabled", "push_enabled", "payment_gateway_enabled",
 )
 
 

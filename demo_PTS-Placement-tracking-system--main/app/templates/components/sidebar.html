@@ -1,4 +1,4 @@
-<div class="sidebar-inner">
+﻿<div class="sidebar-inner">
   <div class="sidebar-logo">Codevocado</div>
   <ul class="nav-list">
     {% if session.user.is_super_admin %}
@@ -32,7 +32,20 @@
     <li><a href="/reports">Reports</a></li>
     {% endif %}
     {% if has_permission(session.user, 'notification.view') %}
-    <li><a href="/notifications">Notifications</a></li>
+    <li class="nav-group">
+      <div style="display:flex; align-items:center;">
+        <a href="/notifications" style="flex:1;">Notifications</a>
+        {% if session.user.is_super_admin %}
+        <span class="nav-group-toggle" onclick="toggleNavGroup(event, this)"></span>
+        {% endif %}
+      </div>
+      {% if session.user.is_super_admin %}
+      <ul class="nav-sublist">
+        <li><a href="/super-admin/notifications/templates">Message Templates</a></li>
+        <li><a href="/super-admin/notifications/schedules">Notification Schedules</a></li>
+      </ul>
+      {% endif %}
+    </li>
     {% endif %}
     {% if has_permission(session.user, 'user.view') %}
     <li><a href="/super-admin/users">Users</a></li>
@@ -44,11 +57,63 @@
     <li><a href="/super-admin/activity-log">Activity Log</a></li>
     <li><a href="/super-admin/cache-monitor">Cache Monitor</a></li>
     <li><a href="/super-admin/rate-limit-monitor">Rate Limit Monitor</a></li>
-    <li><a href="/super-admin/settings/integrations">Integrations</a></li>
     <li><a href="/super-admin/system-health">System Health</a></li>
+    <li><a href="/super-admin/settings/integrations">Integrations</a></li>
     {% endif %}
     {% if has_permission(session.user, 'settings.view') %}
     <li><a href="/settings/profile">Settings</a></li>
     {% endif %}
   </ul>
 </div>
+
+<style>
+  .nav-group-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .nav-group-toggle::after {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid currentColor;
+    opacity: 0.6;
+    transition: transform 0.15s;
+  }
+  .nav-group.open > div > .nav-group-toggle::after {
+    transform: rotate(90deg);
+  }
+  .nav-sublist {
+    list-style: none;
+    margin: 0;
+    padding-left: 16px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease;
+  }
+  .nav-group.open > .nav-sublist {
+    max-height: 200px;
+  }
+  .nav-sublist li a { font-size: 0.92rem; opacity: 0.9; }
+</style>
+
+<script>
+  function toggleNavGroup(event, link) {
+    event.preventDefault();
+    link.closest(".nav-group").classList.toggle("open");
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".nav-sublist a").forEach(function (a) {
+      if (window.location.pathname === a.getAttribute("href")) {
+        a.closest(".nav-group").classList.add("open");
+      }
+    });
+  });
+</script>

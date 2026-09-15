@@ -1,23 +1,18 @@
-"""
+﻿"""
 Payment gateway integration - SRS FR-09.
 
 This module is intentionally a thin, provider-agnostic shell. It cannot be
 fully wired up without a real Razorpay/Cashfree/Stripe account and API keys
-(entered on the Integrations page once app/models/platform_settings.py has
-the payment_gateway_* columns from platform_settings_gateway_patch.py.diff)
-- there is nothing to test end-to-end without those.
+(entered on the Integrations page) - there is nothing to test end-to-end
+without those.
 
 What IS real here: the Invoice bookkeeping. `mark_invoice_paid` is what a
 real webhook handler (or a manual "Mark as Paid" button) should call - it's
 the one place that updates both the Invoice and the Organization consistently.
 
-To finish wiring a provider:
-  1. pip install razorpay (or cashfree-pg, or stripe)
-  2. Fill in `create_payment_link` for that provider using the credentials
-     from get_payment_gateway_config()
-  3. Add a webhook route (e.g. POST /webhooks/payment/<provider>) that
-     verifies the signature using payment_gateway_webhook_secret, then
-     calls mark_invoice_paid() or mark_invoice_failed() based on the event.
+Razorpay and Cashfree are fully wired (create_payment_link + webhook route
+in app/routes/frontend.py). Stripe is not - see the module docstring on
+that branch below for what's needed to finish it.
 """
 
 import logging
@@ -58,10 +53,10 @@ def create_payment_link(invoice: Invoice):
     NotImplementedError for a configured provider whose SDK call hasn't
     been filled in yet (see module docstring).
 
-    Each branch below is scaffolding, not a working call - it shows the
-    shape (invoice.amount in the provider's expected unit, a reference id
-    to correlate the webhook back to this Invoice, etc.) so wiring in the
-    real SDK is a small, obvious diff rather than a redesign.
+    Each branch below shows the shape (invoice.amount in the provider's
+    expected unit, a reference id to correlate the webhook back to this
+    Invoice, etc.) so wiring in the real SDK is a small, obvious diff
+    rather than a redesign.
     """
     provider, key_id, key_secret, _ = get_payment_gateway_config()
 
@@ -71,15 +66,97 @@ def create_payment_link(invoice: Invoice):
         )
 
     if provider == "razorpay":
-        raise NotImplementedError(
-            "Fill in with: razorpay.Client(auth=(key_id, key_secret)).payment_link.create({...}), "
-            "using invoice.amount * 100 (paise) and invoice.invoice_number as reference_id."
-        )
+        import razorpay
+
+        client = razorpay.Client(auth=(key_id, key_secret))
+
+        # A payment link for this invoice may already exist (e.g. the user
+        # clicked "Pay Online" once before) - Razorpay rejects a second
+        # create_link call with the same reference_id, so fetch and reuse
+        # the existing link instead of erroring.
+        if invoice.gateway_reference:
+            try:
+                existing = client.payment_link.fetch(invoice.gateway_reference)
+                if existing.get("status") != "expired":
+                    return existing.get("short_url")
+            except Exception:
+                pass  # fetch failed - fall through and try creating a new one
+
+        try:
+            payment_link = client.payment_link.create({
+                "amount": int(round(float(invoice.amount) * 100)),
+                "currency": "INR",
+                "description": f"Invoice {invoice.invoice_number}",
+                "reference_id": invoice.invoice_number,
+                "notes": {"invoice_id": invoice.id, "organization_id": invoice.organization_id},
+                "callback_method": "get",
+            })
+        except Exception as exc:
+            logger.exception("payment_gateway: Razorpay payment link creation failed for invoice %s", invoice.invoice_number)
+            raise RuntimeError(f"Could not create Razorpay payment link: {exc}") from exc
+
+        invoice.gateway_reference = payment_link.get("id")
+        invoice.payment_gateway = "razorpay"
+        db.session.commit()
+        return payment_link.get("short_url")
+
     elif provider == "cashfree":
-        raise NotImplementedError(
-            "Fill in with Cashfree PG's create-order API using key_id/key_secret, "
-            "invoice.amount, and invoice.invoice_number as order_id."
+        from cashfree_pg.api_client import Cashfree
+        from cashfree_pg.models.create_link_request import CreateLinkRequest
+        from cashfree_pg.models.link_customer_details_entity import LinkCustomerDetailsEntity
+
+        x_api_version = "2023-08-01"
+        cashfree_instance = Cashfree(
+            XClientId=key_id,
+            XClientSecret=key_secret,
+            XEnvironment=Cashfree.PRODUCTION if key_id.upper().startswith("PROD") else Cashfree.SANDBOX,
         )
+
+        # A payment link for this invoice may already exist - fetch and reuse
+        # it instead of erroring on a duplicate link_id (mirrors Razorpay above).
+        if invoice.gateway_reference:
+            try:
+                existing = cashfree_instance.PGFetchLink(
+                    invoice.gateway_reference, x_api_version=x_api_version
+                ).data
+                if existing.link_status == "ACTIVE":
+                    return existing.link_url
+            except Exception:
+                pass  # fetch failed - fall through and try creating a new one
+
+        # Cashfree's Payment Links API requires a customer phone number.
+        # Our Invoice model doesn't carry one directly, so fall back to the
+        # Organization's mobile number.
+        customer_phone = (invoice.organization.mobile or "").strip() or "9999999999"
+
+        customer_details = LinkCustomerDetailsEntity(
+            customer_phone=customer_phone,
+            customer_name=invoice.organization.organization_name,
+        )
+        create_link_request = CreateLinkRequest(
+            link_id=invoice.invoice_number,
+            link_amount=float(invoice.amount),
+            link_currency="INR",
+            link_purpose=f"Invoice {invoice.invoice_number}",
+            customer_details=customer_details,
+            link_notes={"invoice_id": str(invoice.id), "organization_id": str(invoice.organization_id)},
+        )
+
+        try:
+            api_response = cashfree_instance.PGCreateLink(
+                create_link_request=create_link_request,
+                x_api_version=x_api_version,
+            )
+            payment_link = api_response.data
+        except Exception as exc:
+            logger.exception("payment_gateway: Cashfree payment link creation failed for invoice %s", invoice.invoice_number)
+            raise RuntimeError(f"Could not create Cashfree payment link: {exc}") from exc
+
+        invoice.gateway_reference = payment_link.link_id
+        invoice.payment_gateway = "cashfree"
+        db.session.commit()
+        return payment_link.link_url
+
     elif provider == "stripe":
         raise NotImplementedError(
             "Fill in with stripe.checkout.Session.create(...) using key_secret as the API key, "
@@ -107,12 +184,19 @@ def mark_invoice_paid(invoice: Invoice, gateway=None, gateway_reference=None, ra
     org = Organization.query.get(invoice.organization_id)
     if org:
         org.payment_status = "PAID"
-        # Note: Organization.modified_by is an integer column (unlike the
-        # UUID-string modified_by used on Plan/Role/Module elsewhere in this
-        # codebase) and isn't set anywhere else in the app either, so it's
-        # left untouched here rather than passing an incompatible UUID
-        # actor_id into it.
         org.modified_at = datetime.utcnow()
+
+    # Notify super admins the same way other platform events do (new
+    # organization, new candidate, etc.) - see app/routes/frontend.py
+    # _create_notification for the pattern this mirrors.
+    from app.models import Notification
+    notif = Notification(
+        title=f"Invoice paid: {invoice.invoice_number}",
+        message=f"{org.organization_name if org else 'Organization'} paid invoice {invoice.invoice_number} (Rs. {invoice.amount:,.2f}) via {gateway or 'manual'}.",
+        type="success",
+        organization_id=str(invoice.organization_id),
+    )
+    db.session.add(notif)
 
     db.session.commit()
     return invoice

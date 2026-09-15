@@ -1,0 +1,59 @@
+﻿{% extends 'base.html' %}
+{% block title %}Create Schedule{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Create Notification Schedule</h2>
+    <p>Pick a template and set how often it should be sent.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_notification_schedules') }}">Back</a>
+</div>
+
+<div class="panel-card form-card">
+  {% if not templates %}
+  <p>No active message templates yet. <a href="{{ url_for('frontend.super_admin_message_template_create') }}">Create one first</a>.</p>
+  {% else %}
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Template
+        <select name="template_id" required>
+          {% for t in templates %}
+          <option value="{{ t.id }}">{{ t.template_type|replace('_', ' ')|title }} ({{ t.channel }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Frequency
+        <select name="frequency" id="frequency-select" onchange="toggleFrequencyFields()" required>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="custom">Custom (cron expression)</option>
+        </select>
+      </label>
+      <label id="day-of-week-field" style="display:none;">Day of Week (0=Monday, 6=Sunday)
+        <input type="number" name="day_of_week" min="0" max="6">
+      </label>
+      <label id="day-of-month-field" style="display:none;">Day of Month
+        <input type="number" name="day_of_month" min="1" max="31">
+      </label>
+      <label id="custom-cron-field" style="display:none;" class="span-2">Cron Expression
+        <input type="text" name="custom_cron_expression" placeholder="e.g. 0 9 * * 1-5">
+      </label>
+      <label class="checkbox-row"><input type="checkbox" name="is_active" checked> Active</label>
+    </div>
+    <button type="submit" class="primary-btn">Create Schedule</button>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+  function toggleFrequencyFields() {
+    const freq = document.getElementById('frequency-select').value;
+    document.getElementById('day-of-week-field').style.display = freq === 'weekly' ? '' : 'none';
+    document.getElementById('day-of-month-field').style.display = freq === 'monthly' ? '' : 'none';
+    document.getElementById('custom-cron-field').style.display = freq === 'custom' ? '' : 'none';
+  }
+  document.addEventListener('DOMContentLoaded', toggleFrequencyFields);
+</script>
+{% endblock %}

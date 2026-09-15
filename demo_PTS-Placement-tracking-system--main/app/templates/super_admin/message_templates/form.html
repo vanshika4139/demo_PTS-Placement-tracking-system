@@ -1,0 +1,45 @@
+﻿{% extends 'base.html' %}
+{% block title %}{{ 'Edit Template' if template else 'Create Template' }}{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>{{ 'Edit Template' if template else 'Create Template' }}</h2>
+    <p>{{ 'Update this template''s wording.' if template else 'Define wording for a notification purpose and channel.' }}</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_message_templates') }}">Back</a>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Template Type
+        <select name="template_type" {{ 'disabled' if template else '' }} required>
+          {% for tt in ['PLACEMENT_REMINDER', 'SALARY_UPDATE', 'VERIFICATION_REQUEST', 'SURVEY', 'ANNIVERSARY', 'OFFER_LETTER'] %}
+          <option value="{{ tt }}" {{ 'selected' if template and template.template_type == tt }}>{{ tt|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Channel
+        <select name="channel" {{ 'disabled' if template else '' }} required>
+          {% for ch in ['EMAIL', 'WHATSAPP', 'SMS', 'VOICE_CALL', 'PUSH'] %}
+          <option value="{{ ch }}" {{ 'selected' if template and template.channel == ch }}>{{ ch }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="span-2">Subject (Email only)
+        <input type="text" name="subject" value="{{ template.subject if template and template.subject else '' }}" placeholder="Optional - only used for Email channel">
+      </label>
+      <label class="span-2">Message Body
+        <textarea name="body" rows="6" required placeholder="Use placeholders like {candidate_name}, {employer_name}, {joining_date}">{{ template.body if template else '' }}</textarea>
+      </label>
+      <label class="checkbox-row"><input type="checkbox" name="is_active" {{ 'checked' if not template or template.is_active }}> Active</label>
+    </div>
+    {% if template %}
+    <input type="hidden" name="template_type" value="{{ template.template_type }}">
+    <input type="hidden" name="channel" value="{{ template.channel }}">
+    {% endif %}
+    <button type="submit" class="primary-btn">{{ 'Save Changes' if template else 'Create Template' }}</button>
+  </form>
+</div>
+{% endblock %}

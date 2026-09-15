@@ -21,12 +21,10 @@ from app.models.candidate_feedback import CandidateFeedback
 from app.models.organization_feature import OrganizationFeature
 from app.models.platform_settings import PlatformSettings
 from app.models.kyc_document import KycDocument
-# app/models/__init__.py — add these two lines:
-
-# 1. Add this import alongside the other model imports:
 from app.models.invoice import Invoice
-
-# 2. Add "Invoice" to the __all__ list.
+from app.models.communication_log import CommunicationLog
+from app.models.message_template import MessageTemplate
+from app.models.notification_schedule import NotificationSchedule
 
 __all__ = [
     "Candidate",
@@ -53,4 +51,7 @@ __all__ = [
     "OrganizationFeature",
     "PlatformSettings",
     "KycDocument",
+    "CommunicationLog",
+    "MessageTemplate",
+    "NotificationSchedule",
 ]

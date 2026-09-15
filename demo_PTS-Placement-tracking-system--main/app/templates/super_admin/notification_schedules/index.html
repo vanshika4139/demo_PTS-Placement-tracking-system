@@ -1,0 +1,51 @@
+﻿{% extends 'base.html' %}
+{% block title %}Notification Schedules{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Notification Schedules</h2>
+    <p>Control when each message template is sent - daily, weekly, monthly, or a custom cron schedule.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.super_admin_notification_schedule_create') }}">+ New Schedule</a>
+</div>
+
+<div class="panel-card">
+  {% if schedules %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Template</th><th>Channel</th><th>Frequency</th><th>Details</th><th>Last Run</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in schedules %}
+      <tr>
+        <td>{{ s.template.template_type|replace('_', ' ')|title }}</td>
+        <td>{{ s.template.channel }}</td>
+        <td>{{ s.frequency|capitalize }}</td>
+        <td>
+          {% if s.frequency == 'weekly' %}Day {{ s.day_of_week }}
+          {% elif s.frequency == 'monthly' %}Day {{ s.day_of_month }} of month
+          {% elif s.frequency == 'custom' %}{{ s.custom_cron_expression }}
+          {% else %}-{% endif %}
+        </td>
+        <td>{{ s.last_run_at.strftime('%d-%m-%Y %H:%M') if s.last_run_at else 'Never' }}</td>
+        <td>
+          <span class="status-badge {{ 'status-active' if s.is_active else 'status-suspended' }}">{{ 'Active' if s.is_active else 'Inactive' }}</span>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.super_admin_notification_schedule_toggle', schedule_id=s.id) }}" style="display:inline;">
+            <button type="submit" class="ghost-btn">{{ 'Deactivate' if s.is_active else 'Activate' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('frontend.super_admin_notification_schedule_delete', schedule_id=s.id) }}" style="display:inline;" onsubmit="return confirm('Delete this schedule?');">
+            <button type="submit" class="action-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No notification schedules yet. Create one to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}

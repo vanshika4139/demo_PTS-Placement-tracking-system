@@ -49,6 +49,7 @@ def init_scheduler(app, hour=2, minute=0):
         return
 
     from app.services.billing import run_billing_cycle
+    from app.services.notification_scheduler import run_notification_schedules
 
     def _run_daily_billing_cycle():
         with app.app_context():
@@ -68,6 +69,23 @@ def init_scheduler(app, hour=2, minute=0):
         hour=hour,
         minute=minute,
         id="daily_billing_cycle",
+        replace_existing=True,
+    )
+
+    def _run_notification_schedules():
+        with app.app_context():
+            logger.info("scheduler: checking notification schedules")
+            try:
+                results = run_notification_schedules()
+                logger.info("scheduler: notification schedules run finished: %s", results)
+            except Exception:
+                logger.exception("scheduler: notification schedules run failed")
+
+    _scheduler.add_job(
+        _run_notification_schedules,
+        trigger="interval",
+        hours=1,
+        id="notification_schedules_check",
         replace_existing=True,
     )
     _scheduler.start()

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+?{% extends 'base.html' %}
 {% block title %}Subscription - {{ organization.organization_name }}{% endblock %}
 
 {% block content %}
@@ -100,7 +100,12 @@
         <td>{{ invoice.paid_at.strftime('%d-%m-%Y %H:%M') if invoice.paid_at else '—' }}</td>
         <td>
           {% if invoice.status in ('PENDING', 'OVERDUE') %}
-          <form method="post" action="{{ url_for('frontend.super_admin_mark_invoice_paid', organization_id=organization.id, invoice_id=invoice.id) }}" onsubmit="return confirm('Mark invoice {{ invoice.invoice_number }} as paid? This assumes payment was received outside the gateway (bank transfer, cheque, etc.).');">
+          {% if gateway_configured %}
+          <form method="post" action="{{ url_for('frontend.super_admin_generate_payment_link', organization_id=organization.id, invoice_id=invoice.id) }}" style="display:inline-block; margin-right:6px;">
+            <button type="submit" class="primary-btn" style="padding:4px 12px; font-size:0.82rem;">Pay Online</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('frontend.super_admin_mark_invoice_paid', organization_id=organization.id, invoice_id=invoice.id) }}" style="display:inline-block;" onsubmit="return confirm('Mark invoice {{ invoice.invoice_number }} as paid? This assumes payment was received outside the gateway (bank transfer, cheque, etc.).');">
             <button type="submit" class="ghost-btn" style="padding:4px 12px; font-size:0.82rem;">Mark as Paid</button>
           </form>
           {% endif %}

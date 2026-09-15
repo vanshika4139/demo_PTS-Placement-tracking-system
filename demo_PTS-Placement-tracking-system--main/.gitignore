@@ -14,3 +14,4 @@ test_output.txt
 
 # Virtual environment
 venv/
+ngrok.exe

@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import string
@@ -16,6 +17,9 @@ from app.models import (
     Batch,
     Candidate,
     CandidateFeedback,
+    CommunicationLog,
+    MessageTemplate,
+    NotificationSchedule,
     FollowUpCheckpoint,
     Invoice,
     KycDocument,
@@ -32,7 +36,13 @@ from app.models import (
     UserSettings,
 )
 from app.services.kyc import recompute_organization_kyc_status
-from app.services.billing import generate_invoice_for_organization, run_billing_cycle
+from app.services.lifecycle import CandidateLifecycleService
+from app.services.billing import (
+    calculate_prorated_amount,
+    generate_invoice_for_organization,
+    run_auto_suspend,
+    run_billing_cycle,
+)
 from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
@@ -51,6 +61,8 @@ from app.utils.report_cache import (
 )
 
 frontend_bp = Blueprint("frontend", __name__, template_folder="../templates")
+
+logger = logging.getLogger(__name__)
 
 
 @frontend_bp.app_template_global("_")
@@ -273,38 +285,42 @@ def _log_activity(action, details=None):
 
 def _check_and_suspend_expired_subscriptions():
     """FR-11 (Auto-Suspend on Expiry). Har baar super admin dashboard load
-    hota hai, yeh un organizations ko dhoondta hai jinki subscription
-    expire ho chuki hai but abhi bhi status=1 (Active) hai, aur unhe
-    suspend kar deta hai. Data touch nahi hota - sirf status flip hota hai,
-    jaisa manual Suspend button karta hai.
+    hota hai, yeh app/services/billing.py ka run_auto_suspend() hi call
+    karta hai - wahi AUTO_SUSPEND_GRACE_DAYS grace-period logic jo daily
+    scheduler (app/services/scheduler.py) bhi use karta hai.
 
-    Note: yeh request-triggered hai, cron job nahi hai - agar kai din tak
-    koi super admin login hi nahi karta, tab tak check nahi chalega. Real
-    cron/scheduler abhi is codebase mein nahi hai (Celery ya APScheduler
-    jaisa kuch nahi dikha), to yeh ek stopgap hai jab tak proper scheduler
-    add na ho.
+    BUG FIX: pehle yeh function apna khud ka copy rakhta tha jo subscription
+    expire hote hi turant (bina grace ke) suspend kar deta tha, jabki
+    billing.py ka run_auto_suspend() 3-din grace deta hai - matlab jo bhi
+    pehle chalta (dashboard visit vs scheduled job) wahi jeetta, inconsistent
+    behavior. Ab dono jagah EK hi function/logic use hoti hai, so dashboard
+    load aur daily scheduler kabhi alag result nahi denge.
+
+    Note: yeh request-triggered hai (dashboard load ke saath), cron job nahi
+    - agar kai din tak koi super admin login hi nahi karta, tab tak check
+    nahi chalega. Real cron ab app/services/scheduler.py mein hai (daily
+    02:00 pe run_billing_cycle -> run_auto_suspend chalata hai) - yeh sirf
+    ek additional safety net hai taaki agla scheduled run hone se pehle bhi
+    dashboard kholte hi overdue orgs suspend ho jayein, same grace-days ke
+    saath.
     """
-    from datetime import date
+    suspended_ids = run_auto_suspend()
 
-    expired = Organization.query.filter(
-        Organization.status == 1,
-        Organization.is_deleted.is_(False),
-        Organization.subscription_expiry_date.isnot(None),
-        Organization.subscription_expiry_date < date.today(),
-    ).all()
-
-    for org in expired:
-        org.status = 0
-        _log_activity(
-            "organization.auto_suspended",
-            f"{org.organization_name} - subscription expired on {org.subscription_expiry_date}",
-        )
-
-    if expired:
-        db.session.commit()
+    if suspended_ids:
+        orgs_by_id = {
+            o.id: o
+            for o in Organization.query.filter(Organization.id.in_(suspended_ids)).all()
+        }
+        for org_id in suspended_ids:
+            org = orgs_by_id.get(org_id)
+            _log_activity(
+                "organization.auto_suspended",
+                f"{org.organization_name} - subscription expired on {org.subscription_expiry_date}"
+                if org else f"organization {org_id}",
+            )
         invalidate_report_cache("dashboard:super_admin")
 
-    return len(expired)
+    return len(suspended_ids)
 
 
 def _sync_overdue_notifications(user):
@@ -597,6 +613,39 @@ def get_super_admin_dashboard_data():
         (Candidate.verification_status.is_(None)) | (Candidate.verification_status == "pending"),
     ).count()
 
+    # NEW FEATURE: platform-wide operational stats.
+    # "Active Subscription Count" is deliberately narrower than the existing
+    # "Active Organizations" stat above (status == 1 only) - this one also
+    # requires a plan actually assigned AND not expired, i.e. orgs that are
+    # both logged-in-capable AND currently paying for a plan.
+    active_subscriptions = Organization.query.filter(
+        Organization.is_deleted == False,
+        Organization.status == 1,
+        Organization.subscription_plan_id.isnot(None),
+        (Organization.subscription_expiry_date.is_(None)) | (Organization.subscription_expiry_date >= today_date),
+    ).count()
+
+    # "Current Revenue" = sum of PAID invoices with a paid_at in the current
+    # calendar month (an MRR-style "revenue collected this month" figure,
+    # not lifetime revenue-to-date).
+    #
+    # NOTE: "Calls Made" and WhatsApp/SMS/Email "Delivered" counts are NOT
+    # added here - there is no log table anywhere in this codebase that
+    # records an actual call or message send/delivery.
+    # Organization.whatsapp_credits/sms_credits/email_credits are only a
+    # balance (topped up via bulk-topup) that's never decremented or logged
+    # against real usage. Showing a number for those would mean fabricating
+    # it. That needs a new CallLog/MessageLog table plus wiring into
+    # whatever actually sends the calls/messages - a separate, bigger
+    # feature than this one.
+    current_month_start = today_date.replace(day=1)
+    current_month_revenue = db.session.query(db.func.sum(Invoice.amount)).filter(
+        Invoice.status == "PAID",
+        Invoice.paid_at.isnot(None),
+        Invoice.paid_at >= datetime.combine(current_month_start, datetime.min.time()),
+    ).scalar() or 0
+    current_month_revenue = float(current_month_revenue)
+
     stats = [
         {"title": "Total Organizations", "value": str(total), "link": url_for("frontend.super_admin_organizations")},
         {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active")},
@@ -609,6 +658,12 @@ def get_super_admin_dashboard_data():
         {"title": "Pending Placement", "value": str(pending_placement), "link": url_for("frontend.organization_candidates", placed="no")},
         {"title": "Placement Proof Uploaded", "value": str(placement_proof_uploaded), "link": url_for("frontend.organization_candidates", placement_proof="yes")},
         {"title": "Verification-Pending Candidates", "value": str(verification_pending_candidates), "link": url_for("frontend.organization_candidates", verification_status="pending")},
+        {"title": "Active Subscriptions", "value": str(active_subscriptions), "link": url_for("frontend.super_admin_organizations", filter="active")},
+        {"title": "Current Month Revenue", "value": f"Rs. {current_month_revenue:,.2f}", "link": url_for("frontend.super_admin_organizations")},
+        {"title": "Total Calls Made", "value": str(CommunicationLog.query.filter_by(channel="voice_call").count()), "link": None},
+        {"title": "WhatsApp Delivered", "value": str(CommunicationLog.query.filter_by(channel="whatsapp", status="sent").count()), "link": None},
+        {"title": "SMS Delivered", "value": str(CommunicationLog.query.filter_by(channel="sms", status="sent").count()), "link": None},
+        {"title": "Email Delivered", "value": str(CommunicationLog.query.filter_by(channel="email", status="sent").count()), "link": None},
     ]
 
     today = datetime.utcnow()
@@ -829,6 +884,112 @@ def super_admin_rate_limit_reset():
         flash("Could not clear that key - it may have already expired.", "error")
     return redirect(url_for("frontend.super_admin_rate_limit_monitor"))
 
+@frontend_bp.route("/webhooks/payment/razorpay", methods=["POST"])
+def webhook_razorpay():
+    """Razorpay calls this after a payment link is paid. Verifies the
+    signature using the webhook secret configured on the Integrations page,
+    then marks the matching Invoice as paid via the same mark_invoice_paid()
+    a manual "Mark as Paid" click uses - see app/services/payment_gateway.py."""
+    import hashlib
+    import hmac
+
+    from app.services.payment_gateway import get_payment_gateway_config
+    from app.services.payment_gateway import mark_invoice_paid
+
+    _, _, _, webhook_secret = get_payment_gateway_config()
+    if not webhook_secret:
+        logger.warning("webhook_razorpay: received webhook but no webhook secret is configured - ignoring")
+        return "", 400
+
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    body = request.get_data()
+    expected_signature = hmac.new(webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(signature, expected_signature):
+        logger.warning("webhook_razorpay: signature verification failed")
+        return "", 400
+
+    payload = request.get_json(silent=True) or {}
+    event = payload.get("event", "")
+
+    if event == "payment_link.paid":
+        entity = payload.get("payload", {}).get("payment_link", {}).get("entity", {})
+        reference_id = entity.get("reference_id")
+        payment_id = entity.get("id")
+
+        if reference_id:
+            invoice = Invoice.query.filter_by(invoice_number=reference_id).first()
+            if invoice and invoice.status != "PAID":
+                mark_invoice_paid(
+                    invoice,
+                    gateway="razorpay",
+                    gateway_reference=payment_id,
+                    raw_response=str(payload),
+                )
+                logger.info("webhook_razorpay: invoice %s marked paid", reference_id)
+
+
+
+@frontend_bp.route("/webhooks/payment/cashfree", methods=["POST"])
+def webhook_cashfree():
+    """Cashfree calls this after a payment link is paid. Verifies the
+    signature using the webhook secret configured on the Integrations page,
+    then marks the matching Invoice as paid via the same mark_invoice_paid()
+    a manual "Mark as Paid" click uses - see app/services/payment_gateway.py.
+
+    Cashfree signs webhooks differently from Razorpay: HMAC-SHA256 over
+    (timestamp + raw body), base64-encoded, sent in the x-webhook-signature
+    header alongside an x-webhook-timestamp header (not folded into the
+    signed payload itself, unlike Razorpay)."""
+    import base64
+    import hashlib
+    import hmac
+
+    from app.services.payment_gateway import get_payment_gateway_config
+    from app.services.payment_gateway import mark_invoice_paid
+
+    _, _, _, webhook_secret = get_payment_gateway_config()
+    if not webhook_secret:
+        logger.warning("webhook_cashfree: received webhook but no webhook secret is configured - ignoring")
+        return "", 400
+
+    signature = request.headers.get("x-webhook-signature", "")
+    timestamp = request.headers.get("x-webhook-timestamp", "")
+    body = request.get_data()
+
+    signed_payload = timestamp.encode() + body
+    expected_signature = base64.b64encode(
+        hmac.new(webhook_secret.encode(), signed_payload, hashlib.sha256).digest()
+    ).decode()
+
+    if not hmac.compare_digest(signature, expected_signature):
+        logger.warning("webhook_cashfree: signature verification failed")
+        return "", 400
+
+    payload = request.get_json(silent=True) or {}
+    event_type = payload.get("type", "")
+
+    if event_type == "PAYMENT_LINK_EVENT":
+        link_details = payload.get("data", {}).get("payment_link_details", {})
+        reference_id = link_details.get("link_id")
+        link_status = link_details.get("link_status")
+        order_details = payload.get("data", {}).get("order", {})
+        payment_id = order_details.get("order_id")
+
+        if reference_id and link_status == "PAID":
+            invoice = Invoice.query.filter_by(invoice_number=reference_id).first()
+            if invoice and invoice.status != "PAID":
+                mark_invoice_paid(
+                    invoice,
+                    gateway="cashfree",
+                    gateway_reference=payment_id or reference_id,
+                    raw_response=str(payload),
+                )
+                logger.info("webhook_cashfree: invoice %s marked paid", reference_id)
+
+    return "", 200
+    return "", 200
+
 
 @frontend_bp.route("/super-admin/settings/integrations", methods=["GET", "POST"])
 @super_admin_required
@@ -880,6 +1041,174 @@ def super_admin_integrations():
         return redirect(url_for("frontend.super_admin_integrations"))
 
     return render_template("super_admin/integrations.html", settings=settings)
+
+
+@frontend_bp.route("/super-admin/notifications/templates")
+@super_admin_required
+def super_admin_message_templates():
+    """SRS FR-15: list all message templates, grouped by template_type so
+    the super admin can see at a glance which channels each notification
+    purpose already has wording for."""
+    templates = MessageTemplate.query.order_by(MessageTemplate.template_type, MessageTemplate.channel).all()
+    return render_template("super_admin/message_templates/index.html", templates=templates)
+
+
+@frontend_bp.route("/super-admin/notifications/templates/create", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_message_template_create():
+    if request.method == "POST":
+        template_type = request.form.get("template_type", "").strip()
+        channel = request.form.get("channel", "").strip()
+        subject = request.form.get("subject", "").strip() or None
+        body = request.form.get("body", "").strip()
+
+        if template_type not in MessageTemplate.TEMPLATE_TYPES:
+            flash("Please select a valid template type.", "error")
+            return render_template("super_admin/message_templates/form.html", template=None)
+        if channel not in MessageTemplate.CHANNELS:
+            flash("Please select a valid channel.", "error")
+            return render_template("super_admin/message_templates/form.html", template=None)
+        if not body:
+            flash("Message body is required.", "error")
+            return render_template("super_admin/message_templates/form.html", template=None)
+
+        existing = MessageTemplate.query.filter_by(template_type=template_type, channel=channel).first()
+        if existing:
+            flash(f"A {channel} template for {template_type} already exists - edit it instead of creating a duplicate.", "error")
+            return render_template("super_admin/message_templates/form.html", template=None)
+
+        actor = session.get("user") or {}
+        template = MessageTemplate(
+            template_type=template_type,
+            channel=channel,
+            subject=subject,
+            body=body,
+            is_active=bool(request.form.get("is_active")),
+            created_by=actor.get("id"),
+        )
+        db.session.add(template)
+        db.session.commit()
+        _log_activity("template.created", f"Created {channel} message template for {template_type}")
+        flash("Message template created.", "success")
+        return redirect(url_for("frontend.super_admin_message_templates"))
+
+    return render_template("super_admin/message_templates/form.html", template=None)
+
+
+@frontend_bp.route("/super-admin/notifications/templates/<template_id>/edit", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_message_template_edit(template_id):
+    template = MessageTemplate.query.get_or_404(template_id)
+
+    if request.method == "POST":
+        body = request.form.get("body", "").strip()
+        if not body:
+            flash("Message body is required.", "error")
+            return render_template("super_admin/message_templates/form.html", template=template)
+
+        actor = session.get("user") or {}
+        template.subject = request.form.get("subject", "").strip() or None
+        template.body = body
+        template.is_active = bool(request.form.get("is_active"))
+        template.modified_by = actor.get("id")
+        db.session.commit()
+        _log_activity("template.updated", f"Updated {template.channel} message template for {template.template_type}")
+        flash("Message template updated.", "success")
+        return redirect(url_for("frontend.super_admin_message_templates"))
+
+    return render_template("super_admin/message_templates/form.html", template=template)
+
+
+@frontend_bp.route("/super-admin/notifications/templates/<template_id>/delete", methods=["POST"])
+@super_admin_required
+def super_admin_message_template_delete(template_id):
+    template = MessageTemplate.query.get_or_404(template_id)
+    NotificationSchedule.query.filter_by(template_id=template.id).delete()
+    db.session.delete(template)
+    db.session.commit()
+    _log_activity("template.deleted", f"Deleted {template.channel} message template for {template.template_type}")
+    flash("Message template deleted.", "success")
+    return redirect(url_for("frontend.super_admin_message_templates"))
+
+
+@frontend_bp.route("/super-admin/notifications/schedules")
+@super_admin_required
+def super_admin_notification_schedules():
+    """SRS FR-16: list all notification schedules with their template info."""
+    schedules = NotificationSchedule.query.join(MessageTemplate).order_by(NotificationSchedule.created_at.desc()).all()
+    return render_template("super_admin/notification_schedules/index.html", schedules=schedules)
+
+
+@frontend_bp.route("/super-admin/notifications/schedules/create", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_notification_schedule_create():
+    templates = MessageTemplate.query.filter_by(is_active=True).order_by(MessageTemplate.template_type).all()
+
+    if request.method == "POST":
+        template_id = request.form.get("template_id", "").strip()
+        frequency = request.form.get("frequency", "").strip()
+
+        template = MessageTemplate.query.get(template_id)
+        if not template:
+            flash("Please select a valid template.", "error")
+            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+        if frequency not in NotificationSchedule.FREQUENCIES:
+            flash("Please select a valid frequency.", "error")
+            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+
+        day_of_week = request.form.get("day_of_week", "").strip()
+        day_of_month = request.form.get("day_of_month", "").strip()
+        custom_cron_expression = request.form.get("custom_cron_expression", "").strip()
+
+        if frequency == "weekly" and not day_of_week:
+            flash("Day of week is required for a weekly schedule.", "error")
+            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+        if frequency == "monthly" and not day_of_month:
+            flash("Day of month is required for a monthly schedule.", "error")
+            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+        if frequency == "custom" and not custom_cron_expression:
+            flash("A cron expression is required for a custom schedule.", "error")
+            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+
+        actor = session.get("user") or {}
+        schedule = NotificationSchedule(
+            template_id=template_id,
+            frequency=frequency,
+            day_of_week=int(day_of_week) if frequency == "weekly" and day_of_week else None,
+            day_of_month=int(day_of_month) if frequency == "monthly" and day_of_month else None,
+            custom_cron_expression=custom_cron_expression if frequency == "custom" else None,
+            is_active=bool(request.form.get("is_active")),
+            created_by=actor.get("id"),
+        )
+        db.session.add(schedule)
+        db.session.commit()
+        _log_activity("schedule.created", f"Created {frequency} notification schedule for template {template.template_type}/{template.channel}")
+        flash("Notification schedule created.", "success")
+        return redirect(url_for("frontend.super_admin_notification_schedules"))
+
+    return render_template("super_admin/notification_schedules/form.html", templates=templates)
+
+
+@frontend_bp.route("/super-admin/notifications/schedules/<schedule_id>/toggle", methods=["POST"])
+@super_admin_required
+def super_admin_notification_schedule_toggle(schedule_id):
+    schedule = NotificationSchedule.query.get_or_404(schedule_id)
+    schedule.is_active = not schedule.is_active
+    db.session.commit()
+    _log_activity("schedule.toggled", f"{'Activated' if schedule.is_active else 'Deactivated'} notification schedule {schedule.id}")
+    flash("Schedule updated.", "success")
+    return redirect(url_for("frontend.super_admin_notification_schedules"))
+
+
+@frontend_bp.route("/super-admin/notifications/schedules/<schedule_id>/delete", methods=["POST"])
+@super_admin_required
+def super_admin_notification_schedule_delete(schedule_id):
+    schedule = NotificationSchedule.query.get_or_404(schedule_id)
+    db.session.delete(schedule)
+    db.session.commit()
+    _log_activity("schedule.deleted", f"Deleted notification schedule {schedule.id}")
+    flash("Schedule deleted.", "success")
+    return redirect(url_for("frontend.super_admin_notification_schedules"))
 
 
 @frontend_bp.route("/super-admin/billing/run-now", methods=["POST"])
@@ -1814,7 +2143,15 @@ def super_admin_subscription(organization_id):
     plans = Plan.query.filter_by(status=1).order_by(Plan.display_order.asc()).all()
 
     if request.method == "POST":
-        organization.subscription_plan_id = request.form.get("subscription_plan_id") or None
+        # Captured BEFORE overwriting, so proration below is computed
+        # against the plan/cycle/expiry the org was actually on, not the
+        # new values this same POST is about to set.
+        old_plan_id = organization.subscription_plan_id
+        old_expiry_date = organization.subscription_expiry_date
+        old_billing_cycle = organization.billing_cycle
+        new_plan_id = request.form.get("subscription_plan_id") or None
+
+        organization.subscription_plan_id = new_plan_id
         organization.billing_cycle = request.form.get("billing_cycle", "monthly")
         organization.subscription_expiry_date = _parse_date(request.form.get("subscription_expiry_date"))
         organization.candidate_limit = _parse_int(request.form.get("candidate_limit")) or 0
@@ -1823,6 +2160,46 @@ def super_admin_subscription(organization_id):
         organization.email_credits = _parse_int(request.form.get("email_credits")) or 0
         organization.payment_status = request.form.get("payment_status")
         db.session.commit()
+
+        # BUG FIX (FR-10, Prorated Plan Upgrade): calculate_prorated_amount()
+        # existed but nothing ever called it - super_admin_subscription() just
+        # re-assigned the plan with no proration invoice. Now, moving an
+        # organization from one plan to a DIFFERENT existing plan mid-cycle
+        # generates a prorated invoice for the days remaining in the current
+        # period (credited for the unused portion of the old plan). A brand
+        # new plan assignment (old_plan_id was empty) is a fresh subscription,
+        # not an "upgrade" - that case is intentionally not prorated.
+        actor = session.get("user") or {}
+        if old_plan_id and new_plan_id and str(new_plan_id) != str(old_plan_id):
+            old_plan = Plan.query.get(old_plan_id)
+            new_plan = Plan.query.get(new_plan_id)
+            if new_plan:
+                amount, note = calculate_prorated_amount(
+                    old_plan,
+                    new_plan,
+                    old_expiry_date,
+                    old_billing_cycle or new_plan.default_billing_cycle,
+                )
+                if amount > 0:
+                    proration_invoice = generate_invoice_for_organization(
+                        organization,
+                        actor_id=actor.get("id"),
+                        is_prorated=True,
+                        proration_note=note,
+                        override_amount=amount,
+                    )
+                    if proration_invoice:
+                        _log_activity(
+                            "billing.prorated_upgrade_invoiced",
+                            f"{organization.organization_name}: {note} -> invoice "
+                            f"{proration_invoice.invoice_number} (Rs. {amount})",
+                        )
+                        flash(
+                            f"Prorated upgrade invoice {proration_invoice.invoice_number} "
+                            f"generated for Rs. {amount}.",
+                            "success",
+                        )
+
         _log_activity("Updated subscription", f"{organization.organization_name}")
         invalidate_report_cache("dashboard:super_admin")
         flash("Subscription updated successfully", "success")
@@ -1886,6 +2263,24 @@ def super_admin_mark_invoice_paid(organization_id, invoice_id):
     flash(f"Invoice {invoice.invoice_number} marked as paid.", "success")
 
     return redirect(url_for("frontend.super_admin_subscription", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/invoices/<invoice_id>/pay-online", methods=["POST"])
+@super_admin_required
+def super_admin_generate_payment_link(organization_id, invoice_id):
+    """Generates a real Razorpay payment link for this invoice and redirects
+    the browser straight to it - see app/services/payment_gateway.py."""
+    from app.services.payment_gateway import create_payment_link
+
+    invoice = Invoice.query.filter_by(id=invoice_id, organization_id=organization_id).first_or_404()
+
+    try:
+        checkout_url = create_payment_link(invoice)
+    except (RuntimeError, NotImplementedError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("frontend.super_admin_subscription", organization_id=organization_id))
+
+    return redirect(checkout_url)
 
 
 def _ensure_permission_exists(code, description):
@@ -3286,7 +3681,14 @@ def organization_candidate_edit(candidate_id):
         candidate.trade = request.form.get("trade")
         candidate.course = request.form.get("course")
         candidate.course_duration = request.form.get("course_duration")
-        candidate.training_status = request.form.get("training_status")
+        new_training_status = request.form.get("training_status") or candidate.training_status
+        if new_training_status != candidate.training_status:
+            try:
+                CandidateLifecycleService().validate_transition(candidate.training_status, new_training_status)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return render_template("organization/candidates/form.html", candidate=candidate, organizations=organizations, batches=batches, schemes=schemes)
+        candidate.training_status = new_training_status
         candidate.bank_name = request.form.get("bank_name")
         candidate.account_number = request.form.get("account_number")
         candidate.ifsc = request.form.get("ifsc")
@@ -3973,7 +4375,7 @@ def candidate_dashboard():
 
     checkpoints = []
     if candidate.employer_name:
-        _ensure_checkpoints(candidate)
+        CandidateLifecycleService().ensure_follow_ups(candidate)
         checkpoints = FollowUpCheckpoint.query.filter_by(candidate_id=candidate.id).order_by(FollowUpCheckpoint.due_date.asc()).all()
 
     return render_template(
@@ -4128,7 +4530,7 @@ def candidate_report_placement():
     candidate.working_status = "Working"
     db.session.commit()
 
-    _ensure_checkpoints(candidate)
+    CandidateLifecycleService().ensure_follow_ups(candidate)
 
     invalidate_report_cache("reports")
     invalidate_report_cache("dashboard:org")
@@ -4212,7 +4614,7 @@ def organization_placement_detail(candidate_id):
     if not _can_access_candidate(candidate, user):
         flash("You do not have permission to view this candidate.", "error")
         return redirect(url_for("frontend.no_access"))
-    _ensure_checkpoints(candidate)
+    CandidateLifecycleService().ensure_follow_ups(candidate)
     checkpoints = FollowUpCheckpoint.query.filter_by(candidate_id=candidate.id).order_by(FollowUpCheckpoint.due_date.asc()).all()
     return render_template("organization/placements/detail.html", candidate=candidate, checkpoints=checkpoints)
 
@@ -4233,33 +4635,11 @@ def organization_placement_checkpoint_update(checkpoint_id, candidate_id):
     return redirect(url_for("frontend.organization_placement_detail", candidate_id=candidate_id))
 
 
-CHECKPOINT_LABELS = [
-    ("Month 1", 30),
-    ("Month 2", 60),
-    ("Month 3", 90),
-    ("Month 6", 180),
-    ("Month 9", 270),
-    ("Month 12", 365),
-]
-
-
-def _ensure_checkpoints(candidate):
-    """Auto-create follow-up checkpoints for a placed candidate if none exist yet."""
-    if not candidate.joining_date:
-        return
-    existing = FollowUpCheckpoint.query.filter_by(candidate_id=candidate.id).count()
-    if existing > 0:
-        return
-    from datetime import timedelta
-    for label, days in CHECKPOINT_LABELS:
-        checkpoint = FollowUpCheckpoint(
-            candidate_id=candidate.id,
-            label=label,
-            due_date=candidate.joining_date + timedelta(days=days),
-            status="pending",
-        )
-        db.session.add(checkpoint)
-    db.session.commit()
+# BUG FIX: follow-up checkpoint creation used to be duplicated here AND in
+# app/services/lifecycle.py (CandidateLifecycleService.generate_follow_ups(),
+# which additionally had a missing `text` import bug and used raw SQL). Both
+# copies are now just CandidateLifecycleService.ensure_follow_ups() - see
+# every call site below (search "CandidateLifecycleService().ensure_follow_ups").
 
 
 @frontend_bp.route("/organization/tracking")
@@ -4564,14 +4944,9 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
 @login_required
 @require_permission("report.view")
 def reports_export():
-    """CSV export for the Reports page (SRS Section 8 - Platform-Wide
-    Reporting requires export; the Reports page had no download option
-    at all before this)."""
-    import csv
-    import io
-
-    from flask import Response
-
+    """Export for the Reports page (SRS FR-18 - Excel, PDF, and CSV).
+    Format selected via ?format=csv|xlsx|pdf, defaulting to csv for any
+    old bookmarked/shared links that predate the xlsx/pdf options."""
     user = session.get("user")
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
@@ -4580,15 +4955,14 @@ def reports_export():
         query = query.filter(Candidate.created_by == user.get("id"))
     candidates = query.all()
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
+    export_format = request.args.get("format", "csv").strip().lower()
+    headers = [
         "Registration No", "Full Name", "State", "District", "Trainer",
         "Sector", "Training Status", "Verification Status",
         "Employer", "Job Location", "Salary", "Joining Date",
-    ])
-    for c in candidates:
-        writer.writerow([
+    ]
+    rows = [
+        [
             c.registration_number or "",
             c.full_name or "",
             c.state or "",
@@ -4601,13 +4975,79 @@ def reports_export():
             c.location or "",
             c.salary or "",
             c.joining_date.strftime("%d-%m-%Y") if c.joining_date else "",
-        ])
+        ]
+        for c in candidates
+    ]
 
-    response = Response(output.getvalue(), mimetype="text/csv")
-    response.headers["Content-Disposition"] = "attachment; filename=candidate_report.csv"
-    return response
+    if export_format == "xlsx":
+        from io import BytesIO
 
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        from flask import send_file
 
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Candidate Report"
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        for row in rows:
+            ws.append(row)
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="candidate_report.xlsx",
+        )
+
+    elif export_format == "pdf":
+        from io import BytesIO
+
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import landscape, A4
+        from flask import send_file
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+        table_data = [headers] + rows
+        table = Table(table_data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+        ]))
+        doc.build([table])
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="candidate_report.pdf",
+        )
+
+    else:
+        import csv
+        import io
+
+        from flask import Response
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+
+        response = Response(output.getvalue(), mimetype="text/csv")
+        response.headers["Content-Disposition"] = "attachment; filename=candidate_report.csv"
+        return response
 @frontend_bp.route("/notifications")
 @login_required
 @require_permission("notification.view")

@@ -1,0 +1,37 @@
+﻿{% extends 'base.html' %}
+{% block title %}Feature Flags{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Feature Flags</h2>
+    <p>Control the platform-wide default for each feature. An organization with its own override (set on its detail page) is unaffected.</p>
+  </div>
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead>
+      <tr><th>Feature</th><th>Description</th><th>Code Default</th><th>Effective Default</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for f in features %}
+      <tr>
+        <td><strong>{{ f.label }}</strong>{% if f.is_overridden %} <span class="status-badge status-active" style="font-size:0.7rem;">Overridden</span>{% endif %}</td>
+        <td>{{ f.description }}</td>
+        <td>{{ 'On' if f.code_default else 'Off' }}</td>
+        <td>
+          <span class="status-badge {{ 'status-active' if f.effective_default else 'status-suspended' }}">{{ 'Enabled' if f.effective_default else 'Disabled' }}</span>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.super_admin_feature_flag_toggle', feature_key=f.key) }}" style="display:inline;">
+            <input type="hidden" name="is_enabled" value="{{ '0' if f.effective_default else '1' }}">
+            <button type="submit" class="ghost-btn">{{ 'Disable for everyone' if f.effective_default else 'Enable for everyone' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

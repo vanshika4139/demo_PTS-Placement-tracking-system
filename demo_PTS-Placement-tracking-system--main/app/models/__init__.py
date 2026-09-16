@@ -25,6 +25,7 @@ from app.models.invoice import Invoice
 from app.models.communication_log import CommunicationLog
 from app.models.message_template import MessageTemplate
 from app.models.notification_schedule import NotificationSchedule
+from app.models.announcement import Announcement
 
 __all__ = [
     "Candidate",
@@ -54,4 +55,5 @@ __all__ = [
     "CommunicationLog",
     "MessageTemplate",
     "NotificationSchedule",
+    "Announcement",
 ]

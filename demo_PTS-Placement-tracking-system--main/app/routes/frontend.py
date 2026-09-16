@@ -19,6 +19,7 @@ from app.models import (
     CandidateFeedback,
     CommunicationLog,
     Announcement,
+    FeatureFlagDefault,
     MessageTemplate,
     NotificationSchedule,
     FollowUpCheckpoint,
@@ -1199,6 +1200,51 @@ def super_admin_announcement_delete(announcement_id):
     _log_activity("announcement.deleted", f"Deleted announcement: {announcement.title}")
     flash("Announcement deleted.", "success")
     return redirect(url_for("frontend.super_admin_announcements"))
+
+
+@frontend_bp.route("/super-admin/feature-flags")
+@super_admin_required
+def super_admin_feature_flags():
+    """Lets a super admin change a feature's platform-wide default from
+    the UI instead of editing AVAILABLE_FEATURES in code. Organizations
+    with their own override (set via the per-organization feature toggles
+    on the organization detail page) are unaffected by this."""
+    from app.utils.feature_flags import AVAILABLE_FEATURES, _effective_default
+
+    features = []
+    for key, cfg in AVAILABLE_FEATURES.items():
+        global_row = FeatureFlagDefault.query.get(key)
+        features.append({
+            "key": key,
+            "label": cfg["label"],
+            "description": cfg["description"],
+            "code_default": cfg["default_enabled"],
+            "is_overridden": global_row is not None,
+            "effective_default": _effective_default(key),
+        })
+
+    return render_template("super_admin/feature_flags.html", features=features)
+
+
+@frontend_bp.route("/super-admin/feature-flags/<feature_key>/toggle", methods=["POST"])
+@super_admin_required
+def super_admin_feature_flag_toggle(feature_key):
+    from app.utils.feature_flags import AVAILABLE_FEATURES, set_global_feature_default
+
+    if feature_key not in AVAILABLE_FEATURES:
+        flash("Unknown feature.", "error")
+        return redirect(url_for("frontend.super_admin_feature_flags"))
+
+    new_value = request.form.get("is_enabled") == "1"
+    actor = session.get("user") or {}
+    set_global_feature_default(feature_key, new_value, actor_id=actor.get("id"))
+
+    _log_activity(
+        "feature_flag.default_changed",
+        f"Set global default for '{feature_key}' to {'enabled' if new_value else 'disabled'}",
+    )
+    flash(f"Default for '{AVAILABLE_FEATURES[feature_key]['label']}' updated.", "success")
+    return redirect(url_for("frontend.super_admin_feature_flags"))
 
 
 @frontend_bp.route("/super-admin/notifications/schedules")

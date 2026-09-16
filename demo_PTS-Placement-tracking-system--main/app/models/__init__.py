@@ -26,6 +26,7 @@ from app.models.communication_log import CommunicationLog
 from app.models.message_template import MessageTemplate
 from app.models.notification_schedule import NotificationSchedule
 from app.models.announcement import Announcement
+from app.models.feature_flag_default import FeatureFlagDefault
 
 __all__ = [
     "Candidate",
@@ -56,4 +57,5 @@ __all__ = [
     "MessageTemplate",
     "NotificationSchedule",
     "Announcement",
+    "FeatureFlagDefault",
 ]

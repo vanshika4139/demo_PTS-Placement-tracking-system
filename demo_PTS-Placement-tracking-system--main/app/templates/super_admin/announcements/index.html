@@ -1,0 +1,46 @@
+﻿{% extends 'base.html' %}
+{% block title %}Announcements{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Platform Announcements</h2>
+    <p>Broadcast a banner message to every logged-in user across all organizations.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.super_admin_announcement_create') }}">+ New Announcement</a>
+</div>
+
+<div class="panel-card">
+  {% if announcements %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Title</th><th>Type</th><th>Status</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for a in announcements %}
+      <tr>
+        <td>{{ a.title }}</td>
+        <td>{{ a.type|capitalize }}</td>
+        <td>
+          <span class="status-badge {{ 'status-active' if a.is_active else 'status-suspended' }}">{{ 'Active' if a.is_active else 'Inactive' }}</span>
+        </td>
+        <td>{{ a.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+        <td>
+          {% if a.is_active %}
+          <form method="post" action="{{ url_for('frontend.super_admin_announcement_deactivate', announcement_id=a.id) }}" style="display:inline;">
+            <button type="submit" class="ghost-btn">Deactivate</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('frontend.super_admin_announcement_delete', announcement_id=a.id) }}" style="display:inline;" onsubmit="return confirm('Delete this announcement?');">
+            <button type="submit" class="action-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No announcements yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

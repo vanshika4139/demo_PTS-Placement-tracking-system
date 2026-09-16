@@ -18,6 +18,7 @@ from app.models import (
     Candidate,
     CandidateFeedback,
     CommunicationLog,
+    Announcement,
     MessageTemplate,
     NotificationSchedule,
     FollowUpCheckpoint,
@@ -73,6 +74,14 @@ def _translate(key):
 @frontend_bp.app_template_global("current_language")
 def _current_language():
     return get_current_language()
+
+@frontend_bp.app_template_global("get_active_announcements")
+def _get_active_announcements():
+    """Jinja global used by base.html to render the announcement banner on
+    every page for every logged-in user. Cheap enough to call on every
+    request - announcements are rare and the table stays tiny."""
+    return Announcement.query.filter_by(is_active=True).order_by(Announcement.created_at.desc()).all()
+
 
 
 @frontend_bp.route("/lang/<lang_code>")
@@ -1129,6 +1138,67 @@ def super_admin_message_template_delete(template_id):
     _log_activity("template.deleted", f"Deleted {template.channel} message template for {template.template_type}")
     flash("Message template deleted.", "success")
     return redirect(url_for("frontend.super_admin_message_templates"))
+
+
+@frontend_bp.route("/super-admin/announcements")
+@super_admin_required
+def super_admin_announcements():
+    """Platform-wide broadcast messages shown as a banner to every logged-in
+    user, until deactivated. See base.html for how the active ones render."""
+    announcements = Announcement.query.order_by(Announcement.created_at.desc()).all()
+    return render_template("super_admin/announcements/index.html", announcements=announcements)
+
+
+@frontend_bp.route("/super-admin/announcements/create", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_announcement_create():
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        message = request.form.get("message", "").strip()
+        announcement_type = request.form.get("type", "info").strip()
+
+        if not title or not message:
+            flash("Title and message are required.", "error")
+            return render_template("super_admin/announcements/form.html")
+        if announcement_type not in Announcement.TYPES:
+            announcement_type = "info"
+
+        actor = session.get("user") or {}
+        announcement = Announcement(
+            title=title,
+            message=message,
+            type=announcement_type,
+            created_by=actor.get("id"),
+        )
+        db.session.add(announcement)
+        db.session.commit()
+        _log_activity("announcement.created", f"Created announcement: {title}")
+        flash("Announcement published.", "success")
+        return redirect(url_for("frontend.super_admin_announcements"))
+
+    return render_template("super_admin/announcements/form.html")
+
+
+@frontend_bp.route("/super-admin/announcements/<announcement_id>/deactivate", methods=["POST"])
+@super_admin_required
+def super_admin_announcement_deactivate(announcement_id):
+    announcement = Announcement.query.get_or_404(announcement_id)
+    announcement.is_active = False
+    db.session.commit()
+    _log_activity("announcement.deactivated", f"Deactivated announcement: {announcement.title}")
+    flash("Announcement deactivated.", "success")
+    return redirect(url_for("frontend.super_admin_announcements"))
+
+
+@frontend_bp.route("/super-admin/announcements/<announcement_id>/delete", methods=["POST"])
+@super_admin_required
+def super_admin_announcement_delete(announcement_id):
+    announcement = Announcement.query.get_or_404(announcement_id)
+    db.session.delete(announcement)
+    db.session.commit()
+    _log_activity("announcement.deleted", f"Deleted announcement: {announcement.title}")
+    flash("Announcement deleted.", "success")
+    return redirect(url_for("frontend.super_admin_announcements"))
 
 
 @frontend_bp.route("/super-admin/notifications/schedules")

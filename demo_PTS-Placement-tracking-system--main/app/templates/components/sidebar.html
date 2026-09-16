@@ -1,4 +1,4 @@
-﻿<div class="sidebar-inner">
+<div class="sidebar-inner">
   <div class="sidebar-logo">Codevocado</div>
   <ul class="nav-list">
     {% if session.user.is_super_admin %}
@@ -59,6 +59,7 @@
     <li><a href="/super-admin/rate-limit-monitor">Rate Limit Monitor</a></li>
     <li><a href="/super-admin/system-health">System Health</a></li>
     <li><a href="/super-admin/settings/integrations">Integrations</a></li>
+    <li><a href="/super-admin/announcements">Announcements</a></li>
     {% endif %}
     {% if has_permission(session.user, 'settings.view') %}
     <li><a href="/settings/profile">Settings</a></li>

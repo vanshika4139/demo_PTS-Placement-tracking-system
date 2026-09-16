@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -46,6 +46,15 @@
               {% endfor %}
             {% endif %}
           {% endwith %}
+          {% if session.get("user") %}
+          {% set active_announcements = get_active_announcements() %}
+          {% for announcement in active_announcements %}
+          <div class="alert alert-{{ announcement.type }}" id="announcement-{{ announcement.id }}" style="display: flex; justify-content: space-between; align-items: center;">
+            <div><strong>{{ announcement.title }}</strong> - {{ announcement.message }}</div>
+            <button type="button" onclick="document.getElementById('announcement-{{ announcement.id }}').style.display='none';" style="background:none; border:none; cursor:pointer; font-size:1.1rem; line-height:1;">&times;</button>
+          </div>
+          {% endfor %}
+          {% endif %}
           {% block content %}{% endblock %}
         </main>
       </div>

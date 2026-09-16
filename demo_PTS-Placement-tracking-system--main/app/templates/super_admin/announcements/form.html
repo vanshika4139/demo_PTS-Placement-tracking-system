@@ -1,0 +1,29 @@
+﻿{% extends 'base.html' %}
+{% block title %}Create Announcement{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Create Announcement</h2>
+    <p>This will be shown as a banner to every logged-in user until deactivated.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_announcements') }}">Back</a>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label class="span-2">Title<input type="text" name="title" required></label>
+      <label>Type
+        <select name="type">
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="success">Success</option>
+        </select>
+      </label>
+      <label class="span-2">Message<textarea name="message" rows="4" required></textarea></label>
+    </div>
+    <button type="submit" class="primary-btn">Publish Announcement</button>
+  </form>
+</div>
+{% endblock %}

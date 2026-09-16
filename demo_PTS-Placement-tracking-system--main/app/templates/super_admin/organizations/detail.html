@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block title %}Organization Detail{% endblock %}
 
 {% block content %}
@@ -265,7 +265,25 @@
   <h3>Integration</h3>
   <table class="sa-detail-table">
     <tbody>
-      <tr><th>API Key</th><td>{{ organization.api_key or '-' }}</td></tr>
+      <tr>
+        <th>API Key</th>
+        <td>
+          {% if organization.api_key %}
+          <span class="status-badge status-active">Configured</span>
+          <form method="post" action="{{ url_for('frontend.super_admin_organization_generate_api_key', organization_id=organization.id) }}" style="display:inline;" onsubmit="return confirm('This will invalidate the current key immediately. Continue?');">
+            <button type="submit" class="ghost-btn" style="padding:4px 10px; font-size:0.82rem;">Regenerate</button>
+          </form>
+          <form method="post" action="{{ url_for('frontend.super_admin_organization_revoke_api_key', organization_id=organization.id) }}" style="display:inline;" onsubmit="return confirm('Revoke this API key? Any script using it will stop working immediately.');">
+            <button type="submit" class="action-danger" style="padding:4px 10px; font-size:0.82rem;">Revoke</button>
+          </form>
+          {% else %}
+          <span class="status-badge status-suspended">Not configured</span>
+          <form method="post" action="{{ url_for('frontend.super_admin_organization_generate_api_key', organization_id=organization.id) }}" style="display:inline;">
+            <button type="submit" class="primary-btn" style="padding:4px 10px; font-size:0.82rem;">Generate API Key</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
       <tr><th>Webhook URL</th><td>{{ organization.webhook_url or '-' }}</td></tr>
     </tbody>
   </table>

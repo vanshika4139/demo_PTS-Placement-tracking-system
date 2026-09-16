@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import random
 import string
@@ -1943,7 +1943,6 @@ def super_admin_edit_organization(organization_id):
         organization.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0
         organization.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
         organization.email_credits = _parse_int(request.form.get("email_credits")) or 0
-        organization.api_key = request.form.get("api_key")
         organization.webhook_url = request.form.get("webhook_url")
         organization.kyc_status = request.form.get("kyc_status")
         organization.payment_status = request.form.get("payment_status")
@@ -1954,6 +1953,38 @@ def super_admin_edit_organization(organization_id):
         flash("Organization updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
     return render_template("super_admin/organizations/form.html", organization=organization, indian_states=INDIAN_STATES)
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/api-key/generate", methods=["POST"])
+@super_admin_required
+def super_admin_organization_generate_api_key(organization_id):
+    """Generates a new API key for this organization (or replaces the
+    existing one). The plaintext key is shown exactly once, on the redirect
+    target - only its hash is ever stored (see app/utils/api_keys.py)."""
+    from app.utils.api_keys import generate_api_key
+
+    organization = Organization.query.get_or_404(organization_id)
+    plaintext_key, hashed_key = generate_api_key()
+    organization.api_key = hashed_key
+    db.session.commit()
+
+    _log_activity("organization.api_key_generated", f"Generated new API key for {organization.organization_name}")
+    flash(f"New API key generated: {plaintext_key} (copy it now - it will not be shown again).", "success")
+    return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
+
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/api-key/revoke", methods=["POST"])
+@super_admin_required
+def super_admin_organization_revoke_api_key(organization_id):
+    """Revokes this organization's API key (sets it to None). Any script
+    using the old key will start getting 401s from the API immediately."""
+    organization = Organization.query.get_or_404(organization_id)
+    organization.api_key = None
+    db.session.commit()
+
+    _log_activity("organization.api_key_revoked", f"Revoked API key for {organization.organization_name}")
+    flash("API key revoked.", "success")
+    return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization_id))
 
 
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>/suspend", methods=["POST"])

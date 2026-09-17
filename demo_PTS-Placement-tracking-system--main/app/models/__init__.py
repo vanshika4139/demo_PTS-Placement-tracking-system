@@ -27,6 +27,7 @@ from app.models.message_template import MessageTemplate
 from app.models.notification_schedule import NotificationSchedule
 from app.models.announcement import Announcement
 from app.models.feature_flag_default import FeatureFlagDefault
+from app.models.user_session import UserSession
 
 __all__ = [
     "Candidate",
@@ -58,4 +59,5 @@ __all__ = [
     "NotificationSchedule",
     "Announcement",
     "FeatureFlagDefault",
+    "UserSession",
 ]

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block title %}Integrations{% endblock %}
 
 {% block content %}
@@ -99,6 +99,9 @@
   <form method="post" action="{{ url_for('frontend.super_admin_run_billing_cycle') }}" onsubmit="return confirm('Run the billing cycle now? This will generate real invoices, send real renewal reminder emails, and may auto-suspend overdue organizations.');">
     <button type="submit" class="ghost-btn">Run Billing Cycle Now</button>
   </form>
+  <form method="post" action="{{ url_for('frontend.super_admin_run_notification_schedules') }}" style="margin-top:8px;" onsubmit="return confirm('Run notification schedules now? This will send real emails for any due schedule.');">
+    <button type="submit" class="ghost-btn">Run Notification Schedules Now</button>
+  </form>
 </div>
 
 <form method="post" class="full-form">
@@ -123,7 +126,7 @@
       <label>SMTP Port<input type="number" name="smtp_port" value="{{ settings.smtp_port or '' }}" placeholder="587"></label>
       <label>SMTP Username<input type="text" name="smtp_username" value="{{ settings.smtp_username or '' }}" placeholder="you@example.com"></label>
       <label>SMTP Password
-        <input type="password" name="smtp_password" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.smtp_password else 'Enter password' }}" autocomplete="new-password">
+        <input type="password" name="smtp_password" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.smtp_password else 'Enter password' }}" autocomplete="new-password">
       </label>
     </div>
   </div>
@@ -145,7 +148,7 @@
     <p class="ig-hint">Used for sending WhatsApp notifications (deducts from an organization's WhatsApp credits).</p>
     <div class="form-grid">
       <label>API Key / Access Token
-        <input type="password" name="whatsapp_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.whatsapp_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="whatsapp_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.whatsapp_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Phone Number ID<input type="text" name="whatsapp_phone_number_id" value="{{ settings.whatsapp_phone_number_id or '' }}" placeholder="e.g. 109876543210123"></label>
     </div>
@@ -168,7 +171,7 @@
     <p class="ig-hint">Used for sending SMS notifications (deducts from an organization's SMS credits).</p>
     <div class="form-grid">
       <label>API Key
-        <input type="password" name="sms_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.sms_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="sms_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.sms_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Sender ID<input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" placeholder="e.g. CDVOCD"></label>
     </div>
@@ -192,7 +195,7 @@
     <div class="form-grid">
       <label>Provider<input type="text" name="voice_provider" value="{{ settings.voice_provider or '' }}" placeholder="e.g. Exotel, Twilio"></label>
       <label>API Key
-        <input type="password" name="voice_api_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.voice_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="voice_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.voice_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Caller ID / From Number<input type="text" name="voice_caller_id" value="{{ settings.voice_caller_id or '' }}" placeholder="e.g. +911140000000"></label>
     </div>
@@ -216,7 +219,7 @@
     <div class="form-grid">
       <label>Provider<input type="text" name="push_provider" value="{{ settings.push_provider or '' }}" placeholder="e.g. Firebase Cloud Messaging"></label>
       <label>Server Key
-        <input type="password" name="push_server_key" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.push_server_key else 'Enter server key' }}" autocomplete="new-password">
+        <input type="password" name="push_server_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.push_server_key else 'Enter server key' }}" autocomplete="new-password">
       </label>
       <label>Sender ID<input type="text" name="push_sender_id" value="{{ settings.push_sender_id or '' }}" placeholder="e.g. 1234567890"></label>
     </div>
@@ -240,20 +243,20 @@
     <div class="form-grid">
       <label>Provider
         <select name="payment_gateway_provider">
-          <option value="" {{ 'selected' if not settings.payment_gateway_provider }}>— Select provider —</option>
+          <option value="" {{ 'selected' if not settings.payment_gateway_provider }}>â€” Select provider â€”</option>
           <option value="razorpay" {{ 'selected' if settings.payment_gateway_provider == 'razorpay' }}>Razorpay</option>
           <option value="cashfree" {{ 'selected' if settings.payment_gateway_provider == 'cashfree' }}>Cashfree</option>
           <option value="stripe" {{ 'selected' if settings.payment_gateway_provider == 'stripe' }}>Stripe</option>
         </select>
       </label>
       <label>Key ID / Publishable Key
-        <input type="password" name="payment_gateway_key_id" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_key_id else 'Enter key ID' }}" autocomplete="new-password">
+        <input type="password" name="payment_gateway_key_id" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_key_id else 'Enter key ID' }}" autocomplete="new-password">
       </label>
       <label>Key Secret
-        <input type="password" name="payment_gateway_key_secret" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_key_secret else 'Enter key secret' }}" autocomplete="new-password">
+        <input type="password" name="payment_gateway_key_secret" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_key_secret else 'Enter key secret' }}" autocomplete="new-password">
       </label>
       <label>Webhook Secret
-        <input type="password" name="payment_gateway_webhook_secret" placeholder="{{ '•••••••• (leave blank to keep current)' if settings.payment_gateway_webhook_secret else 'Enter webhook secret' }}" autocomplete="new-password">
+        <input type="password" name="payment_gateway_webhook_secret" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_webhook_secret else 'Enter webhook secret' }}" autocomplete="new-password">
       </label>
     </div>
   </div>

@@ -20,6 +20,7 @@ from app.models import (
     CommunicationLog,
     Announcement,
     FeatureFlagDefault,
+    UserSession,
     MessageTemplate,
     NotificationSchedule,
     FollowUpCheckpoint,
@@ -46,6 +47,7 @@ from app.services.billing import (
     run_billing_cycle,
 )
 from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
+from app.services.messaging_service import send_email
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
 from app.utils.permissions import has_permission, invalidate_role_permission_cache, invalidate_user_permission_cache, require_permission
@@ -130,6 +132,16 @@ def login_required(view_func):
         if not session.get("user"):
             flash("Please login first", "error")
             return redirect(url_for("frontend.login"))
+
+        session_token = session.get("session_token")
+        if session_token:
+            from app.models import UserSession
+            record = UserSession.query.filter_by(session_token=session_token, is_active=True).first()
+            if not record:
+                session.clear()
+                flash("Your session was ended by an administrator. Please log in again.", "error")
+                return redirect(url_for("frontend.login"))
+
         return view_func(*args, **kwargs)
     return wrapped
 
@@ -456,6 +468,19 @@ def login():
                 "is_super_admin": user.is_super_admin,
                 "organization_id": user.organization_id,
             }
+
+            import secrets
+            session_token = secrets.token_hex(16)
+            session["session_token"] = session_token
+            db.session.add(UserSession(
+                session_token=session_token,
+                user_id=user.id,
+                user_email=user.email,
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:500],
+            ))
+            db.session.commit()
+
             session.permanent = True
             flash(f"Welcome back, {user.full_name}", "success")
             if user.is_super_admin:
@@ -466,6 +491,12 @@ def login():
 
 @frontend_bp.route("/logout")
 def logout():
+    session_token = session.get("session_token")
+    if session_token:
+        record = UserSession.query.filter_by(session_token=session_token).first()
+        if record:
+            record.is_active = False
+            db.session.commit()
     session.pop("user", None)
     flash("You have been logged out", "success")
     return redirect(url_for("frontend.login"))
@@ -1247,6 +1278,36 @@ def super_admin_feature_flag_toggle(feature_key):
     return redirect(url_for("frontend.super_admin_feature_flags"))
 
 
+@frontend_bp.route("/super-admin/active-sessions")
+@super_admin_required
+def super_admin_active_sessions():
+    sessions = (
+        UserSession.query.filter_by(is_active=True)
+        .order_by(UserSession.last_active_at.desc())
+        .all()
+    )
+    return render_template("super_admin/active_sessions.html", sessions=sessions)
+
+
+@frontend_bp.route("/super-admin/active-sessions/<session_id>/revoke", methods=["POST"])
+@super_admin_required
+def super_admin_revoke_session(session_id):
+    record = UserSession.query.get(session_id)
+    if not record:
+        flash("Session not found.", "error")
+        return redirect(url_for("frontend.super_admin_active_sessions"))
+
+    record.is_active = False
+    db.session.commit()
+
+    _log_activity(
+        "session.force_logout",
+        f"Force-logged-out session for {record.user_email} ({record.ip_address})",
+    )
+    flash(f"Session for {record.user_email} has been logged out.", "success")
+    return redirect(url_for("frontend.super_admin_active_sessions"))
+
+
 @frontend_bp.route("/super-admin/notifications/schedules")
 @super_admin_required
 def super_admin_notification_schedules():
@@ -1351,6 +1412,31 @@ def super_admin_run_billing_cycle():
         f"{len(results['organizations_suspended'])} organization(s) auto-suspended.",
         "success",
     )
+
+
+@frontend_bp.route("/super-admin/notifications/run-now", methods=["POST"])
+@super_admin_required
+def super_admin_run_notification_schedules():
+    """Manual trigger for the same hourly check app/services/scheduler.py
+    runs automatically - resolves due schedules, renders their templates
+    per-candidate, and sends via app/services/messaging_service. Exists so
+    this can be tested/demoed on demand instead of waiting up to an hour."""
+    from app.services.notification_scheduler import run_notification_schedules
+
+    results = run_notification_schedules(force=True)
+    _log_activity(
+        "notifications.run_manually",
+        f"Schedules run: {results['schedules_run']}, "
+        f"Emails sent: {results['emails_sent']}, "
+        f"Skipped (no provider): {results['skipped_channels']}",
+    )
+    flash(
+        f"Notification schedules checked: {results['schedules_run']} schedule(s) ran, "
+        f"{results['emails_sent']} email(s) sent, "
+        f"{results['skipped_channels']} skipped (no provider configured for that channel).",
+        "success",
+    )
+    return redirect(url_for("frontend.super_admin_integrations"))
     return redirect(url_for("frontend.super_admin_integrations"))
 
 
@@ -3707,6 +3793,23 @@ def organization_candidate_create():
             organization_id=candidate.organization_id,
             candidate_id=candidate.id,
         )
+
+        # Send welcome email to the candidate (real-time, event-triggered -
+        # independent of the scheduled NotificationSchedule system)
+        if candidate.email:
+            send_email(
+                to_email=candidate.email,
+                subject="Welcome to the Placement Program",
+                body=(
+                    f"Hi {candidate.full_name},\n\n"
+                    "Welcome! You've been added to our candidate pool. "
+                    "We'll keep you updated on placement opportunities.\n\n"
+                    "Regards,\nPlacement Team"
+                ),
+                organization_id=candidate.organization_id,
+                candidate_id=candidate.id,
+            )
+
         _log_activity("Created candidate", f"{candidate.full_name} ({candidate.registration_number or 'no reg. no.'})")
         invalidate_report_cache("reports")
         invalidate_report_cache("dashboard:org")

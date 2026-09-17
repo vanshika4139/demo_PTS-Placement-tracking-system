@@ -1,0 +1,37 @@
+﻿{% extends 'base.html' %}
+{% block title %}Active Sessions{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Active Sessions</h2>
+    <p>Every currently logged-in session across the platform. Force-logout a session to end it immediately.</p>
+  </div>
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead>
+      <tr><th>User</th><th>IP Address</th><th>Browser / Device</th><th>Logged in</th><th>Last Active</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.user_email }}</td>
+        <td>{{ s.ip_address }}</td>
+        <td>{{ s.user_agent }}</td>
+        <td>{{ s.created_at }}</td>
+        <td>{{ s.last_active_at }}</td>
+        <td>
+          <form method="post" action="{{ url_for('frontend.super_admin_revoke_session', session_id=s.id) }}" style="display:inline;" onsubmit="return confirm('Force logout this session?');">
+            <button type="submit" class="ghost-btn">Force Logout</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No active sessions.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

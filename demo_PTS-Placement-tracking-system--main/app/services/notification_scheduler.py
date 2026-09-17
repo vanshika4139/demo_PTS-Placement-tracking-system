@@ -25,11 +25,12 @@ from app.services.messaging_service import send_email
 logger = logging.getLogger(__name__)
 
 
-def _is_due(schedule, today):
+def _is_due(schedule, today, force=False):
     """True if this schedule should run today and has not already run
     today (or, for weekly/monthly, has not already run in the current
-    period)."""
-    if schedule.last_run_at and schedule.last_run_at.date() == today:
+    period). If force=True, skips the already-ran-today check (used by
+    the manual 'Run Now' button for testing/demo)."""
+    if not force and schedule.last_run_at and schedule.last_run_at.date() == today:
         return False
 
     if schedule.frequency == "daily":
@@ -89,10 +90,11 @@ def _render(body, candidate):
     )
 
 
-def run_notification_schedules():
+def run_notification_schedules(force=False):
     """Entry point called hourly by the scheduler. Returns a summary dict
     for logging - never raises, so one bad schedule/template does not stop
-    the rest from running."""
+    the rest from running. force=True (used by the manual 'Run Now'
+    button) bypasses the once-per-day/period check in _is_due()."""
     today = datetime.utcnow().date()
     schedules_run = 0
     emails_sent = 0
@@ -101,7 +103,7 @@ def run_notification_schedules():
     due_schedules = NotificationSchedule.query.filter_by(is_active=True).all()
     for schedule in due_schedules:
         try:
-            if not _is_due(schedule, today):
+            if not _is_due(schedule, today, force=force):
                 continue
 
             template = MessageTemplate.query.get(schedule.template_id)

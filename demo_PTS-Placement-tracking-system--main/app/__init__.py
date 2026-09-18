@@ -16,6 +16,8 @@ from app.services.scheduler import init_scheduler
 from app.utils.error_handlers import register_error_handlers
 from app.utils.logging import configure_logging
 from app.utils.permissions import has_permission
+import werkzeug.serving
+werkzeug.serving.WSGIRequestHandler.address_string = lambda self: self.client_address[0]
 
 
 def create_app(config_name: str | None = None) -> Flask:

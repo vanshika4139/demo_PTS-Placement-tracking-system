@@ -29,6 +29,7 @@ class Organization(db.Model):
     subscription_expiry_date = Column(Date, nullable=True)
     storage_used = Column(BigInteger, nullable=True, default=0)
     candidate_limit = Column(Integer, nullable=True, default=0)
+    ai_call_allowance = Column(Integer, nullable=True, default=0)
     whatsapp_credits = Column(Integer, nullable=True, default=0)
     sms_credits = Column(Integer, nullable=True, default=0)
     email_credits = Column(Integer, nullable=True, default=0)

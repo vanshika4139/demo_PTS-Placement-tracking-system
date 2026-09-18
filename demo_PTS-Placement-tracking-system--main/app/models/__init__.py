@@ -1,4 +1,4 @@
-from app.models.candidate import Candidate
+﻿from app.models.candidate import Candidate
 from app.models.follow_up_checkpoint import FollowUpCheckpoint
 from app.models.organization import Organization
 from app.models.permission import Permission
@@ -20,6 +20,7 @@ from app.models.user_permission_override import UserPermissionOverride
 from app.models.candidate_feedback import CandidateFeedback
 from app.models.organization_feature import OrganizationFeature
 from app.models.platform_settings import PlatformSettings
+from app.models.organization_channel_settings import OrganizationChannelSettings
 from app.models.kyc_document import KycDocument
 from app.models.invoice import Invoice
 from app.models.communication_log import CommunicationLog
@@ -28,6 +29,7 @@ from app.models.notification_schedule import NotificationSchedule
 from app.models.announcement import Announcement
 from app.models.feature_flag_default import FeatureFlagDefault
 from app.models.user_session import UserSession
+from app.models.attendance import Attendance
 
 __all__ = [
     "Candidate",
@@ -53,6 +55,7 @@ __all__ = [
     "CandidateFeedback",
     "OrganizationFeature",
     "PlatformSettings",
+    "OrganizationChannelSettings",
     "KycDocument",
     "CommunicationLog",
     "MessageTemplate",
@@ -60,4 +63,5 @@ __all__ = [
     "Announcement",
     "FeatureFlagDefault",
     "UserSession",
+    "Attendance",
 ]

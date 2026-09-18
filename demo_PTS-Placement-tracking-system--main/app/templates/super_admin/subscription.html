@@ -34,7 +34,7 @@
       <label>Candidate Limit<input type="number" id="candidate_limit" name="candidate_limit" value="{{ organization.candidate_limit or 0 }}"></label>
       <label>WhatsApp Credits<input type="number" id="whatsapp_credits" name="whatsapp_credits" value="{{ organization.whatsapp_credits or 0 }}"></label>
       <label>SMS Credits<input type="number" id="sms_credits" name="sms_credits" value="{{ organization.sms_credits or 0 }}"></label>
-      <label>Email Credits<input type="number" id="email_credits" name="email_credits" value="{{ organization.email_credits or 0 }}"></label>
+      <label>AI Call Allowance<input type="number" id="ai_call_allowance" name="ai_call_allowance" value="{{ organization.ai_call_allowance or 0 }}"></label>
       <label>Payment Status
         <select name="payment_status">
           <option value="PENDING" {{ 'selected' if organization.payment_status == 'PENDING' }}>Pending</option>
@@ -134,6 +134,7 @@ function applyPlanDefaults(force) {
       document.getElementById('whatsapp_credits').value = data.whatsapp_credits;
       document.getElementById('sms_credits').value = data.sms_credits;
       document.getElementById('email_credits').value = data.email_credits;
+      document.getElementById('ai_call_allowance').value = data.ai_call_allowance;
     })
     .catch(() => {});
 }

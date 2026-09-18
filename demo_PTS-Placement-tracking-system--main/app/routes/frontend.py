@@ -14,6 +14,7 @@ from app.constants.indian_states import INDIAN_STATES, state_name
 from app.extensions import db
 from app.models import (
     ActivityLog,
+    Attendance,
     Batch,
     Candidate,
     CandidateFeedback,
@@ -47,7 +48,6 @@ from app.services.billing import (
     run_billing_cycle,
 )
 from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
-from app.services.messaging_service import send_email
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
 from app.utils.permissions import has_permission, invalidate_role_permission_cache, invalidate_user_permission_cache, require_permission
@@ -626,6 +626,7 @@ def get_super_admin_dashboard_data():
     # Orgs with no expiry date set are treated as not-expired (nothing to
     # expire), matching the dashboard's "Not set" treatment elsewhere.
     today_date = datetime.utcnow().date()
+    current_month_start = today_date.replace(day=1)
     expired_organizations = Organization.query.filter(
         Organization.is_deleted == False,
         Organization.subscription_expiry_date.isnot(None),
@@ -641,6 +642,23 @@ def get_super_admin_dashboard_data():
     placement_proof_uploaded = Candidate.query.filter_by(
         is_deleted=False, placement_proof_uploaded=True
     ).count()
+
+        # FR-01: "Total Candidates" - simple aggregate count across the platform,
+    # distinct from "Active Candidates" below (which is the portal-login gate).
+    total_candidates_all = Candidate.query.filter_by(is_deleted=False).count()
+
+    # FR-01: "Monthly Placements" - candidates whose joining_date falls in
+    # the current calendar month (a placement "this month" figure).
+    current_month_placements = Candidate.query.filter(
+        Candidate.is_deleted == False,
+        Candidate.joining_date.isnot(None),
+        Candidate.joining_date >= datetime.combine(current_month_start, datetime.min.time()),
+    ).count()
+
+    # FR-01: "Pending Follow-ups" - follow-up checkpoints still awaiting
+    # action, across every organization (platform-wide, matches this
+    # dashboard's scope).
+    pending_followups = FollowUpCheckpoint.query.filter_by(status="pending").count()
 
     # FR-01: "Active Candidates" - account_status is the candidate-portal-login
     # gate (active/blocked), same field the Candidates list already filters on.
@@ -679,7 +697,6 @@ def get_super_admin_dashboard_data():
     # it. That needs a new CallLog/MessageLog table plus wiring into
     # whatever actually sends the calls/messages - a separate, bigger
     # feature than this one.
-    current_month_start = today_date.replace(day=1)
     current_month_revenue = db.session.query(db.func.sum(Invoice.amount)).filter(
         Invoice.status == "PAID",
         Invoice.paid_at.isnot(None),
@@ -705,6 +722,9 @@ def get_super_admin_dashboard_data():
         {"title": "WhatsApp Delivered", "value": str(CommunicationLog.query.filter_by(channel="whatsapp", status="sent").count()), "link": None},
         {"title": "SMS Delivered", "value": str(CommunicationLog.query.filter_by(channel="sms", status="sent").count()), "link": None},
         {"title": "Email Delivered", "value": str(CommunicationLog.query.filter_by(channel="email", status="sent").count()), "link": None},
+        {"title": "Total Candidates", "value": str(total_candidates_all), "link": url_for("frontend.organization_candidates")},
+        {"title": "Monthly Placements", "value": str(current_month_placements), "link": url_for("frontend.organization_candidates", placed="yes")},
+        {"title": "Pending Follow-ups", "value": str(pending_followups), "link": url_for("frontend.organization_tracking")},
     ]
 
     today = datetime.utcnow()
@@ -767,6 +787,44 @@ def get_super_admin_dashboard_data():
         pay_key = (o.payment_status or "UNKNOWN").title()
         kyc_status_counts[kyc_key] = kyc_status_counts.get(kyc_key, 0) + 1
         payment_status_counts[pay_key] = payment_status_counts.get(pay_key, 0) + 1
+
+        # ---------------- Monthly revenue trend (chart) ----------------
+    paid_invoices = Invoice.query.filter(
+        Invoice.status == "PAID",
+        Invoice.paid_at.isnot(None),
+    ).all()
+    monthly_revenue_labels = []
+    monthly_revenue_data = []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        month_total = sum(
+            float(inv.amount) for inv in paid_invoices
+            if inv.paid_at.year == year and inv.paid_at.month == month
+        )
+        monthly_revenue_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        monthly_revenue_data.append(round(month_total, 2))
+
+    # ---------------- Active subscriptions trend (chart) ----------------
+    # NOTE: subscription status isn't tracked historically, so this
+    # approximates each past month's active-subscription count using each
+    # organization's CURRENT plan assignment and expiry date - an org
+    # created on/before that month, with a plan assigned, whose expiry (if
+    # any) hadn't passed by that month's end. An org that has since
+    # cancelled its plan will undercount earlier months; this is the best
+    # signal available without a dedicated subscription-history table.
+    subscription_trend_labels = []
+    subscription_trend_data = []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        month_end = (datetime(year, month, 1) + relativedelta(months=1) - timedelta(days=1)).date()
+        count = sum(
+            1 for o in all_orgs
+            if o.subscription_plan_id
+            and o.created_at and o.created_at.date() <= month_end
+            and (o.subscription_expiry_date is None or o.subscription_expiry_date >= month_end)
+        )
+        subscription_trend_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        subscription_trend_data.append(count)
 
     kyc_status_labels = list(kyc_status_counts.keys())
     kyc_status_data = list(kyc_status_counts.values())
@@ -885,6 +943,10 @@ def get_super_admin_dashboard_data():
         "kyc_status_data": kyc_status_data,
         "payment_status_labels": payment_status_labels,
         "payment_status_data": payment_status_data,
+        "monthly_revenue_labels": monthly_revenue_labels,
+        "monthly_revenue_data": monthly_revenue_data,
+        "subscription_trend_labels": subscription_trend_labels,
+        "subscription_trend_data": subscription_trend_data,
         "recent_organizations": recent_organizations,
         "expiring_subscriptions": expiring_subscriptions,
         "low_credit_organizations": low_credit_organizations,
@@ -1343,9 +1405,11 @@ def super_admin_notification_schedule_create():
         if frequency == "monthly" and not day_of_month:
             flash("Day of month is required for a monthly schedule.", "error")
             return render_template("super_admin/notification_schedules/form.html", templates=templates)
-        if frequency == "custom" and not custom_cron_expression:
-            flash("A cron expression is required for a custom schedule.", "error")
-            return render_template("super_admin/notification_schedules/form.html", templates=templates)
+        if frequency == "custom" and custom_cron_expression:
+            from croniter import croniter
+            if not croniter.is_valid(custom_cron_expression):
+                flash("Invalid cron expression. Use standard 5-field cron syntax, e.g. '0 */6 * * *' for every 6 hours.", "error")
+                return render_template("super_admin/notification_schedules/form.html", templates=templates)
 
         actor = session.get("user") or {}
         schedule = NotificationSchedule(
@@ -1423,7 +1487,7 @@ def super_admin_run_notification_schedules():
     this can be tested/demoed on demand instead of waiting up to an hour."""
     from app.services.notification_scheduler import run_notification_schedules
 
-    results = run_notification_schedules(force=True)
+    results = run_notification_schedules()
     _log_activity(
         "notifications.run_manually",
         f"Schedules run: {results['schedules_run']}, "
@@ -1841,6 +1905,68 @@ ALLOWED_KYC_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 def _allowed_kyc_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_KYC_EXTENSIONS
 
+
+@frontend_bp.route("/super-admin/organizations/<int:organization_id>/channel-settings", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_organization_channel_settings(organization_id):
+    """SRS FR-14: per-organization override of SMTP/WhatsApp/SMS channel
+    settings. Blank fields fall back to the platform-wide Integrations
+    settings (see app/utils/platform_settings.py). The three-way toggle
+    (Inherit / Enabled / Disabled) lets an organization explicitly turn a
+    channel on or off, or leave it following the platform-wide switch."""
+    from app.utils.platform_settings import (
+        get_organization_channel_settings,
+        update_organization_channel_settings,
+        get_platform_settings,
+    )
+
+    organization = Organization.query.get_or_404(organization_id)
+    settings = get_organization_channel_settings(organization_id)
+    platform = get_platform_settings()
+
+    if request.method == "POST":
+        def _toggle_value(field_name):
+            # Three states from a <select>: "inherit" -> None, "on" -> True, "off" -> False
+            raw = request.form.get(field_name, "inherit")
+            if raw == "on":
+                return True
+            if raw == "off":
+                return False
+            return None
+
+        actor = session.get("user") or {}
+        update_organization_channel_settings(
+            organization_id,
+            {
+                "smtp_host": request.form.get("smtp_host", "").strip(),
+                "smtp_port": request.form.get("smtp_port", "").strip(),
+                "smtp_username": request.form.get("smtp_username", "").strip(),
+                "smtp_password": request.form.get("smtp_password", "").strip() or settings.smtp_password,
+                "email_enabled": _toggle_value("email_enabled"),
+
+                "whatsapp_api_key": request.form.get("whatsapp_api_key", "").strip() or settings.whatsapp_api_key,
+                "whatsapp_phone_number_id": request.form.get("whatsapp_phone_number_id", "").strip(),
+                "whatsapp_enabled": _toggle_value("whatsapp_enabled"),
+
+                "sms_api_key": request.form.get("sms_api_key", "").strip() or settings.sms_api_key,
+                "sms_sender_id": request.form.get("sms_sender_id", "").strip(),
+                "sms_enabled": _toggle_value("sms_enabled"),
+            },
+            actor_id=actor.get("id"),
+        )
+        _log_activity(
+            "organization.channel_settings_updated",
+            f"Updated channel settings (Email / WhatsApp / SMS) for {organization.organization_name}",
+        )
+        flash("Channel settings saved.", "success")
+        return redirect(url_for("frontend.super_admin_organization_channel_settings", organization_id=organization_id))
+
+    return render_template(
+        "super_admin/organizations/channel_settings.html",
+        organization=organization,
+        settings=settings,
+        platform=platform,
+    )
 
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>/kyc-documents")
 @super_admin_required
@@ -2286,6 +2412,7 @@ def super_admin_plan_create():
             whatsapp_credits=_parse_int(request.form.get("whatsapp_credits")) or 0,
             sms_credits=_parse_int(request.form.get("sms_credits")) or 0,
             email_credits=_parse_int(request.form.get("email_credits")) or 0,
+            ai_call_allowance=_parse_int(request.form.get("ai_call_allowance")) or 0,
             storage_limit_mb=_parse_int(request.form.get("storage_limit_mb")),
             api_access=bool(request.form.get("api_access")),
             custom_branding=bool(request.form.get("custom_branding")),
@@ -2316,6 +2443,7 @@ def super_admin_plan_edit(plan_id):
         plan.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0
         plan.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
         plan.email_credits = _parse_int(request.form.get("email_credits")) or 0
+        plan.ai_call_allowance = _parse_int(request.form.get("ai_call_allowance")) or 0
         plan.storage_limit_mb = _parse_int(request.form.get("storage_limit_mb"))
         plan.api_access = bool(request.form.get("api_access"))
         plan.custom_branding = bool(request.form.get("custom_branding"))
@@ -2365,9 +2493,9 @@ def super_admin_plan_details_json(plan_id):
         "whatsapp_credits": plan.whatsapp_credits,
         "sms_credits": plan.sms_credits,
         "email_credits": plan.email_credits,
+        "ai_call_allowance": plan.ai_call_allowance,
         "default_billing_cycle": plan.default_billing_cycle,
     })
-
 
 @frontend_bp.route("/super-admin/organizations/<int:organization_id>/subscription", methods=["GET", "POST"])
 @super_admin_required
@@ -2391,6 +2519,7 @@ def super_admin_subscription(organization_id):
         organization.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0
         organization.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
         organization.email_credits = _parse_int(request.form.get("email_credits")) or 0
+        organization.ai_call_allowance = _parse_int(request.form.get("ai_call_allowance")) or 0
         organization.payment_status = request.form.get("payment_status")
         db.session.commit()
 
@@ -2555,6 +2684,14 @@ def super_admin_roles_permissions():
     _ensure_permission_exists(
         "kyc.upload",
         "Upload or replace the organization's own KYC documents",
+    )
+    _ensure_permission_exists(
+        "attendance.mark",
+        "Mark daily attendance for candidates in a batch",
+    )
+    _ensure_permission_exists(
+        "attendance.view",
+        "View attendance records and reports",
     )
 
     roles = Role.query.filter_by(is_deleted=False).order_by(Role.name).all()
@@ -3572,6 +3709,7 @@ def organization_candidates():
     verification_status = request.args.get("verification_status", "").strip()
     placed_filter = request.args.get("placed", "").strip()
     sector_filter = request.args.get("sector", "").strip()
+    course_filter = request.args.get("course", "").strip()
     proof_filter = request.args.get("placement_proof", "").strip()
     account_status_filter = request.args.get("account_status", "").strip()
 
@@ -3604,6 +3742,12 @@ def organization_candidates():
             query = query.filter((Candidate.sector.is_(None)) | (Candidate.sector == ""))
         else:
             query = query.filter_by(sector=sector_filter)
+
+    if course_filter:
+        if course_filter == "Unspecified":
+            query = query.filter((Candidate.course.is_(None)) | (Candidate.course == ""))
+        else:
+            query = query.filter_by(course=course_filter)
 
     if proof_filter == "yes":
         query = query.filter_by(placement_proof_uploaded=True)
@@ -3793,23 +3937,6 @@ def organization_candidate_create():
             organization_id=candidate.organization_id,
             candidate_id=candidate.id,
         )
-
-        # Send welcome email to the candidate (real-time, event-triggered -
-        # independent of the scheduled NotificationSchedule system)
-        if candidate.email:
-            send_email(
-                to_email=candidate.email,
-                subject="Welcome to the Placement Program",
-                body=(
-                    f"Hi {candidate.full_name},\n\n"
-                    "Welcome! You've been added to our candidate pool. "
-                    "We'll keep you updated on placement opportunities.\n\n"
-                    "Regards,\nPlacement Team"
-                ),
-                organization_id=candidate.organization_id,
-                candidate_id=candidate.id,
-            )
-
         _log_activity("Created candidate", f"{candidate.full_name} ({candidate.registration_number or 'no reg. no.'})")
         invalidate_report_cache("reports")
         invalidate_report_cache("dashboard:org")
@@ -5012,6 +5139,227 @@ def organization_tracking_checkpoint_delete(checkpoint_id):
     return redirect(url_for("frontend.organization_tracking"))
 
 
+@frontend_bp.route("/organization/attendance", methods=["GET"])
+@login_required
+@require_permission("attendance.view")
+def organization_attendance():
+    """Pick a batch + date, see every candidate in that batch with their
+    attendance for that date (defaults to 'present' if not yet marked)."""
+    from datetime import datetime as dt
+
+    user = session.get("user")
+    batch_query = Batch.query
+    if not user.get("is_super_admin"):
+        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = _scope_batches_to_creator(batch_query, user)
+    batches = batch_query.order_by(Batch.name).all()
+
+    selected_batch_id = request.args.get("batch_id", "").strip()
+    selected_date_str = request.args.get("date", "").strip()
+    selected_date = _parse_date(selected_date_str) or dt.utcnow()
+
+    candidates_with_status = []
+    if selected_batch_id:
+        batch = Batch.query.get(selected_batch_id)
+        if not batch or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")) or not _can_access_batch(batch, user):
+            flash("Invalid batch selected.", "error")
+            return redirect(url_for("frontend.organization_attendance"))
+
+        candidate_query = Candidate.query.filter_by(batch_id=selected_batch_id, is_deleted=False)
+        candidates = candidate_query.order_by(Candidate.full_name).all()
+
+        existing_records = {
+            a.candidate_id: a
+            for a in Attendance.query.filter_by(
+                batch_id=selected_batch_id, attendance_date=selected_date.date()
+            ).all()
+        }
+
+        for c in candidates:
+            record = existing_records.get(c.id)
+            candidates_with_status.append({
+                "candidate": c,
+                "status": record.status if record else "present",
+                "remarks": (record.remarks if record else "") or "",
+            })
+
+    return render_template(
+        "organization/attendance/index.html",
+        batches=batches,
+        selected_batch_id=selected_batch_id,
+        selected_date=selected_date.strftime("%Y-%m-%d"),
+        candidates_with_status=candidates_with_status,
+    )
+
+
+@frontend_bp.route("/organization/attendance/mark", methods=["POST"])
+@login_required
+@require_permission("attendance.mark")
+def organization_attendance_mark():
+    """Upserts one Attendance row per candidate submitted from the form -
+    updates today's record if one already exists (re-marking), otherwise
+    inserts a new one."""
+    user = session.get("user")
+    batch_id = request.form.get("batch_id", "").strip()
+    date_str = request.form.get("attendance_date", "").strip()
+    attendance_date = _parse_date(date_str)
+
+    if not batch_id or not attendance_date:
+        flash("Please select a batch and date.", "error")
+        return redirect(url_for("frontend.organization_attendance"))
+
+    batch = Batch.query.get(batch_id)
+    if not batch:
+        flash("Batch not found.", "error")
+        return redirect(url_for("frontend.organization_attendance"))
+
+    if not _can_access_batch(batch, user) or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")):
+        flash("You do not have permission to mark attendance for this batch.", "error")
+        return redirect(url_for("frontend.organization_attendance"))
+
+    candidate_ids = request.form.getlist("candidate_ids")
+    marked_count = 0
+
+    for candidate_id in candidate_ids:
+        status = request.form.get(f"status_{candidate_id}", "present")
+        remarks = request.form.get(f"remarks_{candidate_id}", "").strip()
+        if remarks in ("", "None", "none", "null"):
+            remarks = None
+
+        if status not in Attendance.STATUSES:
+            continue
+
+        existing = Attendance.query.filter_by(
+            candidate_id=candidate_id, attendance_date=attendance_date.date()
+        ).first()
+
+        if existing:
+            existing.status = status
+            existing.remarks = remarks
+            existing.marked_by = user.get("id")
+        else:
+            candidate = Candidate.query.get(candidate_id)
+            if not candidate:
+                continue
+            db.session.add(Attendance(
+                organization_id=candidate.organization_id,
+                candidate_id=candidate_id,
+                batch_id=batch_id,
+                attendance_date=attendance_date.date(),
+                status=status,
+                remarks=remarks,
+                marked_by=user.get("id"),
+            ))
+        marked_count += 1
+
+    db.session.commit()
+    _log_activity("attendance.marked", f"Marked attendance for {marked_count} candidate(s) in batch {batch.name} on {attendance_date.strftime('%d-%m-%Y')}")
+    flash(f"Attendance saved for {marked_count} candidate(s).", "success")
+    return redirect(url_for("frontend.organization_attendance", batch_id=batch_id, date=date_str))
+
+
+@frontend_bp.route("/organization/attendance/history/<candidate_id>")
+@login_required
+@require_permission("attendance.view")
+def organization_attendance_history(candidate_id):
+    """Full attendance history for one candidate - used from the candidate
+    detail page to show their attendance record over time."""
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+
+    records = Attendance.query.filter_by(candidate_id=candidate_id).order_by(Attendance.attendance_date.desc()).all()
+
+    total = len(records)
+    present_count = sum(1 for r in records if r.status == "present")
+    attendance_rate = round((present_count / total * 100), 1) if total else 0
+
+    return render_template(
+        "organization/attendance/history.html",
+        candidate=candidate,
+        records=records,
+        total=total,
+        present_count=present_count,
+        attendance_rate=attendance_rate,
+    )
+
+
+@frontend_bp.route("/organization/attendance/report")
+@login_required
+@require_permission("attendance.view")
+def organization_attendance_report():
+    """Batch-wise attendance summary over a date range - shows every
+    candidate in the batch with their present/absent/leave counts and
+    attendance % for that range."""
+    from datetime import datetime as dt
+
+    user = session.get("user")
+    batch_query = Batch.query
+    if not user.get("is_super_admin"):
+        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = _scope_batches_to_creator(batch_query, user)
+    batches = batch_query.order_by(Batch.name).all()
+
+    selected_batch_id = request.args.get("batch_id", "").strip()
+    start_date_str = request.args.get("start_date", "").strip()
+    end_date_str = request.args.get("end_date", "").strip()
+
+    # Default range: last 30 days
+    default_end = dt.utcnow()
+    default_start = default_end - timedelta(days=30)
+    start_date = _parse_date(start_date_str) or default_start
+    end_date = _parse_date(end_date_str) or default_end
+
+    summary_rows = []
+    if selected_batch_id:
+        batch = Batch.query.get(selected_batch_id)
+        if not batch or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")) or not _can_access_batch(batch, user):
+            flash("Invalid batch selected.", "error")
+            return redirect(url_for("frontend.organization_attendance_report"))
+
+        candidates = Candidate.query.filter_by(batch_id=selected_batch_id, is_deleted=False).order_by(Candidate.full_name).all()
+        candidate_ids = [c.id for c in candidates]
+
+        records = []
+        if candidate_ids:
+            records = Attendance.query.filter(
+                Attendance.candidate_id.in_(candidate_ids),
+                Attendance.attendance_date >= start_date.date(),
+                Attendance.attendance_date <= end_date.date(),
+            ).all()
+
+        records_by_candidate = {}
+        for r in records:
+            records_by_candidate.setdefault(r.candidate_id, []).append(r)
+
+        for c in candidates:
+            c_records = records_by_candidate.get(c.id, [])
+            total = len(c_records)
+            present = sum(1 for r in c_records if r.status == "present")
+            absent = sum(1 for r in c_records if r.status == "absent")
+            leave = sum(1 for r in c_records if r.status == "leave")
+            rate = round((present / total * 100), 1) if total else 0
+            summary_rows.append({
+                "candidate": c,
+                "total": total,
+                "present": present,
+                "absent": absent,
+                "leave": leave,
+                "rate": rate,
+            })
+
+    return render_template(
+        "organization/attendance/report.html",
+        batches=batches,
+        selected_batch_id=selected_batch_id,
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=end_date.strftime("%Y-%m-%d"),
+        summary_rows=summary_rows,
+    )
+
+
 @frontend_bp.route("/reports")
 @login_required
 @require_permission("report.view")
@@ -5055,6 +5403,10 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
     for c in all_candidates:
         key = c.sector or "Unspecified"
         sector_breakdown[key] = sector_breakdown.get(key, 0) + 1
+        course_breakdown = {}
+    for c in all_candidates:
+        key = c.course or "Unspecified"
+        course_breakdown[key] = course_breakdown.get(key, 0) + 1
 
     org_breakdown = []
     if is_super_admin:
@@ -5175,6 +5527,7 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
         "verification_rate": verification_rate,
         "training_status_breakdown": training_status_breakdown,
         "sector_breakdown": sector_breakdown,
+        "course_breakdown": course_breakdown,
         "org_breakdown": org_breakdown,
         "batch_breakdown": batch_breakdown,
         "unassigned_batch_count": unassigned_batch_count,

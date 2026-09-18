@@ -97,6 +97,11 @@
             <tr><th>Status</th><td><span class="status-badge">{{ candidate.training_status }}</span></td></tr>
           </tbody>
         </table>
+          {% if has_permission(session.user, 'attendance.view') %}
+        <div style="margin-top: 12px;">
+          <a class="ghost-btn" href="{{ url_for('frontend.organization_attendance_history', candidate_id=candidate.id) }}">View Attendance History</a>
+        </div>
+        {% endif %}
       </div>
 
       <div class="panel-card">

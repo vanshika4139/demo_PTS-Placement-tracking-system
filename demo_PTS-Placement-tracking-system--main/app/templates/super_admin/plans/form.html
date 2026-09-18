@@ -29,6 +29,7 @@
       <label>WhatsApp Credits<input type="number" name="whatsapp_credits" value="{{ plan.whatsapp_credits if plan else 0 }}"></label>
       <label>SMS Credits<input type="number" name="sms_credits" value="{{ plan.sms_credits if plan else 0 }}"></label>
       <label>Email Credits<input type="number" name="email_credits" value="{{ plan.email_credits if plan else 0 }}"></label>
+      <label>AI Call Allowance<input type="number" name="ai_call_allowance" value="{{ plan.ai_call_allowance if plan else 0 }}"></label>
       <label>Storage Limit (MB)<input type="number" name="storage_limit_mb" value="{{ plan.storage_limit_mb if plan and plan.storage_limit_mb else '' }}"></label>
       <label>Report Access Level
         <select name="report_access_level">

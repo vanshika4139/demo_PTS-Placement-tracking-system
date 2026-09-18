@@ -22,6 +22,9 @@
     <li><a href="/organization/placements">Placements</a></li>
     <li><a href="/organization/feedback">Feedback</a></li>
     {% endif %}
+    {% if has_permission(session.user, 'attendance.view') %}
+    <li><a href="/organization/attendance">Attendance</a></li>
+    {% endif %}
     {% if has_permission(session.user, 'tracking.view') %}
     <li><a href="/organization/tracking">Tracking</a></li>
     {% endif %}

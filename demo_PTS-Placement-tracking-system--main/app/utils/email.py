@@ -8,7 +8,11 @@ def send_otp_email(to_email: str, otp_code: str) -> None:
     """Send a password-reset OTP via SMTP (configured via the super-admin
     Integrations page, or .env as a fallback). Raises an exception if SMTP
     is not configured or sending fails, so the caller (forgot_password
-    route) can show an appropriate error."""
+    route) can show an appropriate error.
+
+    Always uses platform-wide SMTP (no organization_id) - password reset
+    happens before we know which organization's "brand" should be sending
+    the email, and it's a platform-level auth flow either way."""
 
     smtp_host, smtp_port, smtp_username, smtp_password = get_smtp_config()
 
@@ -29,12 +33,16 @@ def send_otp_email(to_email: str, otp_code: str) -> None:
         server.sendmail(smtp_username, [to_email], msg.as_string())
 
 
-def send_notification_email(to_email: str, subject: str, body: str) -> None:
+def send_notification_email(to_email: str, subject: str, body: str, organization_id=None) -> None:
     """Send a plain-text notification email (e.g. candidate placement alerts).
     Raises an exception on failure - callers should wrap this in try/except
-    so an email failure never breaks the main request flow."""
+    so an email failure never breaks the main request flow.
 
-    smtp_host, smtp_port, smtp_username, smtp_password = get_smtp_config()
+    organization_id (optional, SRS FR-14): when given, uses that
+    organization's own SMTP override if it has one configured, falling
+    back to platform-wide settings otherwise - see get_smtp_config()."""
+
+    smtp_host, smtp_port, smtp_username, smtp_password = get_smtp_config(organization_id)
 
     msg = MIMEText(body)
     msg["Subject"] = subject

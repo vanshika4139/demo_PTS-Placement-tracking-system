@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block title %}Attendance{% endblock %}
+
+{% block content %}
+<style>
+  .att-status-select {
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    background: #fff;
+  }
+  .att-status-select.status-present { border-color: #16a34a; color: #16a34a; }
+  .att-status-select.status-absent { border-color: #dc2626; color: #dc2626; }
+  .att-status-select.status-leave { border-color: #d97706; color: #d97706; }
+
+  .att-remarks-input {
+    width: 100%;
+    min-width: 140px;
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+  }
+
+  .att-quick-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .att-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Attendance</h2>
+    <p>Select a batch and date to mark or review attendance.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.organization_attendance_report') }}">View Report</a>
+</div>
+
+<div class="panel-card" style="margin-bottom: 20px;">
+  <form method="get" action="{{ url_for('frontend.organization_attendance') }}" class="table-toolbar">
+    <select name="batch_id" onchange="this.form.submit()" required>
+      <option value="">Select a batch</option>
+      {% for batch in batches %}
+      <option value="{{ batch.id }}" {{ 'selected' if selected_batch_id == batch.id|string }}>{{ batch.name }}</option>
+      {% endfor %}
+    </select>
+
+    <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
+
+    <button type="submit" class="ghost-btn">Load</button>
+  </form>
+</div>
+
+{% if not selected_batch_id %}
+<div class="panel-card">
+  <div class="att-empty">Select a batch above to see its candidates.</div>
+</div>
+{% elif not candidates_with_status %}
+<div class="panel-card">
+  <div class="att-empty">This batch has no candidates yet.</div>
+</div>
+{% else %}
+<div class="panel-card">
+  <form method="post" action="{{ url_for('frontend.organization_attendance_mark') }}">
+    <input type="hidden" name="batch_id" value="{{ selected_batch_id }}">
+    <input type="hidden" name="attendance_date" value="{{ selected_date }}">
+
+    <div class="att-quick-actions">
+      <button type="button" class="ghost-btn" onclick="setAllStatus('present')">Mark All Present</button>
+      <button type="button" class="ghost-btn" onclick="setAllStatus('absent')">Mark All Absent</button>
+      <span style="margin-left: auto; align-self: center; color: var(--muted); font-size: 0.85rem;">
+        {{ candidates_with_status|length }} candidate(s) &middot; {{ selected_date }}
+      </span>
+    </div>
+
+    <div class="sa-table-scroll" style="width:100%; overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Candidate</th>
+            <th>Mobile</th>
+            <th style="width: 140px;">Status</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in candidates_with_status %}
+          <tr>
+            <td>
+              <strong>{{ row.candidate.full_name }}</strong>
+              <div style="font-size: 0.78rem; color: var(--muted);">
+                {{ row.candidate.registration_number or 'No Reg. No.' }}
+              </div>
+              <input type="hidden" name="candidate_ids" value="{{ row.candidate.id }}">
+            </td>
+            <td>{{ row.candidate.mobile or '-' }}</td>
+            <td>
+              <select name="status_{{ row.candidate.id }}" class="att-status-select status-{{ row.status }}" onchange="this.className = 'att-status-select status-' + this.value">
+                <option value="present" {{ 'selected' if row.status == 'present' }}>Present</option>
+                <option value="absent" {{ 'selected' if row.status == 'absent' }}>Absent</option>
+                <option value="leave" {{ 'selected' if row.status == 'leave' }}>Leave</option>
+              </select>
+            </td>
+            <td>
+              <input type="text" class="att-remarks-input" name="remarks_{{ row.candidate.id }}" value="{{ row.remarks }}" placeholder="Optional remarks">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save Attendance</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% block scripts %}
+<script>
+  function setAllStatus(status) {
+    document.querySelectorAll('.att-status-select').forEach(function (select) {
+      select.value = status;
+      select.className = 'att-status-select status-' + status;
+    });
+  }
+</script>
+{% endblock %}
+{% endblock %}

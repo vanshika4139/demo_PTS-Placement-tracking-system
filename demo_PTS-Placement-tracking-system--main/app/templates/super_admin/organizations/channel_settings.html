@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% block title %}Channel Settings{% endblock %}
+
+{% block content %}
+<style>
+  .cs-channel-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+  .cs-channel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .cs-channel-title {
+    font-weight: 700;
+    color: #111827;
+    font-size: 1rem;
+  }
+  .cs-channel-desc {
+    color: #6b7280;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+  }
+  .cs-field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+  .cs-field label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 4px;
+  }
+  .cs-field input, .cs-field select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+  .cs-platform-hint {
+    font-size: 0.78rem;
+    color: #9ca3af;
+    margin-top: 4px;
+  }
+  .cs-toggle-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+  .cs-toggle-inherit { background: #f3f4f6; color: #6b7280; }
+  .cs-toggle-on { background: #dcfce7; color: #16a34a; }
+  .cs-toggle-off { background: #fee2e2; color: #dc2626; }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Channel Settings — {{ organization.organization_name }}</h2>
+    <p>Override SMTP / WhatsApp / SMS credentials and on/off state for this organization only. Leave a field blank to inherit the platform-wide value.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organization_detail', organization_id=organization.id) }}">&larr; Back to Organization</a>
+</div>
+
+<form method="post">
+  <div class="cs-channel-card">
+    <div class="cs-channel-header">
+      <span class="cs-channel-title">Email (SMTP)</span>
+      {% set current = settings.email_enabled %}
+      <span class="cs-toggle-badge {{ 'cs-toggle-on' if current == True else ('cs-toggle-off' if current == False else 'cs-toggle-inherit') }}">
+        {{ 'Enabled (override)' if current == True else ('Disabled (override)' if current == False else 'Inheriting platform (' + ('Enabled' if platform.email_enabled else 'Disabled') + ')') }}
+      </span>
+    </div>
+    <p class="cs-channel-desc">Used for candidate notification emails from this organization.</p>
+
+    <div class="cs-field-grid">
+      <div class="cs-field">
+        <label>On/Off Override</label>
+        <select name="email_enabled">
+          <option value="inherit" {{ 'selected' if settings.email_enabled is none }}>Inherit platform setting</option>
+          <option value="on" {{ 'selected' if settings.email_enabled == True }}>Force Enabled</option>
+          <option value="off" {{ 'selected' if settings.email_enabled == False }}>Force Disabled</option>
+        </select>
+      </div>
+      <div class="cs-field">
+        <label>SMTP Host</label>
+        <input type="text" name="smtp_host" value="{{ settings.smtp_host or '' }}" placeholder="{{ platform.smtp_host or 'smtp.gmail.com' }}">
+      </div>
+      <div class="cs-field">
+        <label>SMTP Port</label>
+        <input type="number" name="smtp_port" value="{{ settings.smtp_port or '' }}" placeholder="{{ platform.smtp_port or 587 }}">
+      </div>
+      <div class="cs-field">
+        <label>SMTP Username</label>
+        <input type="text" name="smtp_username" value="{{ settings.smtp_username or '' }}" placeholder="{{ platform.smtp_username or 'you@example.com' }}">
+      </div>
+      <div class="cs-field">
+        <label>SMTP Password</label>
+        <input type="password" name="smtp_password" placeholder="{{ 'Leave blank to keep current' if settings.smtp_password else 'Leave blank to inherit platform' }}">
+      </div>
+    </div>
+    <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>
+  </div>
+
+  <div class="cs-channel-card">
+    <div class="cs-channel-header">
+      <span class="cs-channel-title">WhatsApp Business API</span>
+      {% set current = settings.whatsapp_enabled %}
+      <span class="cs-toggle-badge {{ 'cs-toggle-on' if current == True else ('cs-toggle-off' if current == False else 'cs-toggle-inherit') }}">
+        {{ 'Enabled (override)' if current == True else ('Disabled (override)' if current == False else 'Inheriting platform (' + ('Enabled' if platform.whatsapp_enabled else 'Disabled') + ')') }}
+      </span>
+    </div>
+    <p class="cs-channel-desc">Used for sending WhatsApp notifications for this organization's candidates.</p>
+
+    <div class="cs-field-grid">
+      <div class="cs-field">
+        <label>On/Off Override</label>
+        <select name="whatsapp_enabled">
+          <option value="inherit" {{ 'selected' if settings.whatsapp_enabled is none }}>Inherit platform setting</option>
+          <option value="on" {{ 'selected' if settings.whatsapp_enabled == True }}>Force Enabled</option>
+          <option value="off" {{ 'selected' if settings.whatsapp_enabled == False }}>Force Disabled</option>
+        </select>
+      </div>
+      <div class="cs-field">
+        <label>API Key / Access Token</label>
+        <input type="text" name="whatsapp_api_key" value="" placeholder="{{ 'Leave blank to keep current' if settings.whatsapp_api_key else 'Leave blank to inherit platform' }}">
+      </div>
+      <div class="cs-field">
+        <label>Phone Number ID</label>
+        <input type="text" name="whatsapp_phone_number_id" value="{{ settings.whatsapp_phone_number_id or '' }}" placeholder="{{ platform.whatsapp_phone_number_id or 'e.g. 109876543210123' }}">
+      </div>
+    </div>
+    <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>
+  </div>
+
+  <div class="cs-channel-card">
+    <div class="cs-channel-header">
+      <span class="cs-channel-title">SMS Gateway</span>
+      {% set current = settings.sms_enabled %}
+      <span class="cs-toggle-badge {{ 'cs-toggle-on' if current == True else ('cs-toggle-off' if current == False else 'cs-toggle-inherit') }}">
+        {{ 'Enabled (override)' if current == True else ('Disabled (override)' if current == False else 'Inheriting platform (' + ('Enabled' if platform.sms_enabled else 'Disabled') + ')') }}
+      </span>
+    </div>
+    <p class="cs-channel-desc">Used for sending SMS notifications for this organization's candidates.</p>
+
+    <div class="cs-field-grid">
+      <div class="cs-field">
+        <label>On/Off Override</label>
+        <select name="sms_enabled">
+          <option value="inherit" {{ 'selected' if settings.sms_enabled is none }}>Inherit platform setting</option>
+          <option value="on" {{ 'selected' if settings.sms_enabled == True }}>Force Enabled</option>
+          <option value="off" {{ 'selected' if settings.sms_enabled == False }}>Force Disabled</option>
+        </select>
+      </div>
+      <div class="cs-field">
+        <label>API Key</label>
+        <input type="text" name="sms_api_key" value="" placeholder="{{ 'Leave blank to keep current' if settings.sms_api_key else 'Leave blank to inherit platform' }}">
+      </div>
+      <div class="cs-field">
+        <label>Sender ID</label>
+        <input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" placeholder="{{ platform.sms_sender_id or 'e.g. CDVCDO' }}">
+      </div>
+    </div>
+    <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>
+  </div>
+
+  <button type="submit" class="primary-btn">Save Channel Settings</button>
+</form>
+{% endblock %}

@@ -147,10 +147,27 @@
       <tr>
         <td><a href="{{ url_for('frontend.organization_candidates', sector=sector) }}">{{ sector }}</a></td>
         <td class="sa-report-count">{{ count }}</td>
-        <td>{{ '?' + '{:,}'.format(sector_avg_salary[sector]) if sector in sector_avg_salary else '�' }}</td>
+        <td>{{ '\u20b9' + '{:,}'.format(sector_avg_salary[sector]) if sector in sector_avg_salary else '-' }}</td>
       </tr>
       {% else %}
       <tr><td colspan="3">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3>Course-wise Distribution</h3>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Course</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for course, count in course_breakdown.items() %}
+      <tr>
+        <td><a href="{{ url_for('frontend.organization_candidates', course=course) }}">{{ course }}</a></td>
+        <td class="sa-report-count">{{ count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -215,7 +232,7 @@
 
 <div class="panel-card">
   <h3 class="sa-report-section-title">Batch-wise Placement Performance</h3>
-  <p class="sa-report-section-sub">Sorted by placement rate, highest first{% if unassigned_batch_count %} � {{ unassigned_batch_count }} candidate(s) have no batch assigned{% endif %}.</p>
+  <p class="sa-report-section-sub">Sorted by placement rate, highest first{% if unassigned_batch_count %} &mdash; {{ unassigned_batch_count }} candidate(s) have no batch assigned{% endif %}.</p>
   <table class="data-table sa-report-table">
     <thead><tr><th>Batch</th><th>Total Candidates</th><th>Placed</th><th>Placement Rate</th></tr></thead>
     <tbody>
@@ -238,8 +255,8 @@
   <p class="sa-report-section-sub">How quickly candidates get placed after training, and how many later leave their job.</p>
   <div class="sa-inline-stat">
     <div>
-      <div class="label">Avg. Days: Training End ? Joining</div>
-      <div class="value">{{ avg_time_to_placement if avg_time_to_placement is not none else '�' }}{% if avg_time_to_placement is not none %} days{% endif %}</div>
+      <div class="label">Avg. Days: Training End &rarr; Joining</div>
+      <div class="value">{{ avg_time_to_placement if avg_time_to_placement is not none else '-' }}{% if avg_time_to_placement is not none %} days{% endif %}</div>
     </div>
     <div>
       <div class="label">Candidates Who Exited</div>
@@ -267,7 +284,7 @@
 
 {% if is_super_admin %}
 <div class="panel-card">
-  <h3 class="sa-report-section-title">?? Organization Leaderboard</h3>
+  <h3 class="sa-report-section-title">&#127942; Organization Leaderboard</h3>
   <p class="sa-report-section-sub">Ranked by placement rate, highest first. Organizations with no candidates yet are listed last.</p>
   <table class="data-table sa-report-table">
     <thead><tr><th>Rank</th><th>Organization</th><th>Total Candidates</th><th>Placed</th><th>Placement Rate</th></tr></thead>
@@ -276,9 +293,9 @@
       {% set rank = loop.index %}
       <tr class="{{ 'sa-lb-row-top1' if rank == 1 and org.total > 0 else ('sa-lb-row-top2' if rank == 2 and org.total > 0 else ('sa-lb-row-top3' if rank == 3 and org.total > 0 else '')) }}">
         <td class="sa-lb-rank-cell">
-          {% if org.total > 0 and rank == 1 %}<span class="sa-lb-rank-medal">??</span>
-          {% elif org.total > 0 and rank == 2 %}<span class="sa-lb-rank-medal">??</span>
-          {% elif org.total > 0 and rank == 3 %}<span class="sa-lb-rank-medal">??</span>
+          {% if org.total > 0 and rank == 1 %}<span class="sa-lb-rank-medal">&#129351;</span>
+          {% elif org.total > 0 and rank == 2 %}<span class="sa-lb-rank-medal">&#129352;</span>
+          {% elif org.total > 0 and rank == 3 %}<span class="sa-lb-rank-medal">&#129353;</span>
           {% else %}{{ rank }}
           {% endif %}
         </td>

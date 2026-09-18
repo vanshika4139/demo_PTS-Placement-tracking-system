@@ -28,6 +28,7 @@ class Plan(db.Model):
     default_billing_cycle = Column(String(20), nullable=False, default="monthly")  # monthly | quarterly | yearly
 
     candidate_limit = Column(Integer, nullable=False, default=0)
+    ai_call_allowance = Column(Integer, nullable=False, default=0)
     whatsapp_credits = Column(Integer, nullable=False, default=0)
     sms_credits = Column(Integer, nullable=False, default=0)
     email_credits = Column(Integer, nullable=False, default=0)

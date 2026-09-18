@@ -243,6 +243,22 @@
   </div>
 </div>
 
+<div class="sa-section-title">Candidates &amp; Follow-ups (Overview)</div>
+<div class="sa-stats-grid">
+  <a href="{{ stats[17].link }}" class="sa-stat-card" style="--accent:#2563eb;">
+    <h3>{{ stats[17].title }}</h3>
+    <p class="stat-value">{{ stats[17].value }}</p>
+  </a>
+  <a href="{{ stats[18].link }}" class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>{{ stats[18].title }}</h3>
+    <p class="stat-value">{{ stats[18].value }}</p>
+  </a>
+  <a href="{{ stats[19].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>{{ stats[19].title }}</h3>
+    <p class="stat-value">{{ stats[19].value }}</p>
+  </a>
+</div>
+
 <!-- ================= NEW: Subscription Expiry Alerts ================= -->
 <div class="sa-section-title">Alerts</div>
 <div class="sa-alert-panel">
@@ -390,9 +406,17 @@
     <h3>KYC Status Breakdown</h3>
     <canvas id="kycStatusChart" height="200"></canvas>
   </div>
-  <div class="panel-card">
+    <div class="panel-card">
     <h3>Payment Status Breakdown</h3>
     <canvas id="paymentStatusChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Monthly Revenue Trend</h3>
+    <canvas id="monthlyRevenueChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Active Subscriptions Trend</h3>
+    <canvas id="subscriptionTrendChart" height="200"></canvas>
   </div>
 </div>
 
@@ -563,9 +587,55 @@ document.addEventListener('DOMContentLoaded', function() {
           plugins: { legend: { position: 'right' } }
         }
       });
-    } else {
+        } else {
       paymentCtx.parentElement.innerHTML = '<h3>Payment Status Breakdown</h3><p>No organization data yet.</p>';
     }
+  }
+
+  const monthlyRevenueCtx = document.getElementById('monthlyRevenueChart');
+  if (monthlyRevenueCtx) {
+    new Chart(monthlyRevenueCtx, {
+      type: 'line',
+      data: {
+        labels: {{ monthly_revenue_labels | tojson }},
+        datasets: [{
+          label: 'Revenue (Rs.)',
+          data: {{ monthly_revenue_data | tojson }},
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const subscriptionTrendCtx = document.getElementById('subscriptionTrendChart');
+  if (subscriptionTrendCtx) {
+    new Chart(subscriptionTrendCtx, {
+      type: 'line',
+      data: {
+        labels: {{ subscription_trend_labels | tojson }},
+        datasets: [{
+          label: 'Active Subscriptions',
+          data: {{ subscription_trend_data | tojson }},
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
   }
 });
 </script>

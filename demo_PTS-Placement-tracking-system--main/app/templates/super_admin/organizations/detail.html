@@ -151,6 +151,7 @@
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_edit_organization', organization_id=organization.id) }}">Edit</a>
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_activity_log', organization_id=organization.id) }}">View Activity</a>
     <a class="ghost-btn" href="{{ url_for('frontend.super_admin_kyc_documents', organization_id=organization.id) }}">KYC Documents</a>
+    <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organization_channel_settings', organization_id=organization.id) }}">Channel Settings</a>
     <a class="primary-btn" href="{{ url_for('frontend.super_admin_subscription', organization_id=organization.id) }}">Subscription</a>
 
     {% if is_active %}

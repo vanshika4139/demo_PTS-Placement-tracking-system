@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Attendance Report{% endblock %}
+
+{% block content %}
+<style>
+  .att-rate-bar {
+    background: var(--border);
+    border-radius: 999px;
+    height: 8px;
+    overflow: hidden;
+    width: 100px;
+  }
+  .att-rate-bar div {
+    height: 100%;
+    background: var(--avocado);
+  }
+  .att-rate-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .att-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+  }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Attendance Report</h2>
+    <p>Batch-wise attendance summary over a date range.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.organization_attendance') }}">Mark Attendance</a>
+</div>
+
+<div class="panel-card" style="margin-bottom: 20px;">
+  <form method="get" action="{{ url_for('frontend.organization_attendance_report') }}" class="table-toolbar">
+    <select name="batch_id" required>
+      <option value="">Select a batch</option>
+      {% for batch in batches %}
+      <option value="{{ batch.id }}" {{ 'selected' if selected_batch_id == batch.id|string }}>{{ batch.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--muted);">
+      From <input type="date" name="start_date" value="{{ start_date }}">
+    </label>
+    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--muted);">
+      To <input type="date" name="end_date" value="{{ end_date }}">
+    </label>
+
+    <button type="submit" class="ghost-btn">Load</button>
+  </form>
+</div>
+
+{% if not selected_batch_id %}
+<div class="panel-card">
+  <div class="att-empty">Select a batch above to see its attendance summary.</div>
+</div>
+{% elif not summary_rows %}
+<div class="panel-card">
+  <div class="att-empty">This batch has no candidates yet.</div>
+</div>
+{% else %}
+<div class="panel-card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Candidate</th>
+        <th>Present</th>
+        <th>Absent</th>
+        <th>Leave</th>
+        <th>Total Marked</th>
+        <th>Attendance Rate</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary_rows %}
+      <tr>
+        <td>
+          <strong>{{ row.candidate.full_name }}</strong>
+          <div style="font-size: 0.78rem; color: var(--muted);">
+            {{ row.candidate.registration_number or 'No Reg. No.' }}
+          </div>
+        </td>
+        <td>{{ row.present }}</td>
+        <td>{{ row.absent }}</td>
+        <td>{{ row.leave }}</td>
+        <td>{{ row.total }}</td>
+        <td>
+          <div class="att-rate-cell">
+            <div class="att-rate-bar"><div style="width: {{ row.rate }}%;"></div></div>
+            <span>{{ row.rate }}%</span>
+          </div>
+        </td>
+        <td>
+          <a href="{{ url_for('frontend.organization_attendance_history', candidate_id=row.candidate.id) }}" style="color: var(--avocado); text-decoration: none; font-weight: 600; font-size: 0.85rem;">View History</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Permission-checking utilities for the RBAC system.
 
 Precedence (highest to lowest):
@@ -142,7 +142,19 @@ def has_permission(session_user, permission_code):
     """session_user is the dict stored in session['user']."""
     if not session_user:
         return False
-    if session_user.get("is_super_admin"):
+    # Super Admin manages platform-level concerns only (organizations,
+    # plans, KYC, users, reports) - NOT candidate/batch/placement-level
+    # operations, which belong to each organization's own admin. So these
+    # specific permissions are excluded from the super-admin bypass below.
+    ORG_SCOPED_ONLY_PERMISSIONS = {
+        "candidate.view", "candidate.create", "candidate.edit", "candidate.delete", "candidate.import",
+        "batch.view", "batch.create", "batch.edit", "batch.delete",
+        "placement.view", "placement.create", "placement.edit",
+        "scheme.view", "scheme.create", "scheme.edit", "scheme.delete",
+        "tracking.view", "tracking.edit",
+        "attendance.view", "attendance.edit",
+    }
+    if session_user.get("is_super_admin") and permission_code not in ORG_SCOPED_ONLY_PERMISSIONS:
         return True
     user_id = session_user.get("id")
     if not user_id:

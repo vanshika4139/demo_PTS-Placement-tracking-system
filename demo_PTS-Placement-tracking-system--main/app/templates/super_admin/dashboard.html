@@ -159,105 +159,24 @@
   <p>Platform-wide overview and operational health.</p>
 </div>
 
-<div class="sa-section-title">Organizations</div>
+{% for section in stat_sections %}
+<div class="sa-section-title">{{ section.title }}</div>
 <div class="sa-stats-grid">
-  <a href="{{ stats[0].link }}" class="sa-stat-card" style="--accent:#2563eb;">
-    <h3>{{ stats[0].title }}</h3>
-    <p class="stat-value">{{ stats[0].value }}</p>
+  {% for card in section.cards %}
+  {% if card.link %}
+  <a href="{{ card.link }}" class="sa-stat-card" style="--accent:{{ card.accent }};">
+    <h3>{{ card.title }}</h3>
+    <p class="stat-value">{{ card.value }}</p>
   </a>
-  <a href="{{ stats[1].link }}" class="sa-stat-card" style="--accent:#16a34a;">
-    <h3>{{ stats[1].title }}</h3>
-    <p class="stat-value">{{ stats[1].value }}</p>
-  </a>
-  <a href="{{ stats[2].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
-    <h3>{{ stats[2].title }}</h3>
-    <p class="stat-value">{{ stats[2].value }}</p>
-  </a>
-  <a href="{{ stats[3].link }}" class="sa-stat-card" style="--accent:#ef4444;">
-    <h3>{{ stats[3].title }}</h3>
-    <p class="stat-value">{{ stats[3].value }}</p>
-  </a>
-</div>
-
-<div class="sa-section-title">Operations</div>
-<div class="sa-stats-grid">
-  <a href="{{ stats[4].link }}" class="sa-stat-card" style="--accent:#8b5cf6;">
-    <h3>{{ stats[4].title }}</h3>
-    <p class="stat-value">{{ stats[4].value }}</p>
-  </a>
-  <a href="{{ stats[5].link }}" class="sa-stat-card" style="--accent:#06b6d4;">
-    <h3>{{ stats[5].title }}</h3>
-    <p class="stat-value">{{ stats[5].value }}</p>
-  </a>
-  <a href="{{ stats[6].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
-    <h3>{{ stats[6].title }}</h3>
-    <p class="stat-value">{{ stats[6].value }}</p>
-  </a>
-  <a href="{{ stats[7].link }}" class="sa-stat-card" style="--accent:#16a34a;">
-    <h3>{{ stats[7].title }}</h3>
-    <p class="stat-value">{{ stats[7].value }}</p>
-  </a>
-</div>
-
-<div class="sa-section-title">Candidates &amp; Placements</div>
-<div class="sa-stats-grid">
-  <a href="{{ stats[8].link }}" class="sa-stat-card" style="--accent:#ef4444;">
-    <h3>{{ stats[8].title }}</h3>
-    <p class="stat-value">{{ stats[8].value }}</p>
-  </a>
-  <a href="{{ stats[9].link }}" class="sa-stat-card" style="--accent:#16a34a;">
-    <h3>{{ stats[9].title }}</h3>
-    <p class="stat-value">{{ stats[9].value }}</p>
-  </a>
-  <a href="{{ stats[10].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
-    <h3>{{ stats[10].title }}</h3>
-    <p class="stat-value">{{ stats[10].value }}</p>
-  </a>
-</div>
-
-<div class="sa-section-title">Subscriptions &amp; Communication</div>
-<div class="sa-stats-grid">
-  <a href="{{ stats[11].link }}" class="sa-stat-card" style="--accent:#2563eb;">
-    <h3>{{ stats[11].title }}</h3>
-    <p class="stat-value">{{ stats[11].value }}</p>
-  </a>
-  <a href="{{ stats[12].link }}" class="sa-stat-card" style="--accent:#16a34a;">
-    <h3>{{ stats[12].title }}</h3>
-    <p class="stat-value">{{ stats[12].value }}</p>
-  </a>
-  <div class="sa-stat-card" style="--accent:#8b5cf6;">
-    <h3>{{ stats[13].title }}</h3>
-    <p class="stat-value">{{ stats[13].value }}</p>
+  {% else %}
+  <div class="sa-stat-card" style="--accent:{{ card.accent }};">
+    <h3>{{ card.title }}</h3>
+    <p class="stat-value">{{ card.value }}</p>
   </div>
-  <div class="sa-stat-card" style="--accent:#06b6d4;">
-    <h3>{{ stats[14].title }}</h3>
-    <p class="stat-value">{{ stats[14].value }}</p>
-  </div>
-  <div class="sa-stat-card" style="--accent:#f59e0b;">
-    <h3>{{ stats[15].title }}</h3>
-    <p class="stat-value">{{ stats[15].value }}</p>
-  </div>
-  <div class="sa-stat-card" style="--accent:#ef4444;">
-    <h3>{{ stats[16].title }}</h3>
-    <p class="stat-value">{{ stats[16].value }}</p>
-  </div>
+  {% endif %}
+  {% endfor %}
 </div>
-
-<div class="sa-section-title">Candidates &amp; Follow-ups (Overview)</div>
-<div class="sa-stats-grid">
-  <a href="{{ stats[17].link }}" class="sa-stat-card" style="--accent:#2563eb;">
-    <h3>{{ stats[17].title }}</h3>
-    <p class="stat-value">{{ stats[17].value }}</p>
-  </a>
-  <a href="{{ stats[18].link }}" class="sa-stat-card" style="--accent:#16a34a;">
-    <h3>{{ stats[18].title }}</h3>
-    <p class="stat-value">{{ stats[18].value }}</p>
-  </a>
-  <a href="{{ stats[19].link }}" class="sa-stat-card" style="--accent:#f59e0b;">
-    <h3>{{ stats[19].title }}</h3>
-    <p class="stat-value">{{ stats[19].value }}</p>
-  </a>
-</div>
+{% endfor %}
 
 <!-- ================= NEW: Subscription Expiry Alerts ================= -->
 <div class="sa-section-title">Alerts</div>
@@ -391,14 +310,6 @@
     <canvas id="orgGrowthChart" height="200"></canvas>
   </div>
   <div class="panel-card">
-    <h3>Candidate Growth</h3>
-    <canvas id="candidateGrowthChart" height="200"></canvas>
-  </div>
-  <div class="panel-card">
-    <h3>Placement Trend</h3>
-    <canvas id="placementTrendChart" height="200"></canvas>
-  </div>
-  <div class="panel-card">
     <h3>State-wise Organization Distribution</h3>
     <canvas id="stateDistributionChart" height="200"></canvas>
   </div>
@@ -464,49 +375,6 @@ document.addEventListener('DOMContentLoaded', function() {
           backgroundColor: 'rgba(37, 99, 235, 0.1)',
           tension: 0.3,
           fill: true,
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-        plugins: { legend: { display: false } }
-      }
-    });
-  }
-
-  const candidateGrowthCtx = document.getElementById('candidateGrowthChart');
-  if (candidateGrowthCtx) {
-    new Chart(candidateGrowthCtx, {
-      type: 'line',
-      data: {
-        labels: {{ candidate_growth_labels | tojson }},
-        datasets: [{
-          label: 'New Candidates',
-          data: {{ candidate_growth_data | tojson }},
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(139, 92, 246, 0.1)',
-          tension: 0.3,
-          fill: true,
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-        plugins: { legend: { display: false } }
-      }
-    });
-  }
-
-  const placementCtx = document.getElementById('placementTrendChart');
-  if (placementCtx) {
-    new Chart(placementCtx, {
-      type: 'bar',
-      data: {
-        labels: {{ placement_labels | tojson }},
-        datasets: [{
-          label: 'Candidates Placed',
-          data: {{ placement_data | tojson }},
-          backgroundColor: '#16a34a',
         }]
       },
       options: {

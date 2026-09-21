@@ -174,6 +174,8 @@ def mark_invoice_paid(invoice: Invoice, gateway=None, gateway_reference=None, ra
 
     from app.models import Organization
 
+    prior_status = invoice.status
+
     invoice.status = "PAID"
     invoice.paid_at = datetime.utcnow()
     invoice.payment_gateway = gateway
@@ -183,6 +185,8 @@ def mark_invoice_paid(invoice: Invoice, gateway=None, gateway_reference=None, ra
 
     org = Organization.query.get(invoice.organization_id)
     if org:
+        if prior_status not in ("PAID", "CANCELLED"):
+            activate_self_serve_purchase(invoice, org)
         org.payment_status = "PAID"
         org.modified_at = datetime.utcnow()
 
@@ -200,3 +204,73 @@ def mark_invoice_paid(invoice: Invoice, gateway=None, gateway_reference=None, ra
 
     db.session.commit()
     return invoice
+
+
+def activate_self_serve_purchase(invoice, org):
+    """Applies a plan purchase made from the organization's own Plan & Billing
+    page. Called by mark_invoice_paid (so the webhook and the manual 'Mark as
+    Paid' button behave the same) BEFORE it flips the organization to PAID.
+
+    Only invoices whose proration_note starts with '[self-serve:new|renew|upgrade]'
+    are touched - invoices from the scheduled billing job are left exactly as
+    they always were.
+
+      new      plan set, expiry = end of the new period, plan credits ADDED,
+               candidate limit + AI allowance set to the plan's
+      renew    same as new (period starts at the old expiry)
+      upgrade  plan set, expiry unchanged, only the extra credits over the
+               old plan are added
+    """
+    import re
+    from datetime import datetime
+
+    from app.models import Plan
+
+    match = re.match(r"\[self-serve:(new|renew|upgrade)\]", invoice.proration_note or "")
+    if not match or org is None or not invoice.plan_id:
+        return False
+
+    plan = Plan.query.get(invoice.plan_id)
+    if plan is None:
+        logger.warning(
+            "payment_gateway: self-serve invoice %s points to a missing plan %s",
+            invoice.invoice_number, invoice.plan_id,
+        )
+        return False
+
+    kind = match.group(1)
+    old_plan = Plan.query.get(org.subscription_plan_id) if org.subscription_plan_id else None
+
+    def _extra(new_value, old_value=0):
+        return max(0, int(new_value or 0) - int(old_value or 0))
+
+    org.subscription_plan_id = plan.id
+    org.billing_cycle = invoice.billing_cycle or plan.default_billing_cycle
+    org.candidate_limit = plan.candidate_limit or 0
+
+    if kind in ("new", "renew"):
+        period_end = invoice.period_end
+        org.subscription_expiry_date = period_end.date() if isinstance(period_end, datetime) else period_end
+        org.whatsapp_credits = (org.whatsapp_credits or 0) + _extra(plan.whatsapp_credits)
+        org.sms_credits = (org.sms_credits or 0) + _extra(plan.sms_credits)
+        org.email_credits = (org.email_credits or 0) + _extra(plan.email_credits)
+        org.ai_call_allowance = plan.ai_call_allowance or 0
+        # An organization that was auto-suspended for a lapsed subscription is
+        # switched back on once it pays (a manually suspended one is not).
+        if org.status == 0 and org.payment_status == "OVERDUE":
+            org.status = 1
+    else:
+        org.whatsapp_credits = (org.whatsapp_credits or 0) + _extra(plan.whatsapp_credits, old_plan.whatsapp_credits if old_plan else 0)
+        org.sms_credits = (org.sms_credits or 0) + _extra(plan.sms_credits, old_plan.sms_credits if old_plan else 0)
+        org.email_credits = (org.email_credits or 0) + _extra(plan.email_credits, old_plan.email_credits if old_plan else 0)
+        org.ai_call_allowance = max(org.ai_call_allowance or 0, plan.ai_call_allowance or 0)
+
+    logger.info("payment_gateway: activated %s purchase of plan %s for organization %s", kind, plan.id, org.id)
+
+    try:
+        from app.utils.report_cache import invalidate_report_cache
+
+        invalidate_report_cache("dashboard:super_admin")
+    except Exception:
+        pass
+    return True

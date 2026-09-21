@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Team{% endblock %}
+{% block content %}
+<style>
+  .ou-pill {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+  }
+  .ou-pill-green { background: #dcfce7; color: #16a34a; }
+  .ou-pill-red { background: #fee2e2; color: #dc2626; }
+  .ou-pill-blue { background: #dbeafe; color: #2563eb; }
+  .ou-pill-grey { background: #f3f4f6; color: #6b7280; }
+
+  .ou-table-scroll {
+    width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px;
+  }
+  .ou-table { width: 100%; min-width: 640px; border-collapse: collapse; margin: 0; }
+  .ou-table th, .ou-table td {
+    padding: 12px 14px; text-align: left; border-bottom: 1px solid #f0f1f3; vertical-align: middle;
+  }
+  .ou-table thead th {
+    background: #f9fafb; color: #6b7280; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+  }
+  .ou-table tbody tr:last-child td { border-bottom: none; }
+  .ou-user-name { font-weight: 600; color: #111827; }
+  .ou-user-email { display: block; font-size: 0.78rem; color: #6b7280; }
+  .ou-actions { display: flex; gap: 8px; align-items: center; }
+  .ou-actions form { margin: 0; }
+  .ou-muted { color: #9ca3af; font-size: 0.82rem; }
+  .ou-link-btn {
+    background: none; border: 1px solid #d1d5db; color: #111827; padding: 5px 10px;
+    border-radius: 6px; font-size: 0.82rem; cursor: pointer; text-decoration: none;
+  }
+  .ou-link-btn.warn { border-color: #fcd34d; color: #92400e; }
+</style>
+
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Team</h2>
+    <p>Add people to your organization and choose what each person can do.</p>
+  </div>
+  <div class="inline-actions">
+    {% if has_permission(session.user, 'org_role.manage') %}
+    <a href="{{ url_for('frontend.organization_roles') }}" class="ghost-btn">Manage roles</a>
+    {% endif %}
+    <a href="{{ url_for('frontend.organization_user_create') }}" class="primary-btn">Add user</a>
+  </div>
+</div>
+
+<div class="panel-card">
+  <div class="ou-table-scroll">
+    <table class="data-table ou-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        {% set role_info = role_map.get(user.id) %}
+        <tr>
+          <td>
+            <span class="ou-user-name">{{ user.full_name }}</span>
+            <span class="ou-user-email">{{ user.email }}</span>
+          </td>
+          <td>
+            {% if role_info %}
+            <span class="ou-pill ou-pill-blue">{{ role_info[1] }}</span>
+            {% else %}
+            <span class="ou-pill ou-pill-grey">No role</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="ou-pill {{ 'ou-pill-green' if user.is_active else 'ou-pill-red' }}">
+              {{ 'Active' if user.is_active else 'Inactive' }}
+            </span>
+          </td>
+          <td>
+            {% if user.id in manageable_user_ids %}
+            <div class="ou-actions">
+              <a class="ou-link-btn" href="{{ url_for('frontend.organization_user_edit', user_id=user.id) }}">Edit</a>
+              <form method="post" action="{{ url_for('frontend.organization_user_toggle_active', user_id=user.id) }}"
+                    onsubmit="return confirm('{{ 'Deactivate' if user.is_active else 'Activate' }} this user?');">
+                <button type="submit" class="ou-link-btn {{ 'warn' if user.is_active }}">
+                  {{ 'Deactivate' if user.is_active else 'Activate' }}
+                </button>
+              </form>
+            </div>
+            {% else %}
+            <span class="ou-muted">Not editable by you</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">No team members yet. Select Add user to create the first one.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

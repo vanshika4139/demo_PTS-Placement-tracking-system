@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block title %}Plan &amp; Billing{% endblock %}
+
+{% block content %}
+<style>
+  .bp-summary { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+  .bp-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 18px; min-width: 150px; }
+  .bp-box .bp-label { font-size: 0.72rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+  .bp-box .bp-value { font-size: 1.15rem; font-weight: 700; color: #111827; }
+  .bp-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 8px; }
+  .bp-plan { border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; background: #fff; }
+  .bp-plan.bp-current { border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb; }
+  .bp-plan h3 { margin: 0 0 4px; }
+  .bp-price { font-size: 1.6rem; font-weight: 700; color: #111827; }
+  .bp-price small { font-size: 0.8rem; font-weight: 500; color: #6b7280; }
+  .bp-features { list-style: none; padding: 0; margin: 14px 0; flex: 1; font-size: 0.88rem; color: #374151; }
+  .bp-features li { padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+  .bp-features li:last-child { border-bottom: none; }
+  .bp-note { color: #6b7280; font-size: 0.85rem; }
+  .bp-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .bp-pill-green { background: #dcfce7; color: #16a34a; }
+  .bp-pill-amber { background: #fef3c7; color: #d97706; }
+  .bp-pill-red { background: #fee2e2; color: #dc2626; }
+  .bp-pill-grey { background: #f3f4f6; color: #6b7280; }
+  .bp-scroll { width: 100%; overflow-x: auto; }
+  .bp-contact textarea { width: 100%; min-height: 90px; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
+</style>
+
+<div class="page-header">
+  <h2>Plan &amp; Billing</h2>
+  <p>Choose a plan for your organization, pay online and see your invoices.</p>
+</div>
+
+<div class="panel-card">
+  <h3 style="margin-top:0;">Your current plan</h3>
+  <div class="bp-summary">
+    <div class="bp-box"><div class="bp-label">Plan</div><div class="bp-value">{{ current_plan.name if current_plan else 'No plan yet' }}</div></div>
+    <div class="bp-box">
+      <div class="bp-label">Valid until</div>
+      <div class="bp-value">
+        {% if organization.subscription_expiry_date %}
+        {{ organization.subscription_expiry_date.strftime('%d-%m-%Y') }}
+        {% else %}-{% endif %}
+      </div>
+      {% if days_left is not none %}
+      <div class="bp-note">{% if days_left < 0 %}Expired {{ -days_left }} day(s) ago{% else %}{{ days_left }} day(s) left{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="bp-box"><div class="bp-label">Candidate limit</div><div class="bp-value">{{ organization.candidate_limit or 0 }}</div></div>
+    <div class="bp-box"><div class="bp-label">Email / WhatsApp / SMS credits</div><div class="bp-value">{{ organization.email_credits or 0 }} / {{ organization.whatsapp_credits or 0 }} / {{ organization.sms_credits or 0 }}</div></div>
+  </div>
+</div>
+
+<div class="panel-card" style="margin-top:16px;">
+  <h3 style="margin-top:0;">Available plans</h3>
+  {% if not gateway_configured %}
+  <p class="bp-note">Online payment is not set up yet. Use &quot;Contact us&quot; below and we will activate your plan.</p>
+  {% endif %}
+
+  <div class="bp-plans">
+    {% for plan in plans %}
+    {% set action = plan_actions[plan.id] %}
+    <div class="bp-plan {{ 'bp-current' if action.kind == 'current' }}">
+      <h3>{{ plan.name }}</h3>
+      <div class="bp-price">&#8377;{{ '{:,.0f}'.format(plan.price|float) }} <small>/ {{ plan.default_billing_cycle }}</small></div>
+      <ul class="bp-features">
+        <li>{{ plan.candidate_limit or 0 }} candidates</li>
+        <li>{{ plan.email_credits or 0 }} email credits</li>
+        <li>{{ plan.whatsapp_credits or 0 }} WhatsApp credits</li>
+        <li>{{ plan.sms_credits or 0 }} SMS credits</li>
+        <li>{{ plan.ai_call_allowance or 0 }} AI calls</li>
+        {% if plan.storage_limit_mb %}<li>{{ plan.storage_limit_mb }} MB storage</li>{% endif %}
+        <li>API access: {{ 'Yes' if plan.api_access else 'No' }}</li>
+        <li>Custom branding: {{ 'Yes' if plan.custom_branding else 'No' }}</li>
+        <li>Reports: {{ (plan.report_access_level or 'basic')|capitalize }}</li>
+      </ul>
+
+      {% if action.kind == 'current' %}
+      <button type="button" class="ghost-btn" disabled>Current plan &mdash; {{ action.message }}</button>
+      {% elif action.kind in ('new', 'renew', 'upgrade') %}
+        {% if gateway_configured %}
+        <form method="post" action="{{ url_for('frontend.organization_billing_choose_plan') }}">
+          <input type="hidden" name="plan_id" value="{{ plan.id }}">
+          <button type="submit" class="primary-btn" style="width:100%;">
+            {% if action.kind == 'renew' %}Renew{% elif action.kind == 'upgrade' %}Upgrade{% else %}Choose plan{% endif %}
+            &mdash; pay &#8377;{{ '{:,.2f}'.format(action.amount) }}
+          </button>
+        </form>
+        {% if action.kind == 'upgrade' %}<p class="bp-note" style="margin:8px 0 0;">Only the days left in your current period are charged.</p>{% endif %}
+        {% else %}
+        <p class="bp-note" style="margin:0;">Online payment is not available yet.</p>
+        {% endif %}
+      {% else %}
+      <p class="bp-note" style="margin:0;">{{ action.message }}</p>
+      {% endif %}
+    </div>
+    {% else %}
+    <p>No plans are available right now. Please contact us.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="panel-card bp-contact" style="margin-top:16px;" id="contact">
+  <h3 style="margin-top:0;">Need a custom plan?</h3>
+  <p class="bp-note">Tell us what you need (number of candidates, credits, features) and our team will get back to you.</p>
+  <form method="post" action="{{ url_for('frontend.organization_billing_contact') }}">
+    <textarea name="message" maxlength="1000" placeholder="For example: 500 candidates, 2000 WhatsApp credits, custom branding" required></textarea>
+    <div class="form-actions"><button type="submit" class="primary-btn">Contact us</button></div>
+  </form>
+</div>
+
+<div class="panel-card" style="margin-top:16px;">
+  <h3 style="margin-top:0;">Invoices</h3>
+  <div class="bp-scroll">
+    <table class="data-table">
+      <thead>
+        <tr><th>Invoice</th><th>Plan</th><th>Amount</th><th>Status</th><th>Due</th><th>Paid</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+        <tr>
+          <td>
+            {{ invoice.invoice_number }}
+            {% if invoice_labels.get(invoice.id) %}<span class="bp-note">({{ invoice_labels.get(invoice.id) }})</span>{% elif invoice.is_prorated %}<span class="bp-note">(prorated)</span>{% endif %}
+          </td>
+          <td>{{ plan_name_by_id.get(invoice.plan_id, '-') }}</td>
+          <td>&#8377;{{ '{:,.2f}'.format(invoice.amount|float) }}</td>
+          <td>
+            <span class="bp-pill {{ 'bp-pill-green' if invoice.status == 'PAID' else ('bp-pill-red' if invoice.status == 'OVERDUE' else ('bp-pill-grey' if invoice.status == 'CANCELLED' else 'bp-pill-amber')) }}">{{ invoice.status|capitalize }}</span>
+          </td>
+          <td>{{ invoice.due_date.strftime('%d-%m-%Y') if invoice.due_date else '-' }}</td>
+          <td>{{ invoice.paid_at.strftime('%d-%m-%Y %H:%M') if invoice.paid_at else '-' }}</td>
+          <td>
+            {% if invoice.status in ('PENDING', 'OVERDUE') and gateway_configured %}
+            <form method="post" action="{{ url_for('frontend.organization_billing_pay_invoice', invoice_id=invoice.id) }}">
+              <button type="submit" class="primary-btn" style="padding:4px 12px; font-size:0.82rem;">Pay now</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No invoices yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="bp-note">After you pay, your plan is activated as soon as the payment is confirmed. If it still shows the old plan, refresh this page in a minute.</p>
+</div>
+{% endblock %}

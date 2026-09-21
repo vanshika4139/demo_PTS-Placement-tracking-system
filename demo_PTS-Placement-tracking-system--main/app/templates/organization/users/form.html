@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit user' if user else 'Add user' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit user' if user else 'Add user' }}</h2>
+</div>
+
+<div class="panel-card">
+  {% if not roles %}
+  <p>
+    There are no roles you can give to a new user yet.
+    {% if has_permission(session.user, 'org_role.manage') %}
+    <a href="{{ url_for('frontend.organization_roles') }}">Create a role first</a>, then come back here.
+    {% else %}
+    Ask your administrator to create one.
+    {% endif %}
+  </p>
+  {% else %}
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>
+        First name
+        <input type="text" name="first_name" id="first_name" value="{{ values.get('first_name', '') }}" required>
+      </label>
+
+      <label>
+        Last name
+        <input type="text" name="last_name" id="last_name" value="{{ values.get('last_name', '') }}">
+      </label>
+
+      <label>
+        Email
+        <input type="email" name="email" value="{{ values.get('email', '') }}" {% if user %}readonly{% else %}required{% endif %}>
+      </label>
+
+      <label>
+        Date of birth
+        <input type="date" name="date_of_birth" value="{{ values.get('date_of_birth', '') }}">
+      </label>
+
+      <label>
+        Username
+        <input type="text" name="username" id="username" value="{{ values.get('username', '') }}" required autocomplete="off">
+      </label>
+
+      <label>
+        {{ 'New password (leave blank to keep current)' if user else 'Password' }}
+        <input type="password" name="password" minlength="6" {% if not user %}required{% endif %} autocomplete="new-password">
+      </label>
+
+      <label>
+        Role <span style="color:#dc2626;">*</span>
+        <select name="rbac_role_id" required>
+          <option value="">-- Select role --</option>
+          {% for r in roles %}
+          <option value="{{ r.id }}" {{ 'selected' if values.get('rbac_role_id') == r.id }}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+        <span style="font-size:0.78rem; color:var(--muted); font-weight:normal;">
+          Decides what this person can see and do. You can only pick roles that don't give more access than you have.
+        </span>
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.organization_users') }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+  // Suggest a username from the name until the person types their own.
+  (function () {
+    var first = document.getElementById('first_name');
+    var last = document.getElementById('last_name');
+    var username = document.getElementById('username');
+    if (!first || !last || !username) return;
+    var touched = username.value.length > 0;
+    username.addEventListener('input', function () { touched = true; });
+    function suggest() {
+      if (touched) return;
+      var raw = (first.value + '.' + last.value).toLowerCase();
+      username.value = raw.replace(/[^a-z.]+/g, '').replace(/^\.+|\.+$/g, '');
+    }
+    first.addEventListener('input', suggest);
+    last.addEventListener('input', suggest);
+  })();
+</script>
+{% endblock %}

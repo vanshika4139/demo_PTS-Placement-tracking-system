@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Channel settings{% endblock %}
+
+{% macro status_select(name, value) %}
+<select name="{{ name }}">
+  <option value="inherit" {{ 'selected' if value is none }}>Follow the platform default</option>
+  <option value="on" {{ 'selected' if value is not none and value }}>Enabled for my organization</option>
+  <option value="off" {{ 'selected' if value is not none and not value }}>Disabled for my organization</option>
+</select>
+{% endmacro %}
+
+{% block content %}
+<style>
+  .ch-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  .ch-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .ch-head h3 { margin: 0; }
+  .ch-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .ch-pill-green { background: #dcfce7; color: #16a34a; }
+  .ch-pill-grey { background: #f3f4f6; color: #6b7280; }
+  .ch-help { color: #6b7280; font-size: 0.85rem; margin: 0 0 14px; }
+  .ch-credits { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .ch-credit { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .ch-credit strong { display: block; font-size: 1.1rem; }
+  .ch-reset {
+    background: none; border: 1px solid #d1d5db; color: #374151; padding: 6px 12px;
+    border-radius: 6px; font-size: 0.82rem; cursor: pointer;
+  }
+</style>
+
+<div class="page-header">
+  <h2>Channel settings</h2>
+  <p>Choose how your organization sends email, WhatsApp and SMS messages.</p>
+</div>
+
+<div class="panel-card">
+  <p class="ch-help">
+    By default your messages go through Codevocado's gateways and use the credits included in your plan.
+    If you have your own email server or WhatsApp / SMS account, enter its details below instead.
+    Leave a field blank to keep using Codevocado's gateway for it.
+  </p>
+
+  <div class="ch-credits">
+    <div class="ch-credit">Email credits<strong>{{ organization.email_credits or 0 }}</strong></div>
+    <div class="ch-credit">WhatsApp credits<strong>{{ organization.whatsapp_credits or 0 }}</strong></div>
+    <div class="ch-credit">SMS credits<strong>{{ organization.sms_credits or 0 }}</strong></div>
+  </div>
+
+  <form method="post" class="full-form">
+
+    <div class="ch-card">
+      <div class="ch-head">
+        <h3>Email</h3>
+        <span class="ch-pill {{ 'ch-pill-green' if platform_ready.email else 'ch-pill-grey' }}">
+          Codevocado gateway: {{ 'available' if platform_ready.email else 'not set up' }}
+        </span>
+      </div>
+      <p class="ch-help">Your own SMTP server, if you want emails to come from your own domain.</p>
+      <div class="form-grid">
+        <label>Status {{ status_select('email_enabled', settings.email_enabled) }}</label>
+        <label>SMTP host <input type="text" name="smtp_host" value="{{ settings.smtp_host or '' }}" autocomplete="off"></label>
+        <label>SMTP port <input type="number" name="smtp_port" min="1" max="65535" value="{{ settings.smtp_port or '' }}"></label>
+        <label>SMTP username <input type="text" name="smtp_username" value="{{ settings.smtp_username or '' }}" autocomplete="off"></label>
+        <label>SMTP password
+          <input type="password" name="smtp_password" autocomplete="new-password"
+                 placeholder="{{ 'Saved - leave blank to keep' if has_secret.smtp_password else '' }}">
+        </label>
+      </div>
+      <button type="submit" name="reset_channel" value="email" class="ch-reset" formnovalidate
+              onclick="return confirm('Remove your own email settings and use Codevocado\'s gateway?');">
+        Use Codevocado's email gateway
+      </button>
+    </div>
+
+    <div class="ch-card">
+      <div class="ch-head">
+        <h3>WhatsApp</h3>
+        <span class="ch-pill {{ 'ch-pill-green' if platform_ready.whatsapp else 'ch-pill-grey' }}">
+          Codevocado gateway: {{ 'available' if platform_ready.whatsapp else 'not set up' }}
+        </span>
+      </div>
+      <p class="ch-help">Your own WhatsApp Business account, if you have one.</p>
+      <div class="form-grid">
+        <label>Status {{ status_select('whatsapp_enabled', settings.whatsapp_enabled) }}</label>
+        <label>Phone number ID <input type="text" name="whatsapp_phone_number_id" value="{{ settings.whatsapp_phone_number_id or '' }}" autocomplete="off"></label>
+        <label>API key
+          <input type="password" name="whatsapp_api_key" autocomplete="new-password"
+                 placeholder="{{ 'Saved - leave blank to keep' if has_secret.whatsapp_api_key else '' }}">
+        </label>
+      </div>
+      <button type="submit" name="reset_channel" value="whatsapp" class="ch-reset" formnovalidate
+              onclick="return confirm('Remove your own WhatsApp settings and use Codevocado\'s gateway?');">
+        Use Codevocado's WhatsApp gateway
+      </button>
+    </div>
+
+    <div class="ch-card">
+      <div class="ch-head">
+        <h3>SMS</h3>
+        <span class="ch-pill {{ 'ch-pill-green' if platform_ready.sms else 'ch-pill-grey' }}">
+          Codevocado gateway: {{ 'available' if platform_ready.sms else 'not set up' }}
+        </span>
+      </div>
+      <p class="ch-help">Your own SMS provider account, if you have one.</p>
+      <div class="form-grid">
+        <label>Status {{ status_select('sms_enabled', settings.sms_enabled) }}</label>
+        <label>Sender ID <input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" autocomplete="off"></label>
+        <label>API key
+          <input type="password" name="sms_api_key" autocomplete="new-password"
+                 placeholder="{{ 'Saved - leave blank to keep' if has_secret.sms_api_key else '' }}">
+        </label>
+      </div>
+      <button type="submit" name="reset_channel" value="sms" class="ch-reset" formnovalidate
+              onclick="return confirm('Remove your own SMS settings and use Codevocado\'s gateway?');">
+        Use Codevocado's SMS gateway
+      </button>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save settings</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

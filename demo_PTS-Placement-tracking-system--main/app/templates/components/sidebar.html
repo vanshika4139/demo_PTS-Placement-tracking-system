@@ -66,6 +66,18 @@
     <li><a href="/super-admin/feature-flags">Feature Flags</a></li>
     <li><a href="/super-admin/active-sessions">Active Sessions</a></li>
     {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'org_user.manage') %}
+    <li><a href="/organization/users">Team</a></li>
+    {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'org_role.manage') %}
+    <li><a href="/organization/roles">Roles</a></li>
+    {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'channel.manage') %}
+    <li><a href="/organization/settings/channels">Channels</a></li>
+    {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'billing.manage') %}
+    <li><a href="/organization/billing">Plan &amp; Billing</a></li>
+    {% endif %}
     {% if has_permission(session.user, 'settings.view') %}
     <li><a href="/settings/profile">Settings</a></li>
     {% endif %}

@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import os
 import random
 import string
@@ -609,74 +609,38 @@ def reset_password():
 def super_admin_dashboard():
     _check_and_suspend_expired_subscriptions()
     data = get_super_admin_dashboard_data()
+    if "stat_sections" not in data:
+        # A dashboard cached before this layout change: rebuild it once.
+        invalidate_report_cache("dashboard:super_admin")
+        data = get_super_admin_dashboard_data()
     return render_template("super_admin/dashboard.html", **data)
 
 
 @cached_report(key_prefix="dashboard:super_admin")
 def get_super_admin_dashboard_data():
+    """Super Admin only deals with organizations, their plans / subscriptions,
+    KYC and the platform's own health. Candidate / batch / scheme / placement
+    numbers belong to each organization's own dashboard, not here."""
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
+
+    today = datetime.utcnow()
+    today_date = today.date()
+    current_month_start = today_date.replace(day=1)
 
     total = Organization.query.filter_by(is_deleted=False).count()
     active = Organization.query.filter_by(status=1, is_deleted=False).count()
     pending_kyc = Organization.query.filter_by(kyc_status="PENDING", is_deleted=False).count()
     pending_payment = Organization.query.filter_by(payment_status="PENDING", is_deleted=False).count()
 
-    # FR-01: "Expired Organizations" - subscription_expiry_date in the past.
-    # Orgs with no expiry date set are treated as not-expired (nothing to
-    # expire), matching the dashboard's "Not set" treatment elsewhere.
-    today_date = datetime.utcnow().date()
-    current_month_start = today_date.replace(day=1)
+    # Orgs with no expiry date set are treated as not-expired (nothing to expire).
     expired_organizations = Organization.query.filter(
         Organization.is_deleted == False,
         Organization.subscription_expiry_date.isnot(None),
         Organization.subscription_expiry_date < today_date,
     ).count()
 
-    total_batches = Batch.query.count()
-    total_schemes = Scheme.query.count()
-    pending_placement = Candidate.query.filter(
-        Candidate.is_deleted == False,
-        (Candidate.employer_name.is_(None)) | (Candidate.employer_name == ""),
-    ).count()
-    placement_proof_uploaded = Candidate.query.filter_by(
-        is_deleted=False, placement_proof_uploaded=True
-    ).count()
-
-        # FR-01: "Total Candidates" - simple aggregate count across the platform,
-    # distinct from "Active Candidates" below (which is the portal-login gate).
-    total_candidates_all = Candidate.query.filter_by(is_deleted=False).count()
-
-    # FR-01: "Monthly Placements" - candidates whose joining_date falls in
-    # the current calendar month (a placement "this month" figure).
-    current_month_placements = Candidate.query.filter(
-        Candidate.is_deleted == False,
-        Candidate.joining_date.isnot(None),
-        Candidate.joining_date >= datetime.combine(current_month_start, datetime.min.time()),
-    ).count()
-
-    # FR-01: "Pending Follow-ups" - follow-up checkpoints still awaiting
-    # action, across every organization (platform-wide, matches this
-    # dashboard's scope).
-    pending_followups = FollowUpCheckpoint.query.filter_by(status="pending").count()
-
-    # FR-01: "Active Candidates" - account_status is the candidate-portal-login
-    # gate (active/blocked), same field the Candidates list already filters on.
-    active_candidates = Candidate.query.filter_by(is_deleted=False, account_status="active").count()
-
-    # FR-01: "Verification-Pending Candidates" - no verification_status row
-    # yet defaults to "pending" everywhere else in this codebase (candidate
-    # list filter, candidate form default), so NULL counts as pending here too.
-    verification_pending_candidates = Candidate.query.filter(
-        Candidate.is_deleted == False,
-        (Candidate.verification_status.is_(None)) | (Candidate.verification_status == "pending"),
-    ).count()
-
-    # NEW FEATURE: platform-wide operational stats.
-    # "Active Subscription Count" is deliberately narrower than the existing
-    # "Active Organizations" stat above (status == 1 only) - this one also
-    # requires a plan actually assigned AND not expired, i.e. orgs that are
-    # both logged-in-capable AND currently paying for a plan.
+    # Narrower than "Active Organizations": also needs a plan assigned and not expired.
     active_subscriptions = Organization.query.filter(
         Organization.is_deleted == False,
         Organization.status == 1,
@@ -684,19 +648,7 @@ def get_super_admin_dashboard_data():
         (Organization.subscription_expiry_date.is_(None)) | (Organization.subscription_expiry_date >= today_date),
     ).count()
 
-    # "Current Revenue" = sum of PAID invoices with a paid_at in the current
-    # calendar month (an MRR-style "revenue collected this month" figure,
-    # not lifetime revenue-to-date).
-    #
-    # NOTE: "Calls Made" and WhatsApp/SMS/Email "Delivered" counts are NOT
-    # added here - there is no log table anywhere in this codebase that
-    # records an actual call or message send/delivery.
-    # Organization.whatsapp_credits/sms_credits/email_credits are only a
-    # balance (topped up via bulk-topup) that's never decremented or logged
-    # against real usage. Showing a number for those would mean fabricating
-    # it. That needs a new CallLog/MessageLog table plus wiring into
-    # whatever actually sends the calls/messages - a separate, bigger
-    # feature than this one.
+    # PAID invoices with a paid_at in the current calendar month.
     current_month_revenue = db.session.query(db.func.sum(Invoice.amount)).filter(
         Invoice.status == "PAID",
         Invoice.paid_at.isnot(None),
@@ -704,74 +656,58 @@ def get_super_admin_dashboard_data():
     ).scalar() or 0
     current_month_revenue = float(current_month_revenue)
 
-    stats = [
-        {"title": "Total Organizations", "value": str(total), "link": url_for("frontend.super_admin_organizations")},
-        {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active")},
-        {"title": "Expired Organizations", "value": str(expired_organizations), "link": url_for("frontend.super_admin_organizations")},
-        {"title": "Pending KYC", "value": str(pending_kyc), "link": url_for("frontend.super_admin_organizations", filter="pending_kyc")},
-        {"title": "Pending Payment", "value": str(pending_payment), "link": url_for("frontend.super_admin_organizations", filter="pending_payment")},
-        {"title": "Total Batches", "value": str(total_batches), "link": url_for("frontend.organization_batches")},
-        {"title": "Total Schemes", "value": str(total_schemes), "link": url_for("frontend.organization_schemes")},
-        {"title": "Active Candidates", "value": str(active_candidates), "link": url_for("frontend.organization_candidates", account_status="active")},
-        {"title": "Pending Placement", "value": str(pending_placement), "link": url_for("frontend.organization_candidates", placed="no")},
-        {"title": "Placement Proof Uploaded", "value": str(placement_proof_uploaded), "link": url_for("frontend.organization_candidates", placement_proof="yes")},
-        {"title": "Verification-Pending Candidates", "value": str(verification_pending_candidates), "link": url_for("frontend.organization_candidates", verification_status="pending")},
-        {"title": "Active Subscriptions", "value": str(active_subscriptions), "link": url_for("frontend.super_admin_organizations", filter="active")},
-        {"title": "Current Month Revenue", "value": f"Rs. {current_month_revenue:,.2f}", "link": url_for("frontend.super_admin_organizations")},
-        {"title": "Total Calls Made", "value": str(CommunicationLog.query.filter_by(channel="voice_call").count()), "link": None},
-        {"title": "WhatsApp Delivered", "value": str(CommunicationLog.query.filter_by(channel="whatsapp", status="sent").count()), "link": None},
-        {"title": "SMS Delivered", "value": str(CommunicationLog.query.filter_by(channel="sms", status="sent").count()), "link": None},
-        {"title": "Email Delivered", "value": str(CommunicationLog.query.filter_by(channel="email", status="sent").count()), "link": None},
-        {"title": "Total Candidates", "value": str(total_candidates_all), "link": url_for("frontend.organization_candidates")},
-        {"title": "Monthly Placements", "value": str(current_month_placements), "link": url_for("frontend.organization_candidates", placed="yes")},
-        {"title": "Pending Follow-ups", "value": str(pending_followups), "link": url_for("frontend.organization_tracking")},
+    # Requests sent from an organization's Plan & Billing page ("custom plan - contact us").
+    pending_plan_requests = Notification.query.filter(
+        Notification.title.like("Custom plan request:%"),
+        Notification.is_read == False,
+    ).count()
+
+    stat_sections = [
+        {
+            "title": "Organizations",
+            "cards": [
+                {"title": "Total Organizations", "value": str(total), "link": url_for("frontend.super_admin_organizations"), "accent": "#2563eb"},
+                {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active"), "accent": "#16a34a"},
+                {"title": "Expired Organizations", "value": str(expired_organizations), "link": url_for("frontend.super_admin_organizations"), "accent": "#f59e0b"},
+                {"title": "Pending KYC", "value": str(pending_kyc), "link": url_for("frontend.super_admin_organizations", filter="pending_kyc"), "accent": "#ef4444"},
+            ],
+        },
+        {
+            "title": "Subscriptions & Revenue",
+            "cards": [
+                {"title": "Pending Payment", "value": str(pending_payment), "link": url_for("frontend.super_admin_organizations", filter="pending_payment"), "accent": "#8b5cf6"},
+                {"title": "Active Subscriptions", "value": str(active_subscriptions), "link": url_for("frontend.super_admin_organizations", filter="active"), "accent": "#2563eb"},
+                {"title": "Current Month Revenue", "value": f"Rs. {current_month_revenue:,.2f}", "link": url_for("frontend.super_admin_organizations"), "accent": "#16a34a"},
+                {"title": "Custom Plan Requests", "value": str(pending_plan_requests), "link": url_for("frontend.notifications"), "accent": "#f59e0b"},
+            ],
+        },
+        {
+            "title": "Communication",
+            "cards": [
+                {"title": "Total Calls Made", "value": str(CommunicationLog.query.filter_by(channel="voice_call").count()), "link": None, "accent": "#8b5cf6"},
+                {"title": "WhatsApp Delivered", "value": str(CommunicationLog.query.filter_by(channel="whatsapp", status="sent").count()), "link": None, "accent": "#06b6d4"},
+                {"title": "SMS Delivered", "value": str(CommunicationLog.query.filter_by(channel="sms", status="sent").count()), "link": None, "accent": "#f59e0b"},
+                {"title": "Email Delivered", "value": str(CommunicationLog.query.filter_by(channel="email", status="sent").count()), "link": None, "accent": "#ef4444"},
+            ],
+        },
     ]
 
-    today = datetime.utcnow()
     months = []
     for i in range(5, -1, -1):
         month_date = today - relativedelta(months=i)
         months.append(month_date.strftime("%Y-%m"))
 
+    all_orgs = Organization.query.filter_by(is_deleted=False).all()
+
     org_growth_labels = []
     org_growth_data = []
-    all_orgs = Organization.query.filter_by(is_deleted=False).all()
     for month_key in months:
         year, month = map(int, month_key.split("-"))
         count = sum(1 for o in all_orgs if o.created_at and o.created_at.year == year and o.created_at.month == month)
         org_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         org_growth_data.append(count)
 
-    placement_labels = []
-    placement_data = []
-    placed_candidates = Candidate.query.filter(
-        Candidate.is_deleted == False,
-        Candidate.joining_date.isnot(None),
-    ).all()
-    for month_key in months:
-        year, month = map(int, month_key.split("-"))
-        count = sum(1 for c in placed_candidates if c.joining_date.year == year and c.joining_date.month == month)
-        placement_labels.append(datetime(year, month, 1).strftime("%b %Y"))
-        placement_data.append(count)
-
-    # FR-03: Candidate Growth (chart) - same 6-month window as Organization
-    # Growth above, counted by Candidate.created_at rather than joining_date
-    # (joining_date is placement-specific and already covers Placement Trend).
-    candidate_growth_labels = []
-    candidate_growth_data = []
-    all_candidates_for_growth = Candidate.query.filter_by(is_deleted=False).all()
-    for month_key in months:
-        year, month = map(int, month_key.split("-"))
-        count = sum(
-            1 for c in all_candidates_for_growth
-            if c.created_at and c.created_at.year == year and c.created_at.month == month
-        )
-        candidate_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
-        candidate_growth_data.append(count)
-
-    # FR-03: State-wise Organization Distribution (chart) - top 10 states by
-    # organization count; state_id resolved via the same lookup used on the
-    # Organization detail/list pages, so labels match everywhere.
+    # Top 10 states by organization count.
     state_counts = {}
     for o in all_orgs:
         label = state_name(o.state_id) if o.state_id else "Not set"
@@ -788,7 +724,6 @@ def get_super_admin_dashboard_data():
         kyc_status_counts[kyc_key] = kyc_status_counts.get(kyc_key, 0) + 1
         payment_status_counts[pay_key] = payment_status_counts.get(pay_key, 0) + 1
 
-        # ---------------- Monthly revenue trend (chart) ----------------
     paid_invoices = Invoice.query.filter(
         Invoice.status == "PAID",
         Invoice.paid_at.isnot(None),
@@ -804,14 +739,8 @@ def get_super_admin_dashboard_data():
         monthly_revenue_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         monthly_revenue_data.append(round(month_total, 2))
 
-    # ---------------- Active subscriptions trend (chart) ----------------
-    # NOTE: subscription status isn't tracked historically, so this
-    # approximates each past month's active-subscription count using each
-    # organization's CURRENT plan assignment and expiry date - an org
-    # created on/before that month, with a plan assigned, whose expiry (if
-    # any) hadn't passed by that month's end. An org that has since
-    # cancelled its plan will undercount earlier months; this is the best
-    # signal available without a dedicated subscription-history table.
+    # Subscription status isn't tracked historically, so each past month is
+    # approximated from each organization's CURRENT plan and expiry date.
     subscription_trend_labels = []
     subscription_trend_data = []
     for month_key in months:
@@ -930,15 +859,11 @@ def get_super_admin_dashboard_data():
     suspicious_ips = suspicious_ips[:10]
 
     return {
-        "stats": stats,
+        "stat_sections": stat_sections,
         "org_growth_labels": org_growth_labels,
         "org_growth_data": org_growth_data,
-        "candidate_growth_labels": candidate_growth_labels,
-        "candidate_growth_data": candidate_growth_data,
         "state_distribution_labels": state_distribution_labels,
         "state_distribution_data": state_distribution_data,
-        "placement_labels": placement_labels,
-        "placement_data": placement_data,
         "kyc_status_labels": kyc_status_labels,
         "kyc_status_data": kyc_status_data,
         "payment_status_labels": payment_status_labels,
@@ -1030,6 +955,8 @@ def webhook_razorpay():
                     raw_response=str(payload),
                 )
                 logger.info("webhook_razorpay: invoice %s marked paid", reference_id)
+
+    return "", 200
 
 
 
@@ -1476,6 +1403,7 @@ def super_admin_run_billing_cycle():
         f"{len(results['organizations_suspended'])} organization(s) auto-suspended.",
         "success",
     )
+    return redirect(request.referrer or url_for("frontend.super_admin_dashboard"))
 
 
 @frontend_bp.route("/super-admin/notifications/run-now", methods=["POST"])
@@ -2693,6 +2621,22 @@ def super_admin_roles_permissions():
         "attendance.view",
         "View attendance records and reports",
     )
+    _ensure_permission_exists(
+        "org_role.manage",
+        "Create and manage custom roles inside your own organization (e.g. Center Incharge)",
+    )
+    _ensure_permission_exists(
+        "org_user.manage",
+        "Add, edit and deactivate people inside your own organization",
+    )
+    _ensure_permission_exists(
+        "channel.manage",
+        "Configure this organization's own Email, WhatsApp and SMS gateways",
+    )
+    _ensure_permission_exists(
+        "billing.manage",
+        "Choose a plan, pay invoices and contact us about custom plans",
+    )
 
     roles = Role.query.filter_by(is_deleted=False).order_by(Role.name).all()
 
@@ -3499,6 +3443,7 @@ def super_admin_stop_impersonating():
 
 @frontend_bp.route("/organization/batches")
 @login_required
+@require_permission("batch.view")
 def organization_batches():
     user = session.get("user")
     query = Batch.query
@@ -3602,6 +3547,7 @@ def organization_batch_delete(batch_id):
 
 @frontend_bp.route("/organization/schemes")
 @login_required
+@require_permission("scheme.view")
 def organization_schemes():
     user = session.get("user")
     query = Scheme.query
@@ -5403,7 +5349,7 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
     for c in all_candidates:
         key = c.sector or "Unspecified"
         sector_breakdown[key] = sector_breakdown.get(key, 0) + 1
-        course_breakdown = {}
+    course_breakdown = {}
     for c in all_candidates:
         key = c.course or "Unspecified"
         course_breakdown[key] = course_breakdown.get(key, 0) + 1
@@ -5661,11 +5607,13 @@ def notifications():
     # an overdue checkpoint that's still pending would get a fresh notification
     # recreated for it the instant the page reloads, making the action the
     # user just took look like it had no effect.
-    if not request.args.get("skip_sync"):
+    if not request.args.get("skip_sync") and not user.get("is_super_admin"):
         _sync_overdue_notifications(user)
 
     if user.get("is_super_admin"):
-        all_notifs = Notification.query.order_by(Notification.created_at.desc()).all()
+        # Super Admin only deals with organizations/plans/KYC, so candidate-level
+        # notifications are not shown to them.
+        all_notifs = Notification.query.filter(Notification.candidate_id.is_(None)).order_by(Notification.created_at.desc()).all()
     else:
         all_notifs = Notification.query.filter(
             (Notification.user_id == user.get("id"))
@@ -5785,7 +5733,7 @@ def notifications_mark_all_read():
 def api_unread_notification_count():
     user = session.get("user")
     if user.get("is_super_admin"):
-        count = Notification.query.filter_by(is_read=False).count()
+        count = Notification.query.filter(Notification.is_read == False, Notification.candidate_id.is_(None)).count()  # noqa: E712
     else:
         count = Notification.query.filter(
             Notification.is_read == False,
@@ -5962,7 +5910,7 @@ def search():
         )
         if not user.get("is_super_admin"):
             candidate_query = candidate_query.filter_by(organization_id=user.get("organization_id"))
-        candidates = candidate_query.limit(20).all()
+        candidates = [] if user.get("is_super_admin") else candidate_query.limit(20).all()
 
         if user.get("is_super_admin"):
             organizations = Organization.query.filter(
@@ -5996,7 +5944,7 @@ def api_search_suggestions():
     )
     if not user.get("is_super_admin"):
         candidate_query = candidate_query.filter_by(organization_id=user.get("organization_id"))
-    candidates = candidate_query.limit(5).all()
+    candidates = [] if user.get("is_super_admin") else candidate_query.limit(5).all()
 
     organizations = []
     if user.get("is_super_admin"):
@@ -6025,3 +5973,939 @@ def api_search_suggestions():
             for o in organizations
         ],
     }
+
+
+# =============================================================================
+# Organization-scoped roles (Point 3)
+# An Organization Admin can create roles (e.g. "Center Incharge") that exist
+# ONLY inside their own organization, and give them a subset of their own
+# permissions.
+#
+# Rules enforced server-side (not just by hiding checkboxes):
+#   1. Every query is filtered by Role.organization_id == session org, so one
+#      organization can never see or edit another organization's roles.
+#   2. A role manager can only hand out permissions they hold themselves
+#      (no privilege escalation).
+#   3. "org_role.manage" itself can never be handed out, so a Center Incharge
+#      cannot create more roles unless Super Admin explicitly allows it.
+#   4. Super Admin uses the existing /super-admin/roles-permissions page for
+#      global roles; this page is not for Super Admin.
+# =============================================================================
+
+# Permission codes an org-level role manager can never delegate, even if they
+# hold them. Add more codes here if needed.
+ORG_ROLE_NON_DELEGABLE = {"org_role.manage"}
+
+
+def org_role_manager_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = session.get("user")
+        if not user:
+            flash("Please login first", "error")
+            return redirect(url_for("frontend.login"))
+        if user.get("is_super_admin"):
+            # Super Admin manages global roles from its own page.
+            return redirect(url_for("frontend.super_admin_roles_permissions"))
+        if not user.get("organization_id") or not has_permission(user, "org_role.manage"):
+            flash("You do not have permission to perform this action.", "error")
+            return redirect(url_for("frontend.no_access"))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+def _org_delegable_permissions():
+    """Permissions the logged-in org role manager is allowed to hand out."""
+    from app.models import Permission
+    from app.utils.permissions import get_user_permission_codes
+
+    codes = set(get_user_permission_codes(session["user"]["id"])) - ORG_ROLE_NON_DELEGABLE
+    if not codes:
+        return []
+    return (
+        Permission.query.filter(Permission.is_deleted == False, Permission.code.in_(codes))  # noqa: E712
+        .order_by(Permission.code)
+        .all()
+    )
+
+
+@frontend_bp.route("/organization/roles", methods=["GET", "POST"])
+@login_required
+@org_role_manager_required
+def organization_roles():
+    from app.models import Role, RolePermission
+
+    org_id = session["user"]["organization_id"]
+
+    roles = (
+        Role.query.filter_by(organization_id=org_id, is_deleted=False)
+        .order_by(Role.name)
+        .all()
+    )
+
+    # Selected role must come from THIS organization's list - a role_id from
+    # another organization simply falls back to the first role.
+    requested_id = request.values.get("role_id")
+    selected_role = next((r for r in roles if r.id == requested_id), None) or (roles[0] if roles else None)
+
+    delegable_permissions = _org_delegable_permissions()
+    delegable_ids = {p.id for p in delegable_permissions}
+
+    if request.method == "POST" and selected_role:
+        # Ignore anything the user is not allowed to delegate, even if the
+        # form was tampered with.
+        checked_permission_ids = set(request.form.getlist("permission_ids")) & delegable_ids
+
+        existing_mappings = RolePermission.query.filter_by(
+            role_id=selected_role.id, is_deleted=False
+        ).all()
+        existing_permission_ids = {m.permission_id for m in existing_mappings}
+
+        # Remove unchecked (only among permissions this user can manage)
+        for mapping in existing_mappings:
+            if mapping.permission_id in delegable_ids and mapping.permission_id not in checked_permission_ids:
+                db.session.delete(mapping)
+
+        # Add newly checked
+        for perm_id in checked_permission_ids - existing_permission_ids:
+            db.session.add(RolePermission(
+                role_id=selected_role.id,
+                permission_id=perm_id,
+                created_by=session["user"]["id"],
+            ))
+
+        selected_role.modified_by = session["user"]["id"]
+        db.session.commit()
+        invalidate_role_permission_cache(selected_role.id)
+        _log_activity("Updated role permissions", f"[Org {org_id}] {selected_role.name}")
+        flash(f"Permissions updated for '{selected_role.name}'", "success")
+        return redirect(url_for("frontend.organization_roles", role_id=selected_role.id))
+
+    assigned_permission_ids = set()
+    if selected_role:
+        assigned_permission_ids = {
+            m.permission_id
+            for m in RolePermission.query.filter_by(role_id=selected_role.id, is_deleted=False).all()
+        }
+
+    # Group by resource prefix (e.g. "candidate" from "candidate.view")
+    grouped_permissions = {}
+    for perm in delegable_permissions:
+        resource = perm.code.split(".")[0]
+        grouped_permissions.setdefault(resource, []).append(perm)
+
+    return render_template(
+        "organization/roles.html",
+        roles=roles,
+        selected_role=selected_role,
+        grouped_permissions=grouped_permissions,
+        assigned_permission_ids=assigned_permission_ids,
+    )
+
+
+@frontend_bp.route("/organization/roles/create", methods=["POST"])
+@login_required
+@org_role_manager_required
+def organization_role_create():
+    from app.models import Role
+    import re
+
+    org_id = session["user"]["organization_id"]
+
+    name = (request.form.get("name") or "").strip()[:100]
+    if not name:
+        flash("Role name is required.", "error")
+        return redirect(url_for("frontend.organization_roles"))
+
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:80]
+    if not slug:
+        flash("Could not generate a valid role code from that name.", "error")
+        return redirect(url_for("frontend.organization_roles"))
+
+    # Role.code is unique across ALL organizations (and across deactivated
+    # rows), so the code is prefixed with the organization id.
+    code = f"org{org_id}_{slug}"
+
+    existing_role = Role.query.filter_by(code=code).first()
+    if existing_role:
+        if existing_role.is_deleted:
+            flash(
+                f"A deactivated role named '{existing_role.name}' already exists with this name. "
+                "Please choose a different name.",
+                "error",
+            )
+        else:
+            flash(f"A role named '{existing_role.name}' already exists in your organization.", "error")
+        return redirect(url_for("frontend.organization_roles"))
+
+    new_role = Role(
+        name=name,
+        code=code,
+        organization_id=org_id,
+        is_deleted=False,
+        created_by=session["user"]["id"],
+    )
+    try:
+        db.session.add(new_role)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Could not create the role due to a database error. Please try a different name.", "error")
+        return redirect(url_for("frontend.organization_roles"))
+
+    _log_activity("Created role", f"[Org {org_id}] {name}")
+    flash(f"Role '{name}' created. Now choose its permissions below.", "success")
+    return redirect(url_for("frontend.organization_roles", role_id=new_role.id))
+
+
+@frontend_bp.route("/organization/roles/<role_id>/deactivate", methods=["POST"])
+@login_required
+@org_role_manager_required
+def organization_role_deactivate(role_id):
+    from app.models import Role, UserRole
+
+    org_id = session["user"]["organization_id"]
+
+    # 404 (not 403) for other organizations' roles, so their existence is not revealed.
+    role = Role.query.filter_by(id=role_id, organization_id=org_id, is_deleted=False).first_or_404()
+
+    active_user_count = UserRole.query.filter_by(role_id=role.id, is_deleted=False).count()
+    if active_user_count > 0:
+        flash(
+            f"Cannot deactivate '{role.name}' - {active_user_count} user(s) are still assigned this role. "
+            "Reassign them to a different role first.",
+            "error",
+        )
+        return redirect(url_for("frontend.organization_roles", role_id=role.id))
+
+    role.is_deleted = True
+    role.modified_by = session["user"]["id"]
+    db.session.commit()
+    invalidate_role_permission_cache(role.id)
+
+    _log_activity("Deactivated role", f"[Org {org_id}] {role.name}")
+    flash(f"Role '{role.name}' deactivated.", "success")
+    return redirect(url_for("frontend.organization_roles"))
+
+
+# =============================================================================
+# Organization team management (Point 4)
+# An organization user with "org_user.manage" (normally the Organization
+# Admin) can add, edit and deactivate people inside their OWN organization
+# and give them a role.
+#
+# Rules enforced server-side:
+#   1. Every user query is filtered by organization_id == session org, and
+#      Super Admin accounts are never touched.
+#   2. A role can only be assigned if (a) it belongs to this organization or
+#      is a global role, (b) every permission in it is one the assigner holds
+#      themselves, and (c) it does not contain a NON_DELEGABLE permission
+#      (org_role.manage). So nobody can hand out more power than they have.
+#   3. A user whose current role is NOT assignable by the caller (e.g. an
+#      Organization Admin) cannot be edited, deactivated or password-reset by
+#      the caller - otherwise a reset would be an account takeover.
+#   4. Nobody can edit or deactivate their own account here (use Settings).
+# =============================================================================
+
+
+def org_user_manager_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = session.get("user")
+        if not user:
+            flash("Please login first", "error")
+            return redirect(url_for("frontend.login"))
+        if user.get("is_super_admin"):
+            # Super Admin manages users from its own page.
+            return redirect(url_for("frontend.super_admin_users"))
+        if not user.get("organization_id") or not has_permission(user, "org_user.manage"):
+            flash("You do not have permission to perform this action.", "error")
+            return redirect(url_for("frontend.no_access"))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+def _org_assignable_roles():
+    """Roles the logged-in org user manager is allowed to give to someone."""
+    from collections import defaultdict
+    from sqlalchemy import or_
+    from app.models import Permission, Role, RolePermission
+    from app.utils.permissions import get_user_permission_codes
+
+    org_id = session["user"]["organization_id"]
+    my_codes = set(get_user_permission_codes(session["user"]["id"]))
+
+    roles = (
+        Role.query.filter(
+            Role.is_deleted == False,  # noqa: E712
+            or_(Role.organization_id == org_id, Role.organization_id.is_(None)),
+        )
+        .order_by(Role.name)
+        .all()
+    )
+    if not roles:
+        return []
+
+    rows = (
+        db.session.query(RolePermission.role_id, Permission.code)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .filter(
+            RolePermission.role_id.in_([r.id for r in roles]),
+            RolePermission.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    )
+    codes_by_role = defaultdict(set)
+    for role_id, code in rows:
+        codes_by_role[role_id].add(code)
+
+    return [
+        r for r in roles
+        if not (codes_by_role[r.id] & ORG_ROLE_NON_DELEGABLE)
+        and codes_by_role[r.id] <= my_codes
+    ]
+
+
+def _org_user_role_map(user_ids):
+    """{user_id: (role_id, role_name)} for the given users' active role."""
+    from app.models import Role, UserRole
+
+    if not user_ids:
+        return {}
+    rows = (
+        db.session.query(UserRole.user_id, Role.id, Role.name)
+        .join(Role, Role.id == UserRole.role_id)
+        .filter(UserRole.user_id.in_(list(user_ids)), UserRole.is_deleted == False)  # noqa: E712
+        .all()
+    )
+    return {uid: (rid, rname) for uid, rid, rname in rows}
+
+
+def _org_can_manage_user(target, role_info, assignable_ids):
+    if target.id == session["user"]["id"]:
+        return False
+    if role_info and role_info[0] not in assignable_ids:
+        return False
+    return True
+
+
+def _org_user_form_response(user, roles, values):
+    return render_template("organization/users/form.html", user=user, roles=roles, values=values)
+
+
+@frontend_bp.route("/organization/users")
+@login_required
+@org_user_manager_required
+def organization_users():
+    org_id = session["user"]["organization_id"]
+
+    users = (
+        User.query.filter_by(organization_id=org_id, is_deleted=False, is_super_admin=False)
+        .order_by(User.created_at.desc())
+        .all()
+    )
+    role_map = _org_user_role_map([u.id for u in users])
+    assignable_ids = {r.id for r in _org_assignable_roles()}
+
+    manageable_user_ids = {
+        u.id for u in users
+        if _org_can_manage_user(u, role_map.get(u.id), assignable_ids)
+    }
+
+    return render_template(
+        "organization/users/index.html",
+        users=users,
+        role_map=role_map,
+        manageable_user_ids=manageable_user_ids,
+    )
+
+
+@frontend_bp.route("/organization/users/create", methods=["GET", "POST"])
+@login_required
+@org_user_manager_required
+def organization_user_create():
+    from sqlalchemy.exc import IntegrityError
+    from app.models import UserRole
+
+    org_id = session["user"]["organization_id"]
+    roles = _org_assignable_roles()
+    assignable_ids = {r.id for r in roles}
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        username = (request.form.get("username") or "").strip().lower()
+        dob_raw = (request.form.get("date_of_birth") or "").strip()
+        password = request.form.get("password") or ""
+        rbac_role_id = (request.form.get("rbac_role_id") or "").strip()
+
+        values = {
+            "first_name": first_name, "last_name": last_name, "email": email,
+            "username": username, "date_of_birth": dob_raw, "rbac_role_id": rbac_role_id,
+        }
+
+        if not email or not first_name or not username or not password:
+            flash("Please fill all required fields", "error")
+            return _org_user_form_response(None, roles, values)
+
+        if len(password) < 6:
+            flash("Password must be at least 6 characters", "error")
+            return _org_user_form_response(None, roles, values)
+
+        if not rbac_role_id or rbac_role_id not in assignable_ids:
+            flash("Please select a valid role for this user.", "error")
+            return _org_user_form_response(None, roles, values)
+
+        # Checks ALL users (including soft-deleted): the database UNIQUE
+        # constraint does not care whether the old row is soft-deleted.
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            if existing_email.is_deleted:
+                flash("This email belongs to a previously deleted account and can't be reused. Use a different email.", "error")
+            else:
+                flash("A user with this email already exists", "error")
+            return _org_user_form_response(None, roles, values)
+
+        existing_username = User.query.filter_by(username=username).first()
+        if existing_username:
+            if existing_username.is_deleted:
+                flash("This username belongs to a previously deleted account and can't be reused. Please choose another.", "error")
+            else:
+                flash("This username is already taken. Please choose another.", "error")
+            return _org_user_form_response(None, roles, values)
+
+        try:
+            new_user = User(
+                email=email,
+                full_name=f"{first_name} {last_name}".strip(),
+                first_name=first_name,
+                last_name=last_name,
+                username=username,
+                date_of_birth=_parse_date(dob_raw),
+                password_hash=generate_password_hash(password),
+                is_super_admin=False,          # never taken from the form
+                organization_id=org_id,        # always the caller's own organization
+                is_active=True,
+            )
+            db.session.add(new_user)
+            db.session.flush()  # get new_user.id before the UserRole insert
+            db.session.add(UserRole(user_id=new_user.id, role_id=rbac_role_id))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("Could not create the user - that email or username is already in use.", "error")
+            return _org_user_form_response(None, roles, values)
+
+        _log_activity("Created user", f"[Org {org_id}] {new_user.full_name} ({new_user.email})")
+        flash("User created successfully", "success")
+        return redirect(url_for("frontend.organization_users"))
+
+    return _org_user_form_response(None, roles, {})
+
+
+@frontend_bp.route("/organization/users/<user_id>/edit", methods=["GET", "POST"])
+@login_required
+@org_user_manager_required
+def organization_user_edit(user_id):
+    from app.models import UserRole
+
+    org_id = session["user"]["organization_id"]
+
+    # 404 for anyone outside this organization (and for Super Admins).
+    target = User.query.filter_by(
+        id=user_id, organization_id=org_id, is_deleted=False, is_super_admin=False
+    ).first_or_404()
+
+    roles = _org_assignable_roles()
+    assignable_ids = {r.id for r in roles}
+    role_info = _org_user_role_map([target.id]).get(target.id)
+    current_role_id = role_info[0] if role_info else None
+
+    if not _org_can_manage_user(target, role_info, assignable_ids):
+        flash("You do not have permission to manage this user.", "error")
+        return redirect(url_for("frontend.organization_users"))
+
+    if request.method == "POST":
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        username = (request.form.get("username") or "").strip().lower()
+        dob_raw = (request.form.get("date_of_birth") or "").strip()
+        new_password = request.form.get("password") or ""
+        rbac_role_id = (request.form.get("rbac_role_id") or "").strip()
+
+        values = {
+            "first_name": first_name, "last_name": last_name, "email": target.email,
+            "username": username, "date_of_birth": dob_raw, "rbac_role_id": rbac_role_id,
+        }
+
+        if not first_name or not username:
+            flash("First name and username are required", "error")
+            return _org_user_form_response(target, roles, values)
+
+        if new_password and len(new_password) < 6:
+            flash("Password must be at least 6 characters", "error")
+            return _org_user_form_response(target, roles, values)
+
+        if not rbac_role_id or rbac_role_id not in assignable_ids:
+            flash("Please select a valid role for this user.", "error")
+            return _org_user_form_response(target, roles, values)
+
+        clash = User.query.filter(User.username == username, User.id != target.id).first()
+        if clash:
+            if clash.is_deleted:
+                flash("This username belongs to a previously deleted account and can't be reused. Please choose another.", "error")
+            else:
+                flash("This username is already taken. Please choose another.", "error")
+            return _org_user_form_response(target, roles, values)
+
+        target.first_name = first_name
+        target.last_name = last_name
+        target.full_name = f"{first_name} {last_name}".strip()
+        target.username = username
+        target.date_of_birth = _parse_date(dob_raw)
+        if new_password:
+            target.password_hash = generate_password_hash(new_password)
+
+        if rbac_role_id != current_role_id:
+            UserRole.query.filter_by(user_id=target.id, is_deleted=False).update({"is_deleted": True})
+            db.session.add(UserRole(user_id=target.id, role_id=rbac_role_id))
+
+        db.session.commit()
+        invalidate_user_permission_cache(target.id)
+        _log_activity("Updated user", f"[Org {org_id}] {target.full_name} ({target.email})")
+        flash("User updated successfully", "success")
+        return redirect(url_for("frontend.organization_users"))
+
+    values = {
+        "first_name": target.first_name or "",
+        "last_name": target.last_name or "",
+        "email": target.email,
+        "username": target.username or "",
+        "date_of_birth": target.date_of_birth.strftime("%Y-%m-%d") if target.date_of_birth else "",
+        "rbac_role_id": current_role_id or "",
+    }
+    return _org_user_form_response(target, roles, values)
+
+
+@frontend_bp.route("/organization/users/<user_id>/toggle-active", methods=["POST"])
+@login_required
+@org_user_manager_required
+def organization_user_toggle_active(user_id):
+    org_id = session["user"]["organization_id"]
+
+    target = User.query.filter_by(
+        id=user_id, organization_id=org_id, is_deleted=False, is_super_admin=False
+    ).first_or_404()
+
+    assignable_ids = {r.id for r in _org_assignable_roles()}
+    role_info = _org_user_role_map([target.id]).get(target.id)
+    if not _org_can_manage_user(target, role_info, assignable_ids):
+        flash("You do not have permission to manage this user.", "error")
+        return redirect(url_for("frontend.organization_users"))
+
+    target.is_active = not target.is_active
+    if not target.is_active:
+        # Log the person out everywhere as soon as they are deactivated.
+        UserSession.query.filter_by(user_id=target.id, is_active=True).update({"is_active": False})
+    db.session.commit()
+
+    _log_activity(
+        "Toggled user active status",
+        f"[Org {org_id}] {target.full_name} -> {'active' if target.is_active else 'inactive'}",
+    )
+    flash(f"User {'activated' if target.is_active else 'deactivated'} successfully", "success")
+    return redirect(url_for("frontend.organization_users"))
+
+
+# =============================================================================
+# Organization channel settings (Email / WhatsApp / SMS)
+# An organization either uses the gateways the Super Admin configured
+# (default), or fills in its OWN SMTP / WhatsApp / SMS credentials, or turns a
+# channel off. Blank credential fields fall back to the platform-wide
+# settings (see app/utils/platform_settings.py), so leaving everything
+# untouched means "use Codevocado's gateway from my plan's credits".
+#
+# Rules: only the caller's own organization is ever read or written, and
+# saved secrets (SMTP password / API keys) are never sent back to the browser.
+# =============================================================================
+
+ORG_CHANNEL_FIELDS = {
+    "email": {"text": ("smtp_host", "smtp_port", "smtp_username"), "secret": ("smtp_password",), "toggle": "email_enabled"},
+    "whatsapp": {"text": ("whatsapp_phone_number_id",), "secret": ("whatsapp_api_key",), "toggle": "whatsapp_enabled"},
+    "sms": {"text": ("sms_sender_id",), "secret": ("sms_api_key",), "toggle": "sms_enabled"},
+}
+
+
+def org_channel_manager_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = session.get("user")
+        if not user:
+            flash("Please login first", "error")
+            return redirect(url_for("frontend.login"))
+        if user.get("is_super_admin"):
+            # Super Admin configures platform gateways on the Integrations page.
+            return redirect(url_for("frontend.super_admin_integrations"))
+        if not user.get("organization_id") or not has_permission(user, "channel.manage"):
+            flash("You do not have permission to perform this action.", "error")
+            return redirect(url_for("frontend.no_access"))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+@frontend_bp.route("/organization/settings/channels", methods=["GET", "POST"])
+@login_required
+@org_channel_manager_required
+def organization_channel_settings():
+    from app.utils.platform_settings import (
+        get_organization_channel_settings,
+        get_platform_settings,
+        update_organization_channel_settings,
+    )
+
+    org_id = session["user"]["organization_id"]
+    organization = Organization.query.get_or_404(org_id)
+    settings = get_organization_channel_settings(org_id)
+
+    if request.method == "POST":
+        def _toggle_value(field_name):
+            # Three states from a <select>: "inherit" -> None, "on" -> True, "off" -> False
+            raw = request.form.get(field_name, "inherit")
+            if raw == "on":
+                return True
+            if raw == "off":
+                return False
+            return None
+
+        reset_channel = (request.form.get("reset_channel") or "").strip()
+        if reset_channel not in ORG_CHANNEL_FIELDS:
+            reset_channel = ""
+
+        smtp_port = (request.form.get("smtp_port") or "").strip()
+        if reset_channel != "email" and smtp_port and not smtp_port.isdigit():
+            flash("SMTP port must be a number.", "error")
+            return redirect(url_for("frontend.organization_channel_settings"))
+
+        payload = {}
+        for channel, cfg in ORG_CHANNEL_FIELDS.items():
+            if channel == reset_channel:
+                # Back to Codevocado's gateway: clear this channel's own credentials.
+                for field in cfg["text"]:
+                    payload[field] = ""
+                for field in cfg["secret"]:
+                    payload[field] = None
+                payload[cfg["toggle"]] = None
+                continue
+            for field in cfg["text"]:
+                payload[field] = (request.form.get(field) or "").strip()
+            for field in cfg["secret"]:
+                # Blank = keep the saved secret, so it never has to be re-typed.
+                payload[field] = (request.form.get(field) or "").strip() or getattr(settings, field, None)
+            payload[cfg["toggle"]] = _toggle_value(cfg["toggle"])
+
+        update_organization_channel_settings(org_id, payload, actor_id=session["user"]["id"])
+
+        if reset_channel:
+            _log_activity("organization.channel_settings_reset", f"[Org {org_id}] {reset_channel} back to platform gateway")
+            flash(f"{reset_channel.title()} is back on Codevocado's gateway.", "success")
+        else:
+            _log_activity("organization.channel_settings_updated", f"[Org {org_id}] Updated Email / WhatsApp / SMS settings")
+            flash("Channel settings saved.", "success")
+        return redirect(url_for("frontend.organization_channel_settings"))
+
+    platform = get_platform_settings()
+    platform_ready = {
+        "email": bool(getattr(platform, "email_enabled", False)),
+        "whatsapp": bool(getattr(platform, "whatsapp_enabled", False)),
+        "sms": bool(getattr(platform, "sms_enabled", False)),
+    }
+    # Only whether a secret is saved - never the secret itself.
+    has_secret = {
+        field: bool(getattr(settings, field, None))
+        for cfg in ORG_CHANNEL_FIELDS.values()
+        for field in cfg["secret"]
+    }
+
+    return render_template(
+        "organization/settings/channels.html",
+        organization=organization,
+        settings=settings,
+        platform_ready=platform_ready,
+        has_secret=has_secret,
+    )
+
+
+# =============================================================================
+# Organization Plan & Billing
+# The organization picks one of the ready-made plans the Super Admin created,
+# pays for it online, and the plan activates as soon as the payment is
+# confirmed (see activate_self_serve_purchase in app/services/payment_gateway.py,
+# which mark_invoice_paid calls for both the Razorpay/Cashfree webhook and the
+# manual "Mark as Paid" button). A custom plan is a "contact us" request that
+# lands in the Super Admin's notifications.
+#
+# Rules enforced server-side:
+#   1. Only the caller's own organization is ever read or changed.
+#   2. The price always comes from the Plan row - never from the browser.
+#   3. Only active plans can be chosen; a downgrade or a free / zero-price
+#      plan is never activated automatically ("contact us" instead).
+#   4. The plan is NOT changed when the invoice is created - only when the
+#      payment is confirmed.
+# =============================================================================
+
+SELF_SERVE_MARKER = "[self-serve:"
+
+
+def billing_manager_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = session.get("user")
+        if not user:
+            flash("Please login first", "error")
+            return redirect(url_for("frontend.login"))
+        if user.get("is_super_admin"):
+            # Super Admin manages plans / subscriptions from its own pages.
+            return redirect(url_for("frontend.super_admin_plans"))
+        if not user.get("organization_id") or not has_permission(user, "billing.manage"):
+            flash("You do not have permission to perform this action.", "error")
+            return redirect(url_for("frontend.no_access"))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+def _org_plan_change(organization, current_plan, plan):
+    """What would happen if this organization chose `plan` right now.
+
+    Returns a dict with "kind": new | renew | upgrade | current | contact.
+    new / renew / upgrade also carry amount, period_start, period_end, cycle.
+    """
+    from app.services.billing import _CYCLE_DAYS
+
+    now = datetime.utcnow()
+    expiry = organization.subscription_expiry_date
+    expiry_dt = None
+    if expiry:
+        expiry_dt = expiry if isinstance(expiry, datetime) else datetime.combine(expiry, datetime.min.time())
+    is_active = bool(current_plan and expiry_dt and expiry_dt > now)
+
+    price = float(plan.price or 0)
+    if price <= 0:
+        return {"kind": "contact", "message": "Contact us to activate this plan"}
+
+    cycle = plan.default_billing_cycle or "monthly"
+    cycle_days = _CYCLE_DAYS.get(cycle, 30)
+
+    if not is_active:
+        return {
+            "kind": "new", "amount": price, "cycle": cycle,
+            "period_start": now, "period_end": now + timedelta(days=cycle_days),
+        }
+
+    if str(current_plan.id) == str(plan.id):
+        days_left = (expiry_dt - now).days
+        # Renewing is only offered in the last 14 days (same as the first
+        # renewal reminder email), so a plan cannot be paid for twice in a row.
+        if days_left > 14:
+            return {"kind": "current", "message": f"Active until {expiry_dt.strftime('%d-%m-%Y')}"}
+        return {
+            "kind": "renew", "amount": price, "cycle": cycle,
+            "period_start": expiry_dt, "period_end": expiry_dt + timedelta(days=cycle_days),
+        }
+
+    if price > float(current_plan.price or 0):
+        cycle = organization.billing_cycle or current_plan.default_billing_cycle or "monthly"
+        amount, _note = calculate_prorated_amount(current_plan, plan, expiry_dt, cycle)
+        if amount <= 0:
+            return {"kind": "contact", "message": "Contact us to switch to this plan"}
+        return {
+            "kind": "upgrade", "amount": float(amount), "cycle": cycle,
+            "period_start": now, "period_end": expiry_dt,
+        }
+
+    return {"kind": "contact", "message": "Lower plans start at your next renewal - contact us"}
+
+
+def _org_invoice_kind_label(note):
+    text = note or ""
+    if not text.startswith(SELF_SERVE_MARKER):
+        return None
+    kind = text[len(SELF_SERVE_MARKER):text.find("]")] if "]" in text else ""
+    return {"new": "New plan", "renew": "Renewal", "upgrade": "Upgrade"}.get(kind)
+
+
+def _org_redirect_to_payment(invoice):
+    from app.services.payment_gateway import create_payment_link
+
+    try:
+        checkout_url = create_payment_link(invoice)
+    except (RuntimeError, NotImplementedError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("frontend.organization_billing"))
+    if not checkout_url:
+        flash("Could not open the payment page. Please try again.", "error")
+        return redirect(url_for("frontend.organization_billing"))
+    return redirect(checkout_url)
+
+
+@frontend_bp.route("/organization/billing")
+@login_required
+@billing_manager_required
+def organization_billing():
+    org_id = session["user"]["organization_id"]
+    organization = Organization.query.get_or_404(org_id)
+
+    current_plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
+    plans = Plan.query.filter_by(status=1).order_by(Plan.display_order.asc(), Plan.name.asc()).all()
+    plan_actions = {p.id: _org_plan_change(organization, current_plan, p) for p in plans}
+
+    invoices = Invoice.query.filter_by(organization_id=org_id).order_by(Invoice.issued_at.desc()).all()
+    invoice_plan_ids = {i.plan_id for i in invoices if i.plan_id}
+    plan_name_by_id = (
+        {p.id: p.name for p in Plan.query.filter(Plan.id.in_(invoice_plan_ids)).all()}
+        if invoice_plan_ids else {}
+    )
+    invoice_labels = {i.id: _org_invoice_kind_label(i.proration_note) for i in invoices}
+
+    expiry = organization.subscription_expiry_date
+    days_left = (expiry - datetime.utcnow().date()).days if expiry and not isinstance(expiry, datetime) else (
+        (expiry - datetime.utcnow()).days if expiry else None
+    )
+
+    return render_template(
+        "organization/billing.html",
+        organization=organization,
+        current_plan=current_plan,
+        plans=plans,
+        plan_actions=plan_actions,
+        invoices=invoices,
+        plan_name_by_id=plan_name_by_id,
+        invoice_labels=invoice_labels,
+        days_left=days_left,
+        gateway_configured=is_gateway_configured(),
+    )
+
+
+@frontend_bp.route("/organization/billing/choose-plan", methods=["POST"])
+@login_required
+@billing_manager_required
+def organization_billing_choose_plan():
+    from app.services.billing import _next_invoice_number
+
+    user = session["user"]
+    org_id = user["organization_id"]
+    organization = Organization.query.get_or_404(org_id)
+
+    if not is_gateway_configured():
+        flash("Online payment is not available yet. Please use 'Contact us' below and we will activate your plan.", "error")
+        return redirect(url_for("frontend.organization_billing"))
+
+    # Only the plan id is read from the form - the price never is.
+    plan = Plan.query.filter_by(id=(request.form.get("plan_id") or ""), status=1).first()
+    if plan is None:
+        flash("That plan is not available.", "error")
+        return redirect(url_for("frontend.organization_billing"))
+
+    current_plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
+    change = _org_plan_change(organization, current_plan, plan)
+    if change["kind"] not in ("new", "renew", "upgrade"):
+        flash(change.get("message") or "This plan cannot be chosen online right now.", "info")
+        return redirect(url_for("frontend.organization_billing"))
+
+    # An unpaid plan invoice for something else is replaced by this one.
+    stale = Invoice.query.filter(
+        Invoice.organization_id == org_id,
+        Invoice.status.in_(("PENDING", "OVERDUE")),
+        Invoice.proration_note.like(SELF_SERVE_MARKER + "%"),
+    ).all()
+    reuse = None
+    for old in stale:
+        if str(old.plan_id) == str(plan.id) and (old.proration_note or "").startswith(f"{SELF_SERVE_MARKER}{change['kind']}]"):
+            reuse = old
+        else:
+            old.status = "CANCELLED"
+
+    if reuse is not None:
+        db.session.commit()
+        return _org_redirect_to_payment(reuse)
+
+    if change["kind"] == "upgrade":
+        label = f"{(current_plan.name or '')[:25]} -> {(plan.name or '')[:25]}"
+    else:
+        label = (plan.name or "")[:60]
+
+    invoice = Invoice(
+        invoice_number=_next_invoice_number(),
+        organization_id=org_id,
+        plan_id=plan.id,
+        billing_cycle=change["cycle"],
+        period_start=change["period_start"],
+        period_end=change["period_end"],
+        amount=change["amount"],
+        is_prorated=1 if change["kind"] == "upgrade" else 0,
+        proration_note=f"{SELF_SERVE_MARKER}{change['kind']}] {label}",
+        status="PENDING",
+        due_date=datetime.utcnow() + timedelta(days=3),
+        created_by=user["id"],
+        modified_by=user["id"],
+    )
+    db.session.add(invoice)
+    db.session.commit()
+
+    _log_activity("billing.plan_selected", f"[Org {org_id}] {change['kind']}: {plan.name} (invoice {invoice.invoice_number})")
+    return _org_redirect_to_payment(invoice)
+
+
+@frontend_bp.route("/organization/billing/invoices/<invoice_id>/pay", methods=["POST"])
+@login_required
+@billing_manager_required
+def organization_billing_pay_invoice(invoice_id):
+    org_id = session["user"]["organization_id"]
+
+    # 404 for another organization's invoice - never reveal that it exists.
+    invoice = Invoice.query.filter_by(id=invoice_id, organization_id=org_id).first_or_404()
+
+    if invoice.status not in ("PENDING", "OVERDUE"):
+        flash("This invoice does not need a payment.", "info")
+        return redirect(url_for("frontend.organization_billing"))
+    if not is_gateway_configured():
+        flash("Online payment is not available yet. Please contact us.", "error")
+        return redirect(url_for("frontend.organization_billing"))
+
+    return _org_redirect_to_payment(invoice)
+
+
+@frontend_bp.route("/organization/billing/contact", methods=["POST"])
+@login_required
+@billing_manager_required
+def organization_billing_contact():
+    user = session["user"]
+    org_id = user["organization_id"]
+    organization = Organization.query.get_or_404(org_id)
+
+    message = (request.form.get("message") or "").strip()[:1000]
+    if not message:
+        flash("Please tell us what you need.", "error")
+        return redirect(url_for("frontend.organization_billing"))
+
+    title = f"Custom plan request: {organization.organization_name}"
+    if Notification.query.filter_by(title=title, is_read=False).first():
+        flash("We already have your request and will contact you shortly.", "info")
+        return redirect(url_for("frontend.organization_billing"))
+
+    current_plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
+    details = (
+        f"From: {user.get('full_name')} ({user.get('email')})\n"
+        f"Organization: {organization.organization_name} (ID {org_id})\n"
+        f"Phone: {organization.mobile or '-'}\n"
+        f"Current plan: {current_plan.name if current_plan else 'None'}\n\n"
+        f"{message}"
+    )
+    # No organization_id here: the organization's own users must not see this,
+    # only the Super Admin (who sees every platform-level notification).
+    _create_notification(title=title, message=details, notif_type="info")
+    _log_activity("billing.custom_plan_requested", f"[Org {org_id}] {organization.organization_name}")
+    invalidate_report_cache("dashboard:super_admin")
+
+    flash("Thanks! Our team will contact you shortly.", "success")
+    return redirect(url_for("frontend.organization_billing"))

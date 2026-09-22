@@ -73,12 +73,28 @@ def get_smtp_config(organization_id=None):
 
 def get_whatsapp_config(organization_id=None):
     """Returns (api_key, phone_number_id). Fallback order: organization
-    override -> platform-wide -> .env."""
+    override -> platform-wide -> .env.
+
+    BUG FIX: the .env fallback used to read WHATSAPP_API_KEY, but the
+    actual variable in .env is WHATSAPP_ACCESS_TOKEN (that's also the
+    correct name for what this value is - a Meta System User / temporary
+    access token, not an API key in the traditional sense). A
+    WHATSAPP_API_KEY env var was never being set by anyone, so this
+    fallback was silently dead - relying on .env alone (with nothing saved
+    in the Integrations UI) would always resolve to an empty access token."""
     org_settings = get_organization_channel_settings(organization_id) if organization_id else None
     platform = get_platform_settings()
 
-    api_key = (org_settings.whatsapp_api_key if org_settings else None) or platform.whatsapp_api_key or os.environ.get("WHATSAPP_API_KEY", "")
-    phone_number_id = (org_settings.whatsapp_phone_number_id if org_settings else None) or platform.whatsapp_phone_number_id or os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    api_key = (
+        (org_settings.whatsapp_api_key if org_settings else None)
+        or platform.whatsapp_api_key
+        or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+    )
+    phone_number_id = (
+        (org_settings.whatsapp_phone_number_id if org_settings else None)
+        or platform.whatsapp_phone_number_id
+        or os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    )
     return api_key, phone_number_id
 
 

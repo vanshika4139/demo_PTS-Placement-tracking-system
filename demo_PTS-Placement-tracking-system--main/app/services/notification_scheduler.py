@@ -160,7 +160,7 @@ def run_notification_schedules(force=False):
                         continue
                     subject = _render(template.subject or template.template_type.replace("_", " ").title(), candidate)
                     body = _render(template.body, candidate)
-                    if send_email(candidate.email, subject, body, candidate_id=candidate.id):
+                    if send_email(candidate.email, subject, body, organization_id=candidate.organization_id, candidate_id=candidate.id):
                         emails_sent += 1
             else:
                 # WHATSAPP/SMS/VOICE_CALL/PUSH have no real provider configured

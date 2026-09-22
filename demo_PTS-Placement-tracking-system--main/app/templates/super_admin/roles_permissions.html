@@ -73,7 +73,7 @@
     {% for role in roles %}
     <a class="rp-role-tab {{ 'active' if selected_role and selected_role.id == role.id }}"
        href="{{ url_for('frontend.super_admin_roles_permissions', role_id=role.id) }}">
-      {{ role.name }}
+      {{ role.name }}{% if role.organization_id %} <small style="opacity:.7">({{ org_name_by_id.get(role.organization_id, 'org ' ~ role.organization_id) }})</small>{% endif %}
     </a>
     {% endfor %}
 

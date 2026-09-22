@@ -153,6 +153,13 @@ def has_permission(session_user, permission_code):
         "scheme.view", "scheme.create", "scheme.edit", "scheme.delete",
         "tracking.view", "tracking.edit",
         "attendance.view", "attendance.edit",
+        # Codes the routes really use for update / export / restore / view-all /
+        # marking attendance / the organization dashboard. They were missing here,
+        # so Super Admin could still reach those candidate-level pages.
+        "candidate.update", "candidate.export", "candidate.view_deleted", "candidate.view_all",
+        "batch.update", "batch.view_all",
+        "scheme.update", "scheme.view_all",
+        "placement.update", "attendance.mark", "dashboard.view",
     }
     if session_user.get("is_super_admin") and permission_code not in ORG_SCOPED_ONLY_PERMISSIONS:
         return True

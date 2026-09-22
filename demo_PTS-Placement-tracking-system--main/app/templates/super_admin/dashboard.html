@@ -325,9 +325,21 @@
     <h3>Monthly Revenue Trend</h3>
     <canvas id="monthlyRevenueChart" height="200"></canvas>
   </div>
-  <div class="panel-card">
+    <div class="panel-card">
     <h3>Active Subscriptions Trend</h3>
     <canvas id="subscriptionTrendChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Candidate Growth</h3>
+    <canvas id="candidateGrowthChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Platform-wide Placement Rate</h3>
+    <canvas id="placementRateChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Placement Trend Over Time</h3>
+    <canvas id="placementTrendChart" height="200"></canvas>
   </div>
 </div>
 
@@ -483,7 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  const subscriptionTrendCtx = document.getElementById('subscriptionTrendChart');
+    const subscriptionTrendCtx = document.getElementById('subscriptionTrendChart');
   if (subscriptionTrendCtx) {
     new Chart(subscriptionTrendCtx, {
       type: 'line',
@@ -494,6 +506,84 @@ document.addEventListener('DOMContentLoaded', function() {
           data: {{ subscription_trend_data | tojson }},
           borderColor: '#2563eb',
           backgroundColor: 'rgba(37, 99, 235, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const candidateGrowthCtx = document.getElementById('candidateGrowthChart');
+  if (candidateGrowthCtx) {
+    new Chart(candidateGrowthCtx, {
+      type: 'line',
+      data: {
+        labels: {{ candidate_growth_labels | tojson }},
+        datasets: [{
+          label: 'New Candidates',
+          data: {{ candidate_growth_data | tojson }},
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22, 163, 74, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  const placementRateCtx = document.getElementById('placementRateChart');
+  if (placementRateCtx) {
+    new Chart(placementRateCtx, {
+      type: 'line',
+      data: {
+        labels: {{ platform_placement_rate_labels | tojson }},
+        datasets: [{
+          label: 'Placement Rate (%)',
+          data: {{ platform_placement_rate_data | tojson }},
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { callback: function(value) { return value + '%'; } }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function(ctx) { return ctx.parsed.y + '%'; } } }
+        }
+      }
+    });
+  }
+
+  const placementTrendCtx = document.getElementById('placementTrendChart');
+  if (placementTrendCtx) {
+    new Chart(placementTrendCtx, {
+      type: 'line',
+      data: {
+        labels: {{ platform_placement_count_labels | tojson }},
+        datasets: [{
+          label: 'Placements',
+          data: {{ platform_placement_count_data | tojson }},
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139, 92, 246, 0.1)',
           tension: 0.3,
           fill: true,
         }]

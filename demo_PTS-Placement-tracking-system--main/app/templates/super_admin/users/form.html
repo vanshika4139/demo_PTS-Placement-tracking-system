@@ -49,7 +49,7 @@
 
       <label id="org-field">
         Organization
-        <select name="organization_id">
+        <select name="organization_id" onchange="filterRoles()">
           <option value="">-- Select Organization --</option>
           {% for org in organizations %}
           <option value="{{ org.id }}" {{ 'selected' if user and user.organization_id == org.id }}>{{ org.organization_name }}</option>
@@ -62,7 +62,7 @@
         <select name="rbac_role_id">
           <option value="">-- Select Role --</option>
           {% for r in roles %}
-          <option value="{{ r.id }}" {{ 'selected' if current_role_id == r.id }}>{{ r.name }}</option>
+          <option value="{{ r.id }}" data-org="{{ r.organization_id or '' }}" {{ 'selected' if current_role_id == r.id }}>{{ r.name }}</option>
           {% endfor %}
         </select>
         <span style="font-size:0.78rem; color:var(--muted); font-weight:normal;">
@@ -92,7 +92,24 @@ function toggleOrgField() {
   orgField.style.display = isSuperAdmin ? 'none' : 'flex';
   rbacField.style.display = isSuperAdmin ? 'none' : 'flex';
 }
-window.onload = toggleOrgField;
+// Show only global roles + the chosen organization's own roles.
+function filterRoles() {
+  const orgSelect = document.querySelector('select[name="organization_id"]');
+  const roleSelect = document.querySelector('select[name="rbac_role_id"]');
+  if (!orgSelect || !roleSelect) return;
+  const org = orgSelect.value;
+  Array.from(roleSelect.options).forEach(function (opt) {
+    if (!opt.value) return;
+    const roleOrg = opt.dataset.org || '';
+    const allowed = roleOrg === '' || roleOrg === org;
+    opt.hidden = !allowed;
+    opt.disabled = !allowed;
+  });
+  if (roleSelect.selectedOptions.length && roleSelect.selectedOptions[0].disabled) {
+    roleSelect.value = '';
+  }
+}
+window.onload = function () { toggleOrgField(); filterRoles(); };
 
 function randomDigits(count) {
   let result = '';

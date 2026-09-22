@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import random
 import string
@@ -175,7 +175,7 @@ def _scope_candidates_to_creator(query, user):
     routes usually don't scope by org at all) - this only adds the
     created_by restriction on top.
     """
-    if not user or user.get("is_super_admin"):
+    if not user:
         return query
     if has_permission(user, "candidate.view_all"):
         return query
@@ -187,7 +187,7 @@ def _can_access_candidate(candidate, user):
     reached directly by id, where a list-level filter can't help - a user
     could otherwise type/guess another candidate's URL and bypass the
     created_by restriction entirely."""
-    if not user or user.get("is_super_admin"):
+    if not user:
         return True
     if has_permission(user, "candidate.view_all"):
         return True
@@ -204,7 +204,7 @@ def _scope_batches_to_creator(query, user):
     every batch in the organization so a candidate can be assigned to a
     batch someone else set up. It only guards the Batches management
     list/edit/delete routes."""
-    if not user or user.get("is_super_admin"):
+    if not user:
         return query
     if has_permission(user, "batch.view_all"):
         return query
@@ -214,7 +214,7 @@ def _scope_batches_to_creator(query, user):
 def _can_access_batch(batch, user):
     """Ownership check for single-batch routes (edit/delete), so a user
     can't bypass the list-level restriction by guessing a batch's URL."""
-    if not user or user.get("is_super_admin"):
+    if not user:
         return True
     if has_permission(user, "batch.view_all"):
         return True
@@ -226,7 +226,7 @@ def _scope_schemes_to_creator(query, user):
     _scope_batches_to_creator, applied to Scheme. Anyone with
     scheme.view_all (or super admin) sees every scheme in scope; everyone
     else only sees schemes they personally created."""
-    if not user or user.get("is_super_admin"):
+    if not user:
         return query
     if has_permission(user, "scheme.view_all"):
         return query
@@ -236,7 +236,7 @@ def _scope_schemes_to_creator(query, user):
 def _can_access_scheme(scheme, user):
     """Ownership check for single-scheme routes (edit/delete), so a user
     can't bypass the list-level restriction by guessing a scheme's URL."""
-    if not user or user.get("is_super_admin"):
+    if not user:
         return True
     if has_permission(user, "scheme.view_all"):
         return True
@@ -266,7 +266,7 @@ def _send_placement_email(candidate):
         org_users = User.query.filter(
             User.is_deleted == False,
             User.is_active == True,
-            (User.organization_id == candidate.organization_id) | (User.is_super_admin == True),
+            User.organization_id == candidate.organization_id,  # Super Admin does not deal with candidates
         ).all()
 
         joining_str = candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "N/A"
@@ -616,11 +616,21 @@ def super_admin_dashboard():
     return render_template("super_admin/dashboard.html", **data)
 
 
+# ============================================================================
+# REPLACE the ENTIRE existing get_super_admin_dashboard_data() function
+# (from "@cached_report(key_prefix="dashboard:super_admin")" down to its
+# closing "}") with everything below, in app/routes/frontend.py.
+#
+# The @frontend_bp.route("/super-admin/dashboard") view function ABOVE it,
+# and @frontend_bp.route("/super-admin/cache-monitor") BELOW it, are NOT
+# part of this replacement - leave those exactly as they are.
+# ============================================================================
+
 @cached_report(key_prefix="dashboard:super_admin")
 def get_super_admin_dashboard_data():
-    """Super Admin only deals with organizations, their plans / subscriptions,
-    KYC and the platform's own health. Candidate / batch / scheme / placement
-    numbers belong to each organization's own dashboard, not here."""
+    """Organizations, plans/subscriptions, KYC, platform health, and (per
+    SRS FR-01/FR-03) aggregate candidate/placement counts across all
+    organizations - counts and charts only, no candidate CRUD."""
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
 
@@ -662,6 +672,31 @@ def get_super_admin_dashboard_data():
         Notification.is_read == False,
     ).count()
 
+    # ---------------- SRS FR-01 / FR-03: platform-wide candidate/placement
+    # aggregates. Read-only counts and charts only - no candidate CRUD is
+    # touched or re-enabled here, per the "SRS ke hisab se sab karo, CRUD
+    # shuru nahi hua wo mat karna" decision. ----------------
+    all_candidates = Candidate.query.filter_by(is_deleted=False).all()
+    total_candidates = len(all_candidates)
+    active_candidates = sum(1 for c in all_candidates if (c.account_status or "active") == "active")
+
+    current_month_placements = sum(
+        1 for c in all_candidates
+        if c.joining_date and (
+            c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date
+        ) >= current_month_start
+    )
+
+    pending_followups = FollowUpCheckpoint.query.filter(
+        FollowUpCheckpoint.status == "pending",
+        FollowUpCheckpoint.due_date < today,
+    ).count()
+
+    verification_pending = sum(
+        1 for c in all_candidates
+        if (c.verification_status or "pending") == "pending" and c.employer_name
+    )
+
     stat_sections = [
         {
             "title": "Organizations",
@@ -670,6 +705,16 @@ def get_super_admin_dashboard_data():
                 {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active"), "accent": "#16a34a"},
                 {"title": "Expired Organizations", "value": str(expired_organizations), "link": url_for("frontend.super_admin_organizations"), "accent": "#f59e0b"},
                 {"title": "Pending KYC", "value": str(pending_kyc), "link": url_for("frontend.super_admin_organizations", filter="pending_kyc"), "accent": "#ef4444"},
+            ],
+        },
+        {
+            "title": "Candidates & Placements",
+            "cards": [
+                {"title": "Total Candidates", "value": str(total_candidates), "link": None, "accent": "#2563eb"},
+                {"title": "Active Candidates", "value": str(active_candidates), "link": None, "accent": "#16a34a"},
+                {"title": "Monthly Placements", "value": str(current_month_placements), "link": None, "accent": "#06b6d4"},
+                {"title": "Pending Follow-ups", "value": str(pending_followups), "link": None, "accent": "#f59e0b"},
+                {"title": "Verification-Pending Candidates", "value": str(verification_pending), "link": None, "accent": "#ef4444"},
             ],
         },
         {
@@ -706,6 +751,52 @@ def get_super_admin_dashboard_data():
         count = sum(1 for o in all_orgs if o.created_at and o.created_at.year == year and o.created_at.month == month)
         org_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         org_growth_data.append(count)
+
+    # ---------------- SRS FR-03: Candidate Growth + Placement Rate charts.
+    # Placement Rate is a CUMULATIVE to-date rate at each month-end (placed
+    # / total candidates that existed by that month) - there is no
+    # snapshot/history table for a true point-in-time rate. Flag back if a
+    # different definition (e.g. rate among only that month's new
+    # candidates) was intended. ----------------
+    candidate_growth_labels = []
+    candidate_growth_data = []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        count = sum(
+            1 for c in all_candidates
+            if c.created_at and c.created_at.year == year and c.created_at.month == month
+        )
+        candidate_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        candidate_growth_data.append(count)
+
+    platform_placement_rate_labels = []
+    platform_placement_rate_data = []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        month_end = (datetime(year, month, 1) + relativedelta(months=1) - timedelta(days=1)).date()
+        existed_by_then = [
+            c for c in all_candidates
+            if c.created_at and c.created_at.date() <= month_end
+        ]
+        placed_by_then = sum(1 for c in existed_by_then if c.employer_name)
+        rate = round((placed_by_then / len(existed_by_then) * 100), 1) if existed_by_then else 0
+        platform_placement_rate_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        platform_placement_rate_data.append(rate)
+
+    # ---------------- SRS item #21: Placement Trend Over Time (raw monthly
+    # placement COUNT, not the % rate above) ----------------
+    platform_placement_count_labels = []
+    platform_placement_count_data = []
+    placed_candidates_platform = [c for c in all_candidates if c.joining_date]
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        count = sum(
+            1 for c in placed_candidates_platform
+            if (c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date).year == year
+            and (c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date).month == month
+        )
+        platform_placement_count_labels.append(datetime(year, month, 1).strftime("%b %Y"))
+        platform_placement_count_data.append(count)
 
     # Top 10 states by organization count.
     state_counts = {}
@@ -862,6 +953,12 @@ def get_super_admin_dashboard_data():
         "stat_sections": stat_sections,
         "org_growth_labels": org_growth_labels,
         "org_growth_data": org_growth_data,
+        "candidate_growth_labels": candidate_growth_labels,
+        "candidate_growth_data": candidate_growth_data,
+        "platform_placement_rate_labels": platform_placement_rate_labels,
+        "platform_placement_rate_data": platform_placement_rate_data,
+        "platform_placement_count_labels": platform_placement_count_labels,
+        "platform_placement_count_data": platform_placement_count_data,
         "state_distribution_labels": state_distribution_labels,
         "state_distribution_data": state_distribution_data,
         "kyc_status_labels": kyc_status_labels,
@@ -2717,9 +2814,16 @@ def super_admin_roles_permissions():
         for entry in audit_entries_raw
     ]
 
+    org_ids_with_roles = {r.organization_id for r in roles if r.organization_id}
+    org_name_by_id = (
+        {o.id: o.organization_name for o in Organization.query.filter(Organization.id.in_(org_ids_with_roles)).all()}
+        if org_ids_with_roles else {}
+    )
+
     return render_template(
         "super_admin/roles_permissions.html",
         roles=roles,
+        org_name_by_id=org_name_by_id,
         selected_role=selected_role,
         grouped_permissions=grouped_permissions,
         assigned_permission_ids=assigned_permission_ids,
@@ -3192,6 +3296,17 @@ def super_admin_create_user():
             flash("Please select a role (Trainer, Recruiter, etc.) for this user.", "error")
             return render_template("super_admin/users/form.html", user=None, organizations=organizations, roles=roles)
 
+        # A role that belongs to one organization can only be given to users of that
+        # same organization (global roles can be given to anyone).
+        if role != "super_admin":
+            chosen_role = Role.query.get(rbac_role_id)
+            if chosen_role is None or chosen_role.is_deleted or (
+                chosen_role.organization_id is not None
+                and chosen_role.organization_id != _parse_int(organization_id)
+            ):
+                flash("That role belongs to a different organization. Please pick a role for this organization.", "error")
+                return render_template("super_admin/users/form.html", user=None, organizations=organizations, roles=roles)
+
         user = User(
             email=email,
             full_name=f"{first_name} {last_name}".strip(),
@@ -3255,6 +3370,17 @@ def super_admin_edit_user(user_id):
         if role != "super_admin" and not rbac_role_id:
             flash("Please select a role (Trainer, Recruiter, etc.) for this user.", "error")
             return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
+
+        # A role that belongs to one organization can only be given to users of that
+        # same organization (global roles can be given to anyone).
+        if role != "super_admin":
+            chosen_role = Role.query.get(rbac_role_id)
+            if chosen_role is None or chosen_role.is_deleted or (
+                chosen_role.organization_id is not None
+                and chosen_role.organization_id != _parse_int(organization_id)
+            ):
+                flash("That role belongs to a different organization. Please pick a role for this organization.", "error")
+                return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
 
         user.first_name = first_name
         user.last_name = last_name
@@ -3446,9 +3572,7 @@ def super_admin_stop_impersonating():
 @require_permission("batch.view")
 def organization_batches():
     user = session.get("user")
-    query = Batch.query
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Batch.query.filter_by(organization_id=user.get("organization_id"))
     query = _scope_batches_to_creator(query, user)
     batches = query.order_by(Batch.created_at.desc()).all()
 
@@ -3472,10 +3596,10 @@ def organization_batches():
 @require_permission("batch.create")
 def organization_batch_create():
     user = session.get("user")
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
     if request.method == "POST":
-        org_id = request.form.get("organization_id") if user.get("is_super_admin") else user.get("organization_id")
+        org_id = user.get("organization_id")
         if not org_id:
             flash("Please select an organization", "error")
             return render_template("organization/batches/form.html", batch=None, organizations=organizations)
@@ -3507,13 +3631,9 @@ def organization_batch_edit(batch_id):
     if not _can_access_batch(batch, user):
         flash("You do not have permission to edit this batch.", "error")
         return redirect(url_for("frontend.organization_batches"))
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
     if request.method == "POST":
-        if user.get("is_super_admin"):
-            org_id = request.form.get("organization_id")
-            if org_id:
-                batch.organization_id = org_id
         batch.name = request.form.get("name")
         batch.training_center = request.form.get("training_center")
         batch.start_date = _parse_date(request.form.get("start_date"))
@@ -3550,9 +3670,7 @@ def organization_batch_delete(batch_id):
 @require_permission("scheme.view")
 def organization_schemes():
     user = session.get("user")
-    query = Scheme.query
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Scheme.query.filter_by(organization_id=user.get("organization_id"))
     query = _scope_schemes_to_creator(query, user)
     schemes = query.order_by(Scheme.created_at.desc()).all()
 
@@ -3576,10 +3694,10 @@ def organization_schemes():
 @require_permission("scheme.create")
 def organization_scheme_create():
     user = session.get("user")
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
     if request.method == "POST":
-        org_id = request.form.get("organization_id") if user.get("is_super_admin") else user.get("organization_id")
+        org_id = user.get("organization_id")
         if not org_id:
             flash("Please select an organization", "error")
             return render_template("organization/schemes/form.html", scheme=None, organizations=organizations)
@@ -3609,13 +3727,9 @@ def organization_scheme_edit(scheme_id):
     if not _can_access_scheme(scheme, user):
         flash("You do not have permission to edit this scheme.", "error")
         return redirect(url_for("frontend.organization_schemes"))
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
     if request.method == "POST":
-        if user.get("is_super_admin"):
-            org_id = request.form.get("organization_id")
-            if org_id:
-                scheme.organization_id = org_id
         scheme.name = request.form.get("name")
         scheme.description = request.form.get("description")
         db.session.commit()
@@ -3659,9 +3773,7 @@ def organization_candidates():
     proof_filter = request.args.get("placement_proof", "").strip()
     account_status_filter = request.args.get("account_status", "").strip()
 
-    query = Candidate.query.filter_by(is_deleted=False)
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
 
     if q:
@@ -3727,18 +3839,15 @@ def organization_candidates():
 @require_permission("candidate.create")
 def organization_candidate_create():
     user = session.get("user")
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
-    batch_query = Batch.query
-    scheme_query = Scheme.query
-    if not user.get("is_super_admin"):
-        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
-        scheme_query = scheme_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = Batch.query.filter_by(organization_id=user.get("organization_id"))
+    scheme_query = Scheme.query.filter_by(organization_id=user.get("organization_id"))
     batches = batch_query.order_by(Batch.name).all()
     schemes = scheme_query.order_by(Scheme.name).all()
 
     if request.method == "POST":
-        org_id = request.form.get("organization_id") if user.get("is_super_admin") else user.get("organization_id")
+        org_id = user.get("organization_id")
         if not org_id:
             flash("Please select an organization", "error")
             return render_template("organization/candidates/form.html", candidate=None, organizations=organizations, batches=batches, schemes=schemes)
@@ -3914,13 +4023,10 @@ def organization_candidate_edit(candidate_id):
     if not _can_access_candidate(candidate, user):
         flash("You do not have permission to edit this candidate.", "error")
         return redirect(url_for("frontend.no_access"))
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
 
-    batch_query = Batch.query
-    scheme_query = Scheme.query
-    if not user.get("is_super_admin"):
-        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
-        scheme_query = scheme_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = Batch.query.filter_by(organization_id=user.get("organization_id"))
+    scheme_query = Scheme.query.filter_by(organization_id=user.get("organization_id"))
     batches = batch_query.order_by(Batch.name).all()
     schemes = scheme_query.order_by(Scheme.name).all()
 
@@ -3964,10 +4070,6 @@ def organization_candidate_edit(candidate_id):
                 flash(f"A candidate with this Registration Number already exists: {dup_reg.full_name}", "error")
                 return render_template("organization/candidates/form.html", candidate=candidate, organizations=organizations, batches=batches, schemes=schemes)
 
-        if user.get("is_super_admin"):
-            org_id = request.form.get("organization_id")
-            if org_id:
-                candidate.organization_id = org_id
         candidate.registration_number = request.form.get("registration_number") or None
         candidate.full_name = request.form.get("full_name")
         candidate.father_name = request.form.get("father_name")
@@ -4089,9 +4191,7 @@ def organization_candidate_delete(candidate_id):
 @require_permission("candidate.view_deleted")
 def organization_candidates_deleted():
     user = session.get("user")
-    query = Candidate.query.filter_by(is_deleted=True)
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter_by(is_deleted=True, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
     candidates = query.order_by(Candidate.updated_at.desc()).all()
     return render_template("organization/candidates/deleted.html", candidates=candidates)
@@ -4132,9 +4232,10 @@ def organization_candidates_bulk_action():
         flash("No candidates selected", "error")
         return redirect(url_for("frontend.organization_candidates"))
 
-    query = Candidate.query.filter(Candidate.id.in_(candidate_ids))
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter(
+        Candidate.id.in_(candidate_ids),
+        Candidate.organization_id == user.get("organization_id"),
+    )
     query = _scope_candidates_to_creator(query, user)
     candidates = query.all()
 
@@ -4188,9 +4289,7 @@ def organization_candidates_export():
     from flask import send_file
 
     user = session.get("user")
-    query = Candidate.query.filter_by(is_deleted=False)
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
 
     search_query = request.args.get("q", "").strip()
@@ -4275,9 +4374,7 @@ def organization_candidates_export_pdf():
     from flask import send_file
 
     user = session.get("user")
-    query = Candidate.query.filter_by(is_deleted=False)
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
 
     search_query = request.args.get("q", "").strip()
@@ -4301,10 +4398,9 @@ def organization_candidates_export_pdf():
     candidates = query.order_by(Candidate.created_at.desc()).all()
 
     org_name = "Codevocado Placement Tracking System"
-    if not user.get("is_super_admin"):
-        org = Organization.query.get(user.get("organization_id"))
-        if org:
-            org_name = org.organization_name
+    org = Organization.query.get(user.get("organization_id"))
+    if org:
+        org_name = org.organization_name
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -4504,9 +4600,9 @@ def organization_candidate_reset_password(candidate_id):
 def organization_candidates_bulk_set_passwords():
     """One-time helper: sets password = mobile number for any candidate that doesn't have one yet."""
     user = session.get("user")
-    query = Candidate.query.filter_by(is_deleted=False, password_hash=None)
-    if not user.get("is_super_admin"):
-        query = query.filter_by(organization_id=user.get("organization_id"))
+    query = Candidate.query.filter_by(
+        is_deleted=False, password_hash=None, organization_id=user.get("organization_id")
+    )
     query = _scope_candidates_to_creator(query, user)
 
     candidates = query.all()
@@ -4530,7 +4626,7 @@ def organization_candidates_bulk_set_passwords():
 @require_permission("candidate.import")
 def candidate_import():
     user = session.get("user")
-    organizations = Organization.query.filter_by(status=1).all() if user.get("is_super_admin") else []
+    organizations = []
     summary = None
 
     # Non-super-admins are scoped to their own organization's feature flag.
@@ -4544,7 +4640,7 @@ def candidate_import():
         import csv
         import io
 
-        org_id = request.form.get("organization_id") if user.get("is_super_admin") else user.get("organization_id")
+        org_id = user.get("organization_id")
         file = request.files.get("csv_file")
 
         if not org_id:
@@ -4977,9 +5073,7 @@ def organization_tracking():
     scheme_filter = request.args.get("scheme_id", "").strip()
     training_center_filter = request.args.get("training_center", "").strip()
 
-    candidate_query = Candidate.query.filter_by(is_deleted=False)
-    if not user.get("is_super_admin"):
-        candidate_query = candidate_query.filter_by(organization_id=user.get("organization_id"))
+    candidate_query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     candidate_query = _scope_candidates_to_creator(candidate_query, user)
 
     if batch_filter:
@@ -5023,17 +5117,12 @@ def organization_tracking():
         else:
             upcoming.append(item)
 
-    batch_query = Batch.query
-    scheme_query = Scheme.query
-    if not user.get("is_super_admin"):
-        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
-        scheme_query = scheme_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = Batch.query.filter_by(organization_id=user.get("organization_id"))
+    scheme_query = Scheme.query.filter_by(organization_id=user.get("organization_id"))
     batches = batch_query.order_by(Batch.name).all()
     schemes = scheme_query.order_by(Scheme.name).all()
 
-    training_center_query = Candidate.query.filter_by(is_deleted=False)
-    if not user.get("is_super_admin"):
-        training_center_query = training_center_query.filter_by(organization_id=user.get("organization_id"))
+    training_center_query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     training_center_query = _scope_candidates_to_creator(training_center_query, user)
     training_centers = sorted(set(
         c.training_center for c in training_center_query.all() if c.training_center
@@ -5094,9 +5183,7 @@ def organization_attendance():
     from datetime import datetime as dt
 
     user = session.get("user")
-    batch_query = Batch.query
-    if not user.get("is_super_admin"):
-        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = Batch.query.filter_by(organization_id=user.get("organization_id"))
     batch_query = _scope_batches_to_creator(batch_query, user)
     batches = batch_query.order_by(Batch.name).all()
 
@@ -5107,7 +5194,7 @@ def organization_attendance():
     candidates_with_status = []
     if selected_batch_id:
         batch = Batch.query.get(selected_batch_id)
-        if not batch or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")) or not _can_access_batch(batch, user):
+        if not batch or batch.organization_id != user.get("organization_id") or not _can_access_batch(batch, user):
             flash("Invalid batch selected.", "error")
             return redirect(url_for("frontend.organization_attendance"))
 
@@ -5159,7 +5246,7 @@ def organization_attendance_mark():
         flash("Batch not found.", "error")
         return redirect(url_for("frontend.organization_attendance"))
 
-    if not _can_access_batch(batch, user) or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")):
+    if not _can_access_batch(batch, user) or batch.organization_id != user.get("organization_id"):
         flash("You do not have permission to mark attendance for this batch.", "error")
         return redirect(url_for("frontend.organization_attendance"))
 
@@ -5242,9 +5329,7 @@ def organization_attendance_report():
     from datetime import datetime as dt
 
     user = session.get("user")
-    batch_query = Batch.query
-    if not user.get("is_super_admin"):
-        batch_query = batch_query.filter_by(organization_id=user.get("organization_id"))
+    batch_query = Batch.query.filter_by(organization_id=user.get("organization_id"))
     batch_query = _scope_batches_to_creator(batch_query, user)
     batches = batch_query.order_by(Batch.name).all()
 
@@ -5261,7 +5346,7 @@ def organization_attendance_report():
     summary_rows = []
     if selected_batch_id:
         batch = Batch.query.get(selected_batch_id)
-        if not batch or (not user.get("is_super_admin") and batch.organization_id != user.get("organization_id")) or not _can_access_batch(batch, user):
+        if not batch or batch.organization_id != user.get("organization_id") or not _can_access_batch(batch, user):
             flash("Invalid batch selected.", "error")
             return redirect(url_for("frontend.organization_attendance_report"))
 

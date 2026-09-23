@@ -77,6 +77,8 @@ class Candidate(db.Model):
     offer_letter_url = Column(String(500), nullable=True)
     placement_proof_uploaded = Column(Boolean, nullable=False, default=False)
     password_hash = Column(String(255), nullable=True)
+    password_reset_token = Column(String(255), nullable=True)
+    password_reset_expiry = Column(DateTime, nullable=True)
     account_status = Column(String(20), nullable=False, default="active")
     last_login_at = Column(DateTime, nullable=True)
     created_by = Column(MySQLCHAR(32), ForeignKey("users.id"), nullable=True, index=True)

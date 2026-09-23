@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="{{ current_language() }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ _('candidate_portal') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-card">
+      <div class="brand-block" style="margin-bottom:16px;">
+        <div class="brand-mark large">C</div>
+        <div>
+          <h2 style="margin:0;">Verify OTP</h2>
+          <p style="margin:0; color:var(--muted);">Enter the OTP sent to {{ email }}</p>
+        </div>
+      </div>
+
+      {% if error %}
+      <p class="form-error">{{ error }}</p>
+      {% endif %}
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" class="auth-form">
+        <input type="text" name="otp" placeholder="6-digit OTP" maxlength="6" pattern="[0-9]{6}" required autocomplete="one-time-code">
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:normal; margin:4px 0;">
+          <input type="checkbox" name="remember_device" style="width:auto;">
+          Remember this device for 30 days
+        </label>
+        <button type="submit" class="primary-btn">Verify OTP</button>
+      </form>
+
+      <p style="margin-top:16px; font-size:0.85rem; color:var(--muted);">
+        <a href="{{ url_for('frontend.candidate_login') }}">Back to login</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

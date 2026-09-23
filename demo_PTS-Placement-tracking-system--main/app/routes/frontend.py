@@ -1,6 +1,8 @@
-﻿import logging
+﻿import hashlib
+import logging
 import os
 import random
+import secrets
 import string
 import uuid
 from datetime import datetime, timedelta
@@ -18,6 +20,7 @@ from app.models import (
     Batch,
     Candidate,
     CandidateFeedback,
+    CandidateTrustedDevice,
     CommunicationLog,
     Announcement,
     FeatureFlagDefault,
@@ -504,6 +507,26 @@ def logout():
 
 def _generate_otp():
     return "".join(random.choices(string.digits, k=6))
+
+def _hash_device_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _is_trusted_device(candidate):
+    """True if this browser has a valid 'remember this device' cookie
+    for this candidate - lets them skip the login OTP for 30 days."""
+    cookie_value = request.cookies.get("candidate_device")
+    if not cookie_value or "." not in cookie_value:
+        return False
+
+    cand_id, token = cookie_value.split(".", 1)
+    if cand_id != candidate.id:
+        return False
+
+    device = CandidateTrustedDevice.query.filter_by(
+        candidate_id=candidate.id, token_hash=_hash_device_token(token)
+    ).first()
+    return bool(device and device.is_valid())
 
 
 @frontend_bp.route("/forgot-password", methods=["GET", "POST"])
@@ -3985,6 +4008,46 @@ def organization_candidate_create():
         )
         db.session.add(candidate)
         db.session.commit()
+
+        # Password-setup token - generated right after creation so new
+        # candidates get a "Set Your Password" link in their welcome email
+        # instead of only the mobile-number-as-password fallback. The
+        # existing mobile-number default password is untouched (still used
+        # elsewhere, e.g. org-admin Reset Password).
+        reset_token = secrets.token_urlsafe(32)
+        candidate.password_reset_token = reset_token
+        candidate.password_reset_expiry = datetime.utcnow() + timedelta(hours=24)
+        db.session.commit()
+
+        # Welcome email - sent immediately on candidate creation, not via
+        # the scheduled NotificationSchedule system (that's for recurring
+        # reminders). Failure here should never break candidate creation,
+        # so it's wrapped and only logged, matching the pattern used
+        # elsewhere in this app (see messaging_service.send_email itself,
+        # which also never raises).
+        if candidate.email:
+            from app.services.messaging_service import send_email
+            set_password_url = url_for("frontend.candidate_set_password", token=reset_token, _external=True)
+            welcome_subject = "Welcome to the Placement Program"
+            welcome_body = (
+                f"Dear {candidate.full_name},\n\n"
+                f"Welcome to the Placement Tracking System! Your registration "
+                f"has been completed successfully.\n\n"
+                f"Registration Number: {candidate.registration_number or 'Not assigned yet'}\n"
+                f"Training Center: {candidate.training_center or 'Not assigned yet'}\n\n"
+                f"Please set your password using the link below (valid for 24 hours):\n"
+                f"{set_password_url}\n\n"
+                f"We wish you the best for your training and placement journey.\n\n"
+                f"Regards,\nPlacement Tracking Team"
+            )
+            send_email(
+                candidate.email,
+                welcome_subject,
+                welcome_body,
+                organization_id=candidate.organization_id,
+                candidate_id=candidate.id,
+            )
+
         _create_notification(
             title=f"New candidate added: {candidate.full_name}",
             message=f"{candidate.full_name} was added to the candidate pool.",
@@ -4747,8 +4810,7 @@ def candidate_login():
             error = "Invalid registration number or password"
         elif candidate.account_status == "blocked":
             error = "Your account has been blocked. Please contact your training center."
-        else:
-            from datetime import datetime
+        elif _is_trusted_device(candidate):
             candidate.last_login_at = datetime.utcnow()
             db.session.commit()
 
@@ -4760,8 +4822,139 @@ def candidate_login():
             session.permanent = True
             flash(f"Welcome, {candidate.full_name}", "success")
             return redirect(url_for("frontend.candidate_dashboard"))
+        elif not candidate.email:
+            # No email on file - can't send an OTP, so fall back to the
+            # old direct-login behaviour instead of locking the candidate out.
+            candidate.last_login_at = datetime.utcnow()
+            db.session.commit()
+
+            session["candidate"] = {
+                "id": candidate.id,
+                "full_name": candidate.full_name,
+                "registration_number": candidate.registration_number,
+            }
+            session.permanent = True
+            flash(f"Welcome, {candidate.full_name}", "success")
+            return redirect(url_for("frontend.candidate_dashboard"))
+        else:
+            from app.utils.email import send_otp_email
+
+            otp_code = _generate_otp()
+            otp_entry = PasswordResetOTP(
+                email=candidate.email,
+                otp_code=otp_code,
+                expires_at=datetime.utcnow() + timedelta(minutes=10),
+            )
+            db.session.add(otp_entry)
+            db.session.commit()
+
+            try:
+                send_otp_email(candidate.email, otp_code)
+            except Exception:
+                error = "Could not send OTP email. Please try again later."
+                return render_template("candidate/login.html", error=error)
+
+            session["candidate_otp_pending_id"] = candidate.id
+            session["candidate_otp_email"] = candidate.email
+            flash("An OTP has been sent to your registered email address", "success")
+            return redirect(url_for("frontend.candidate_verify_login_otp"))
 
     return render_template("candidate/login.html", error=error)
+
+
+@frontend_bp.route("/candidate/verify-login-otp", methods=["GET", "POST"])
+@rate_limit("candidate_verify_login_otp", max_attempts=5, window_seconds=600)
+def candidate_verify_login_otp():
+    error = None
+    candidate_id = session.get("candidate_otp_pending_id")
+    email = session.get("candidate_otp_email")
+
+    if not candidate_id or not email:
+        flash("Please log in again", "error")
+        return redirect(url_for("frontend.candidate_login"))
+
+    if request.method == "POST":
+        entered_otp = request.form.get("otp", "").strip()
+
+        otp_entry = (
+            PasswordResetOTP.query.filter_by(email=email, otp_code=entered_otp, is_used=False)
+            .order_by(PasswordResetOTP.created_at.desc())
+            .first()
+        )
+
+        if not otp_entry or not otp_entry.is_valid():
+            error = "Invalid or expired OTP. Please try again."
+        else:
+            otp_entry.is_used = True
+
+            candidate = Candidate.query.get(candidate_id)
+            candidate.last_login_at = datetime.utcnow()
+            db.session.commit()
+
+            session.pop("candidate_otp_pending_id", None)
+            session.pop("candidate_otp_email", None)
+            session["candidate"] = {
+                "id": candidate.id,
+                "full_name": candidate.full_name,
+                "registration_number": candidate.registration_number,
+            }
+            session.permanent = True
+            flash(f"Welcome, {candidate.full_name}", "success")
+
+            response = redirect(url_for("frontend.candidate_dashboard"))
+            if request.form.get("remember_device") == "on":
+                device_token = secrets.token_urlsafe(32)
+                trusted_device = CandidateTrustedDevice(
+                    candidate_id=candidate.id,
+                    token_hash=_hash_device_token(device_token),
+                    expires_at=datetime.utcnow() + timedelta(days=30),
+                )
+                db.session.add(trusted_device)
+                db.session.commit()
+                response.set_cookie(
+                    "candidate_device",
+                    f"{candidate.id}.{device_token}",
+                    max_age=30 * 24 * 60 * 60,
+                    httponly=True,
+                    samesite="Lax",
+                )
+            return response
+
+    return render_template("candidate/verify_otp.html", error=error, email=email)
+
+
+@frontend_bp.route("/candidate/set-password/<token>", methods=["GET", "POST"])
+def candidate_set_password(token):
+    """Lets a newly-created candidate set their own password via the
+    link emailed to them on creation. Token is single-use (cleared on
+    success) and expires 24 hours after the candidate was created."""
+    candidate = Candidate.query.filter_by(password_reset_token=token, is_deleted=False).first()
+
+    if not candidate or not candidate.password_reset_expiry or candidate.password_reset_expiry < datetime.utcnow():
+        return render_template(
+            "candidate/set_password.html",
+            error="This link is invalid or has expired. Please contact your training center for a new one.",
+            invalid=True,
+        )
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+
+        if len(password) < 6:
+            error = "Password must be at least 6 characters long."
+        elif password != confirm_password:
+            error = "Passwords do not match."
+        else:
+            candidate.password_hash = generate_password_hash(password)
+            candidate.password_reset_token = None
+            candidate.password_reset_expiry = None
+            db.session.commit()
+            flash("Password set successfully. Please log in.", "success")
+            return redirect(url_for("frontend.candidate_login"))
+
+    return render_template("candidate/set_password.html", error=error, invalid=False)
 
 
 @frontend_bp.route("/candidate/logout")
@@ -4778,15 +4971,76 @@ def candidate_dashboard():
     candidate = Candidate.query.get_or_404(session_candidate.get("id"))
 
     if request.method == "POST":
-        candidate.mobile = request.form.get("mobile")
-        candidate.alternative_mobile = request.form.get("alternative_mobile")
-        candidate.email = request.form.get("email")
-        candidate.current_address = request.form.get("current_address")
-        candidate.permanent_address = request.form.get("permanent_address")
-        candidate.bank_name = request.form.get("bank_name")
-        candidate.account_number = request.form.get("account_number")
-        candidate.ifsc = request.form.get("ifsc")
+        old_email = candidate.email
+        old_mobile = candidate.mobile
+        old_bank_name = candidate.bank_name
+        old_account_number = candidate.account_number
+        old_ifsc = candidate.ifsc
+
+        new_mobile = request.form.get("mobile")
+        new_alternative_mobile = request.form.get("alternative_mobile")
+        new_email = request.form.get("email")
+        new_current_address = request.form.get("current_address")
+        new_permanent_address = request.form.get("permanent_address")
+        new_bank_name = request.form.get("bank_name")
+        new_account_number = request.form.get("account_number")
+        new_ifsc = request.form.get("ifsc")
+
+        sensitive_changed = (
+            old_mobile != new_mobile
+            or old_email != new_email
+            or old_bank_name != new_bank_name
+            or old_account_number != new_account_number
+            or old_ifsc != new_ifsc
+        )
+
+        candidate.mobile = new_mobile
+        candidate.alternative_mobile = new_alternative_mobile
+        candidate.email = new_email
+        candidate.current_address = new_current_address
+        candidate.permanent_address = new_permanent_address
+        candidate.bank_name = new_bank_name
+        candidate.account_number = new_account_number
+        candidate.ifsc = new_ifsc
         db.session.commit()
+
+        # Security alert - sent to the OLD email address (before this
+        # update), not the new one, so that if an attacker changed the
+        # email itself the real candidate still finds out. Never blocks
+        # the save, matching the welcome-email pattern used on creation.
+        if sensitive_changed and old_email:
+            from app.services.messaging_service import send_email
+
+            changed_fields = []
+            if old_mobile != new_mobile:
+                changed_fields.append("Mobile Number")
+            if old_email != new_email:
+                changed_fields.append("Email Address")
+            if old_bank_name != new_bank_name:
+                changed_fields.append("Bank Name")
+            if old_account_number != new_account_number:
+                changed_fields.append("Account Number")
+            if old_ifsc != new_ifsc:
+                changed_fields.append("IFSC Code")
+
+            alert_subject = "Your Account Details Were Updated"
+            alert_body = (
+                f"Dear {candidate.full_name},\n\n"
+                f"The following details on your candidate account were just updated:\n"
+                f"{', '.join(changed_fields)}\n\n"
+                f"If you made this change, you can ignore this email.\n"
+                f"If you did NOT make this change, please contact your training "
+                f"center immediately to secure your account.\n\n"
+                f"Regards,\nPlacement Tracking Team"
+            )
+            send_email(
+                old_email,
+                alert_subject,
+                alert_body,
+                organization_id=candidate.organization_id,
+                candidate_id=candidate.id,
+            )
+
         flash("Your details have been updated successfully", "success")
         return redirect(url_for("frontend.candidate_dashboard"))
 

@@ -18,6 +18,7 @@ from app.models.module import Module
 from app.models.sub_module import SubModule
 from app.models.user_permission_override import UserPermissionOverride
 from app.models.candidate_feedback import CandidateFeedback
+from app.models.candidate_trusted_device import CandidateTrustedDevice
 from app.models.organization_feature import OrganizationFeature
 from app.models.platform_settings import PlatformSettings
 from app.models.organization_channel_settings import OrganizationChannelSettings
@@ -53,6 +54,7 @@ __all__ = [
     "SubModule",
     "UserPermissionOverride",
     "CandidateFeedback",
+    "CandidateTrustedDevice",
     "OrganizationFeature",
     "PlatformSettings",
     "OrganizationChannelSettings",

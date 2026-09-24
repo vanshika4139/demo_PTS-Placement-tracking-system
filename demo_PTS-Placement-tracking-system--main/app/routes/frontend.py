@@ -1138,8 +1138,50 @@ def webhook_cashfree():
                 logger.info("webhook_cashfree: invoice %s marked paid", reference_id)
 
     return "", 200
-    return "", 200
 
+@frontend_bp.route("/webhooks/payment/stripe", methods=["POST"])
+def webhook_stripe():
+    """Stripe calls this after a Checkout Session completes. Verifies the
+    signature using the webhook secret configured on the Integrations page,
+    then marks the matching Invoice as paid via the same mark_invoice_paid()
+    a manual "Mark as Paid" click uses - see app/services/payment_gateway.py."""
+    import stripe
+
+    from app.services.payment_gateway import get_payment_gateway_config
+    from app.services.payment_gateway import mark_invoice_paid
+
+    _, _, key_secret, webhook_secret = get_payment_gateway_config()
+    if not webhook_secret:
+        logger.warning("webhook_stripe: received webhook but no webhook secret is configured - ignoring")
+        return "", 400
+
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        logger.warning("webhook_stripe: signature verification failed")
+        return "", 400
+
+    if event["type"] == "checkout.session.completed":
+        session_obj = event["data"]["object"].to_dict()
+        metadata = session_obj.get("metadata") or {}
+        invoice_number = metadata.get("invoice_number")
+        payment_intent = session_obj.get("payment_intent")
+
+        if invoice_number:
+            invoice = Invoice.query.filter_by(invoice_number=invoice_number).first()
+            if invoice and invoice.status != "PAID":
+                mark_invoice_paid(
+                    invoice,
+                    gateway="stripe",
+                    gateway_reference=payment_intent or session_obj.get("id"),
+                    raw_response=str(event),
+                )
+                logger.info("webhook_stripe: invoice %s marked paid", invoice_number)
+
+    return "", 200
 
 @frontend_bp.route("/super-admin/settings/integrations", methods=["GET", "POST"])
 @super_admin_required
@@ -4040,12 +4082,73 @@ def organization_candidate_create():
                 f"We wish you the best for your training and placement journey.\n\n"
                 f"Regards,\nPlacement Tracking Team"
             )
+            welcome_html = f"""\
+<!DOCTYPE html>
+<html>
+<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7; padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden;">
+          <tr>
+            <td style="background-color:#2563eb; padding:24px 32px;">
+              <span style="color:#ffffff; font-size:20px; font-weight:bold;">Placement Tracking System</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <h2 style="margin:0 0 16px 0; color:#111827; font-size:20px;">Welcome, {candidate.full_name}!</h2>
+              <p style="margin:0 0 16px 0; color:#374151; font-size:15px; line-height:22px;">
+                Your registration has been completed successfully. Here are your details:
+              </p>
+              <table role="presentation" width="100%" cellpadding="8" cellspacing="0" style="background-color:#f9fafb; border-radius:6px; margin:0 0 24px 0;">
+                <tr>
+                  <td style="color:#6b7280; font-size:13px; width:160px;">Registration Number</td>
+                  <td style="color:#111827; font-size:14px; font-weight:bold;">{candidate.registration_number or 'Not assigned yet'}</td>
+                </tr>
+                <tr>
+                  <td style="color:#6b7280; font-size:13px;">Training Center</td>
+                  <td style="color:#111827; font-size:14px; font-weight:bold;">{candidate.training_center or 'Not assigned yet'}</td>
+                </tr>
+              </table>
+              <p style="margin:0 0 12px 0; color:#374151; font-size:15px; line-height:22px;">
+                Please set your password to get started (this link is valid for 24 hours):
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td style="border-radius:6px; background-color:#2563eb;">
+                    <a href="{set_password_url}" style="display:inline-block; padding:12px 28px; color:#ffffff; font-size:15px; font-weight:bold; text-decoration:none;">
+                      Set Your Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 24px 0; color:#374151; font-size:15px; line-height:22px;">
+                We wish you the best for your training and placement journey.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px; background-color:#f9fafb; border-top:1px solid #e5e7eb;">
+              <p style="margin:0; color:#9ca3af; font-size:12px;">
+                Regards,<br>Placement Tracking Team
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
             send_email(
                 candidate.email,
                 welcome_subject,
                 welcome_body,
                 organization_id=candidate.organization_id,
                 candidate_id=candidate.id,
+                html_body=welcome_html,
             )
 
         _create_notification(

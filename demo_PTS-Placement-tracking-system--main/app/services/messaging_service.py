@@ -147,7 +147,7 @@ def _normalize_whatsapp_number(raw_number):
     return digits
 
 
-def send_email(to_email, subject, body, organization_id=None, candidate_id=None):
+def send_email(to_email, subject, body, organization_id=None, candidate_id=None, html_body=None):
     """Sends a real email via the configured SMTP server and logs the
     attempt. Returns True if sent, False if it failed (error is logged,
     not raised - callers should not have to wrap this in try/except for
@@ -157,6 +157,10 @@ def send_email(to_email, subject, body, organization_id=None, candidate_id=None)
     EMAIL on/off override (falls back to the platform-wide toggle if not
     set), and passed through to send_notification_email so that
     organization's own SMTP credentials are used if it has any configured.
+
+    html_body (optional): when given, sends a styled HTML version of the
+    email alongside the plain-text `body` fallback. When omitted, sends
+    plain text only - existing callers are unaffected.
 
     Credits: an organization that sends through Codevocado's gateway (i.e.
     it has NOT saved its own SMTP server) uses one email credit from its
@@ -175,7 +179,7 @@ def send_email(to_email, subject, body, organization_id=None, candidate_id=None)
         return False
 
     try:
-        send_notification_email(to_email, subject, body, organization_id=organization_id)
+        send_notification_email(to_email, subject, body, organization_id=organization_id, html_body=html_body)
         _log("email", to_email, "sent", organization_id, candidate_id, subject=subject)
         return True
     except Exception as exc:

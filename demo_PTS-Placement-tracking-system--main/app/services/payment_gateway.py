@@ -158,10 +158,51 @@ def create_payment_link(invoice: Invoice):
         return payment_link.link_url
 
     elif provider == "stripe":
-        raise NotImplementedError(
-            "Fill in with stripe.checkout.Session.create(...) using key_secret as the API key, "
-            "invoice.amount * 100 (cents), and invoice.invoice_number in metadata."
-        )
+        import stripe
+
+        stripe.api_key = key_secret
+
+        # A Checkout Session for this invoice may already exist and still be
+        # open - reuse it instead of creating a duplicate (mirrors the
+        # Razorpay/Cashfree reuse pattern above).
+        if invoice.gateway_reference:
+            try:
+                existing = stripe.checkout.Session.retrieve(invoice.gateway_reference)
+                if existing.status == "open" and existing.url:
+                    return existing.url
+            except Exception:
+                pass  # fetch failed - fall through and create a new one
+
+        from flask import url_for
+
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                mode="payment",
+                payment_method_types=["card"],
+                line_items=[{
+                    "price_data": {
+                        "currency": "inr",
+                        "product_data": {"name": f"Invoice {invoice.invoice_number}"},
+                        "unit_amount": int(round(float(invoice.amount) * 100)),
+                    },
+                    "quantity": 1,
+                }],
+                metadata={
+                    "invoice_id": str(invoice.id),
+                    "invoice_number": invoice.invoice_number,
+                    "organization_id": str(invoice.organization_id),
+                },
+                success_url=url_for("frontend.organization_billing", _external=True),
+                cancel_url=url_for("frontend.organization_billing", _external=True),
+            )
+        except Exception as exc:
+            logger.exception("payment_gateway: Stripe checkout session creation failed for invoice %s", invoice.invoice_number)
+            raise RuntimeError(f"Could not create Stripe checkout session: {exc}") from exc
+
+        invoice.gateway_reference = checkout_session.id
+        invoice.payment_gateway = "stripe"
+        db.session.commit()
+        return checkout_session.url
     else:
         raise RuntimeError(f"Unknown payment gateway provider: {provider!r}")
 

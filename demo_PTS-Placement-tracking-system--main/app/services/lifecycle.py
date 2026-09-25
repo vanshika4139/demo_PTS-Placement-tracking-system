@@ -40,11 +40,19 @@ class CandidateLifecycleService:
     generation goes through FollowUpCheckpoint directly instead of raw SQL.
     frontend.py now calls this class instead of keeping its own separate
     copy of either piece of logic.
+
+    BUG FIX: training_completed -> training_started was blocked entirely,
+    so a staff member who accidentally marked a candidate "Training
+    Completed" too early (or needs to send them back into training after a
+    re-assessment) had no way to correct it from the Edit Candidate page -
+    the save would fail with "Cannot move a candidate from
+    'training_completed' to 'training_started'." That backward move is now
+    allowed, same as any other transition.
     """
 
     VALID_TRANSITIONS = {
         "training_started": {"training_completed", "dropped_out"},
-        "training_completed": {"dropped_out"},
+        "training_completed": {"training_started", "dropped_out"},
         "dropped_out": set(),
     }
 

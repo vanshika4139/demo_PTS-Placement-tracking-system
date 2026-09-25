@@ -297,6 +297,37 @@ def _send_placement_email(candidate):
         pass
 
 
+def _send_certificate_email(candidate):
+    """Emails the placement certificate PDF to the candidate themselves,
+    right after they get placed. Never raises - a failed email should
+    never break the candidate save flow."""
+    from app.utils.email import send_notification_email
+
+    if not candidate.email:
+        return
+
+    try:
+        pdf_bytes = _generate_certificate_pdf_bytes(candidate)
+        subject = "Your Placement Certificate"
+        body = (
+            f"Dear {candidate.full_name},\n\n"
+            f"Congratulations on your placement at {candidate.employer_name}! "
+            f"Please find your placement certificate attached.\n\n"
+            f"Regards,\nPlacement Tracking Team"
+        )
+        send_notification_email(
+            candidate.email,
+            subject,
+            body,
+            organization_id=candidate.organization_id,
+            attachments=[{
+                "data": pdf_bytes,
+                "filename": f"{candidate.full_name.replace(' ', '_')}_certificate.pdf",
+            }],
+        )
+    except Exception:
+        pass
+
 def _log_activity(action, details=None):
     user = session.get("user")
     log = ActivityLog(
@@ -3301,10 +3332,29 @@ def super_admin_activity_log_purge():
 @frontend_bp.route("/super-admin/users")
 @super_admin_required
 def super_admin_users():
+    from app.models import Role, UserRole
+
     users = User.query.filter_by(is_deleted=False).order_by(User.created_at.desc()).all()
     organizations = Organization.query.filter_by(status=1).all()
     org_map = {o.id: o.organization_name for o in organizations}
-    return render_template("super_admin/users/index.html", users=users, org_map=org_map)
+
+    # Build user_id -> RBAC role name map (e.g. "Placement Officer", "HR")
+    # so the Users list can show the actual assigned role instead of just
+    # the generic Super Admin / Org User split.
+    role_rows = (
+        db.session.query(UserRole.user_id, Role.name)
+        .join(Role, Role.id == UserRole.role_id)
+        .filter(UserRole.is_deleted == False)
+        .all()
+    )
+    user_role_map = {user_id: role_name for user_id, role_name in role_rows}
+
+    return render_template(
+        "super_admin/users/index.html",
+        users=users,
+        org_map=org_map,
+        user_role_map=user_role_map,
+    )
 
 
 @frontend_bp.route("/super-admin/users/create", methods=["GET", "POST"])
@@ -4321,6 +4371,7 @@ def organization_candidate_edit(candidate_id):
                 candidate_id=candidate.id,
             )
             _send_placement_email(candidate)
+            _send_certificate_email(candidate)
 
         _log_activity("Updated candidate", f"{candidate.full_name}")
         invalidate_report_cache("reports")
@@ -4630,10 +4681,9 @@ def organization_candidates_export_pdf():
     )
 
 
-@frontend_bp.route("/organization/candidates/<candidate_id>/certificate.pdf")
-@login_required
-@require_permission("candidate.view")
-def organization_candidate_certificate_pdf(candidate_id):
+def _generate_certificate_pdf_bytes(candidate):
+    """Builds the placement certificate PDF and returns raw bytes.
+    Shared by the download route and the auto-email-on-placement flow."""
     from io import BytesIO
     from datetime import datetime
     from reportlab.lib.pagesizes import A4
@@ -4642,16 +4692,6 @@ def organization_candidate_certificate_pdf(candidate_id):
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from flask import send_file
-
-    user = session.get("user")
-    candidate = Candidate.query.get_or_404(candidate_id)
-    if not _can_access_candidate(candidate, user):
-        flash("You do not have permission to view this candidate.", "error")
-        return redirect(url_for("frontend.no_access"))
-    if not candidate.employer_name:
-        flash("This candidate has not been placed yet - certificate not available.", "error")
-        return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate_id))
 
     org_name = "Codevocado Placement Tracking System"
     organization = Organization.query.get(candidate.organization_id)
@@ -4682,14 +4722,31 @@ def organization_candidate_certificate_pdf(candidate_id):
     story.append(Paragraph(candidate.full_name, name_style))
 
     joining_str = candidate.joining_date.strftime("%d %B %Y") if candidate.joining_date else "N/A"
+    program_name = candidate.course or candidate.sector
+
+    if candidate.training_status == "training_completed":
+        training_clause = (
+            f"has successfully completed training under the <b>{program_name or '-'}</b> program "
+            f"and has been placed as "
+        )
+    elif program_name:
+        # Training ongoing/not marked complete, but a program is on file -
+        # mention the program without claiming completion.
+        training_clause = (
+            f"has been enrolled under the <b>{program_name}</b> program "
+            f"and has been placed as "
+        )
+    else:
+        # No training status/program info to reference at all.
+        training_clause = "has been placed as "
+
     body_text = (
         f"Registration No. <b>{candidate.registration_number or '-'}</b>, "
-        f"has successfully completed training under the <b>{candidate.course or candidate.sector or '-'}</b> program "
-        f"and has been placed as <b>{candidate.job_role or 'N/A'}</b> at "
+        f"{training_clause}"
+        f"<b>{candidate.job_role or 'N/A'}</b> at "
         f"<b>{candidate.employer_name}</b>, joining on <b>{joining_str}</b>."
     )
     story.append(Paragraph(body_text, body_style))
-    story.append(Spacer(1, 40))
 
     meta_table = Table(
         [
@@ -4711,11 +4768,31 @@ def organization_candidate_certificate_pdf(candidate_id):
 
     doc.build(story)
     buffer.seek(0)
+    return buffer.getvalue()
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/certificate.pdf")
+@login_required
+@require_permission("candidate.view")
+def organization_candidate_certificate_pdf(candidate_id):
+    from io import BytesIO
+    from flask import send_file
+
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    if not candidate.employer_name:
+        flash("This candidate has not been placed yet - certificate not available.", "error")
+        return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate_id))
+
+    pdf_bytes = _generate_certificate_pdf_bytes(candidate)
 
     _log_activity("Generated placement certificate", candidate.full_name)
 
     return send_file(
-        buffer,
+        BytesIO(pdf_bytes),
         as_attachment=True,
         download_name=f"{candidate.full_name.replace(' ', '_')}_certificate.pdf",
         mimetype="application/pdf",
@@ -5323,6 +5400,7 @@ def candidate_report_placement():
         candidate_id=candidate.id,
     )
     _send_placement_email(candidate)
+    _send_certificate_email(candidate)
 
     flash("Thank you! Your placement details have been saved.", "success")
     return redirect(url_for("frontend.candidate_dashboard"))
@@ -5904,6 +5982,41 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
             migration_breakdown["Within State"] += 1
         else:
             migration_breakdown["Migrated"] += 1
+        # --- Verification-pending status breakdown (SRS FR-17) ---
+    verification_status_breakdown = {}
+    for c in all_candidates:
+        key = c.verification_status or "pending"
+        verification_status_breakdown[key] = verification_status_breakdown.get(key, 0) + 1
+    verification_pending_count = verification_status_breakdown.get("pending", 0)
+
+    # --- Attendance segmentation (SRS FR-17) ---
+    candidate_ids_for_attendance = [c.id for c in all_candidates]
+    attendance_rate_by_candidate = {}
+    if candidate_ids_for_attendance:
+        attendance_rows = Attendance.query.filter(Attendance.candidate_id.in_(candidate_ids_for_attendance)).all()
+        marked_by_candidate = {}
+        present_by_candidate = {}
+        for a in attendance_rows:
+            marked_by_candidate[a.candidate_id] = marked_by_candidate.get(a.candidate_id, 0) + 1
+            if a.status == "present":
+                present_by_candidate[a.candidate_id] = present_by_candidate.get(a.candidate_id, 0) + 1
+        for cid, marked in marked_by_candidate.items():
+            present = present_by_candidate.get(cid, 0)
+            attendance_rate_by_candidate[cid] = round((present / marked * 100), 1) if marked else 0
+
+    attendance_breakdown = {"90-100%": 0, "75-89%": 0, "50-74%": 0, "Below 50%": 0, "No records": 0}
+    for c in all_candidates:
+        rate = attendance_rate_by_candidate.get(c.id)
+        if rate is None:
+            attendance_breakdown["No records"] += 1
+        elif rate >= 90:
+            attendance_breakdown["90-100%"] += 1
+        elif rate >= 75:
+            attendance_breakdown["75-89%"] += 1
+        elif rate >= 50:
+            attendance_breakdown["50-74%"] += 1
+        else:
+            attendance_breakdown["Below 50%"] += 1
 
     return {
         "total": total,
@@ -5928,6 +6041,9 @@ def get_reports_data(is_super_admin, organization_id, created_by_filter=None):
         "district_breakdown": district_breakdown,
         "trainer_breakdown": trainer_breakdown,
         "migration_breakdown": migration_breakdown,
+        "verification_status_breakdown": verification_status_breakdown,
+        "verification_pending_count": verification_pending_count,
+        "attendance_breakdown": attendance_breakdown,
     }
 
 

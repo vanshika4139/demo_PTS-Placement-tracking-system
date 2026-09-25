@@ -156,7 +156,7 @@
           </td>
           <td>
             <span class="sa-pill {{ 'sa-pill-purple' if user.is_super_admin else 'sa-pill-blue' }}">
-              {{ 'Super Admin' if user.is_super_admin else 'Org User' }}
+              {{ 'Super Admin' if user.is_super_admin else (user_role_map.get(user.id, 'Org User')) }}
             </span>
           </td>
           <td>{{ org_map.get(user.organization_id, '-') if user.organization_id else '-' }}</td>

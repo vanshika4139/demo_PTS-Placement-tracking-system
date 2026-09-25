@@ -107,6 +107,20 @@
 </div>
 
 <div class="sa-stats-grid">
+  {% if is_super_admin %}
+  <div class="sa-stat-card" style="--accent:#2563eb;">
+    <h3>Total Candidates</h3><p class="stat-value">{{ total }}</p>
+  </div>
+  <div class="sa-stat-card" style="--accent:#16a34a;">
+    <h3>Placed</h3><p class="stat-value">{{ placed }}</p>
+  </div>
+  <div class="sa-stat-card" style="--accent:#f59e0b;">
+    <h3>Placement Rate</h3><p class="stat-value">{{ placement_rate }}%</p>
+  </div>
+  <div class="sa-stat-card" style="--accent:#8b5cf6;">
+    <h3>Verification Rate</h3><p class="stat-value">{{ verification_rate }}%</p>
+  </div>
+  {% else %}
   <a href="{{ url_for('frontend.organization_candidates') }}" class="sa-stat-card" style="--accent:#2563eb;">
     <h3>Total Candidates</h3><p class="stat-value">{{ total }}</p>
   </a>
@@ -119,6 +133,7 @@
   <a href="{{ url_for('frontend.organization_candidates', verification_status='verified') }}" class="sa-stat-card" style="--accent:#8b5cf6;">
     <h3>Verification Rate</h3><p class="stat-value">{{ verification_rate }}%</p>
   </a>
+  {% endif %}
 </div>
 
 <div class="panel-card">
@@ -128,7 +143,25 @@
     <tbody>
       {% for status, count in training_status_breakdown.items() %}
       <tr>
-        <td><a href="{{ url_for('frontend.organization_candidates', training_status=status) }}">{{ status }}</a></td>
+        <td>{% if is_super_admin %}{{ status }}{% else %}<a href="{{ url_for('frontend.organization_candidates', training_status=status) }}">{{ status }}</a>{% endif %}</td>
+        <td class="sa-report-count">{{ count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3 class="sa-report-section-title">Verification Status Breakdown</h3>
+  <p class="sa-report-section-sub">{{ verification_pending_count }} candidate(s) currently pending verification.</p>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Status</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for status, count in verification_status_breakdown.items() %}
+      <tr>
+        <td>{% if is_super_admin %}{{ status }}{% else %}<a href="{{ url_for('frontend.organization_candidates', verification_status=status) }}">{{ status }}</a>{% endif %}</td>
         <td class="sa-report-count">{{ count }}</td>
       </tr>
       {% else %}
@@ -145,7 +178,7 @@
     <tbody>
       {% for sector, count in sector_breakdown.items() %}
       <tr>
-        <td><a href="{{ url_for('frontend.organization_candidates', sector=sector) }}">{{ sector }}</a></td>
+        <td>{% if is_super_admin %}{{ sector }}{% else %}<a href="{{ url_for('frontend.organization_candidates', sector=sector) }}">{{ sector }}</a>{% endif %}</td>
         <td class="sa-report-count">{{ count }}</td>
         <td>{{ '\u20b9' + '{:,}'.format(sector_avg_salary[sector]) if sector in sector_avg_salary else '-' }}</td>
       </tr>
@@ -163,7 +196,7 @@
     <tbody>
       {% for course, count in course_breakdown.items() %}
       <tr>
-        <td><a href="{{ url_for('frontend.organization_candidates', course=course) }}">{{ course }}</a></td>
+        <td>{% if is_super_admin %}{{ course }}{% else %}<a href="{{ url_for('frontend.organization_candidates', course=course) }}">{{ course }}</a>{% endif %}</td>
         <td class="sa-report-count">{{ count }}</td>
       </tr>
       {% else %}
@@ -208,6 +241,21 @@
     <tbody>
       {% for trainer, count in trainer_breakdown.items() %}
       <tr><td>{{ trainer }}</td><td class="sa-report-count">{{ count }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel-card">
+  <h3 class="sa-report-section-title">Attendance Breakdown</h3>
+  <p class="sa-report-section-sub">Candidates grouped by their overall attendance percentage.</p>
+  <table class="data-table sa-report-table">
+    <thead><tr><th>Attendance Band</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for band, count in attendance_breakdown.items() %}
+      <tr><td>{{ band }}</td><td class="sa-report-count">{{ count }}</td></tr>
       {% else %}
       <tr><td colspan="2">No data yet.</td></tr>
       {% endfor %}

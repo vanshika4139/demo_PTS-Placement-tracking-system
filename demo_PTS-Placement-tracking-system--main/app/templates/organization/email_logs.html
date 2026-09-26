@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Email Logs{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Email Logs</h2>
+    <p>Delivery history for every email your organization has sent.</p>
+  </div>
+</div>
+
+<!-- Summary stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div>Total Emails</div>
+    <div class="stat-value">{{ total_count }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#16a34a;">
+    <div>Sent</div>
+    <div class="stat-value" style="color:#16a34a;">{{ total_sent }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#dc2626;">
+    <div>Failed</div>
+    <div class="stat-value" style="color:#dc2626;">{{ total_failed }}</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="panel-card" style="margin-top:20px;">
+  <form method="get" class="form-grid full-form" style="align-items:end;">
+    <label>
+      Search (email or subject)
+      <input type="text" name="q" value="{{ search_query }}" placeholder="e.g. candidate@example.com">
+    </label>
+    <label>
+      Status
+      <select name="status">
+        <option value="" {% if not status_filter %}selected{% endif %}>All</option>
+        <option value="sent" {% if status_filter == "sent" %}selected{% endif %}>Sent</option>
+        <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Failed</option>
+      </select>
+    </label>
+    <div style="display:flex; align-items:flex-end;">
+      <button type="submit" class="primary-btn" style="width:100%;">Filter</button>
+    </div>
+  </form>
+</div>
+
+<!-- Table -->
+<div class="panel-card" style="margin-top:20px; padding:0;">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date / Time</th>
+          <th>To</th>
+          <th>Subject</th>
+          <th>Related To</th>
+          <th>Attachment</th>
+          <th>Status</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr class="clickable-row" data-href="{{ url_for('frontend.organization_email_log_detail', log_id=log.id) }}">
+          <td style="white-space:nowrap;">{{ log.created_at.strftime('%d-%m-%Y %H:%M') if log.created_at else '-' }}</td>
+          <td>{{ log.to_email }}</td>
+          <td>{{ log.subject or '-' }}</td>
+          <td>
+            {% if log.candidate_id %}
+              Candidate: {{ candidate_name_by_id.get(log.candidate_id, log.candidate_id) }}
+            {% elif log.user_id %}
+              User: {{ user_name_by_id.get(log.user_id, log.user_id) }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if log.has_attachment %}
+              <span class="status-badge status-verified">Yes</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if log.status == "sent" %}
+              <span class="status-badge status-active">Sent</span>
+            {% else %}
+              <span class="status-badge status-suspended">Failed</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.error_message %}
+              <span style="color:#b91c1c; font-size:0.85rem;">
+                {{ log.error_message[:60] }}{% if log.error_message|length > 60 %}...{% endif %}
+              </span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align:center; color:var(--muted); padding:32px;">No email logs found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div style="display:flex; justify-content:center; gap:6px; margin-top:20px; flex-wrap:wrap;">
+  {% for p in range(1, total_pages + 1) %}
+  <a href="{{ url_for('frontend.organization_email_logs', page=p, status=status_filter, q=search_query) }}"
+     class="{{ 'primary-btn' if p == page else 'ghost-btn' }}"
+     style="padding:8px 14px; font-size:0.85rem;">{{ p }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<style>
+  .clickable-row { cursor: pointer; }
+  .clickable-row:hover { background: var(--avocado-pale); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".clickable-row").forEach(function (row) {
+    row.addEventListener("click", function () {
+      window.location.href = row.dataset.href;
+    });
+  });
+</script>
+{% endblock %}

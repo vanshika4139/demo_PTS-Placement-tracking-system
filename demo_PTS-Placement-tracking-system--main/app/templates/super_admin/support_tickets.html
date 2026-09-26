@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Support Tickets{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Support Tickets</h2>
+  <p>Issues raised by organizations and staff through the Help &amp; Support page.</p>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div>Total Tickets</div>
+    <div class="stat-value">{{ total_count }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#b45309;">
+    <div>Open</div>
+    <div class="stat-value" style="color:#b45309;">{{ open_count }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#16a34a;">
+    <div>Resolved</div>
+    <div class="stat-value" style="color:#16a34a;">{{ resolved_count }}</div>
+  </div>
+</div>
+
+<div class="panel-card" style="margin-top:20px;">
+  <form method="get" class="form-grid full-form" style="align-items:end;">
+    <label>
+      Status
+      <select name="status">
+        <option value="" {% if not status_filter %}selected{% endif %}>All</option>
+        <option value="open" {% if status_filter == "open" %}selected{% endif %}>Open</option>
+        <option value="in_progress" {% if status_filter == "in_progress" %}selected{% endif %}>In Progress</option>
+        <option value="resolved" {% if status_filter == "resolved" %}selected{% endif %}>Resolved</option>
+      </select>
+    </label>
+    <div>
+      <button type="submit" class="primary-btn">Filter</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel-card" style="margin-top:20px; padding:0;">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Subject</th>
+          <th>Raised By</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+        <tr class="clickable-row" data-href="{{ url_for('frontend.super_admin_support_ticket_detail', ticket_id=ticket.id) }}">
+          <td style="white-space:nowrap;">{{ ticket.created_at.strftime('%d-%m-%Y %H:%M') if ticket.created_at else '-' }}</td>
+          <td>{{ ticket.subject }}</td>
+          <td>{{ ticket.reporter_name or ticket.reporter_email or '-' }}</td>
+          <td>
+            {% if ticket.status == "open" %}
+              <span class="status-badge status-pending">Open</span>
+            {% elif ticket.status == "in_progress" %}
+              <span class="status-badge status-verified">In Progress</span>
+            {% else %}
+              <span class="status-badge status-active">Resolved</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" style="text-align:center; color:var(--muted); padding:32px;">No support tickets yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .clickable-row { cursor: pointer; }
+  .clickable-row:hover { background: var(--avocado-pale); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".clickable-row").forEach(function (row) {
+    row.addEventListener("click", function () {
+      window.location.href = row.dataset.href;
+    });
+  });
+</script>
+{% endblock %}

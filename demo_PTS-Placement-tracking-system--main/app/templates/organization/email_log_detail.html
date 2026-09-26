@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Email Log Detail{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Email Log Detail</h2>
+    <p>Full record of this email attempt.</p>
+  </div>
+  <a href="{{ url_for('frontend.super_admin_email_logs') }}" class="ghost-btn">&larr; Back to Email Logs</a>
+</div>
+
+<div class="panel-card" style="max-width:760px;">
+  <table class="data-table" style="width:100%;">
+    <tbody>
+      <tr>
+        <td style="width:200px; color:var(--muted); font-weight:600;">Date / Time</td>
+        <td>{{ log.created_at.strftime('%d %B %Y, %I:%M %p') if log.created_at else '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Status</td>
+        <td>
+          {% if log.status == "sent" %}
+            <span class="status-badge status-active">Sent</span>
+          {% else %}
+            <span class="status-badge status-suspended">Failed</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">To</td>
+        <td>{{ log.to_email }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Subject</td>
+        <td>{{ log.subject or '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Organization</td>
+        <td>{{ org_name or '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Related Candidate</td>
+        <td>{{ candidate_name or '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Related User</td>
+        <td>{{ user_name or '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Attachment</td>
+        <td>
+          {% if log.has_attachment %}
+            <span class="status-badge status-verified">Yes</span>
+          {% else %}
+            No
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600; vertical-align:top;">Error Message</td>
+        <td>
+          {% if log.error_message %}
+            <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-family:inherit; color:#b91c1c;">{{ log.error_message }}</pre>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Log ID</td>
+        <td style="font-family:monospace; font-size:0.85rem; color:var(--muted);">{{ log.id }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

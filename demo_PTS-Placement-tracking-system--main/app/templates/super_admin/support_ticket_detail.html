@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Ticket Detail{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Support Ticket</h2>
+    <p>{{ ticket.subject }}</p>
+  </div>
+  <a href="{{ url_for('frontend.super_admin_support_tickets') }}" class="ghost-btn">&larr; Back to Tickets</a>
+</div>
+
+<div class="panel-card" style="max-width:760px;">
+  <table class="data-table" style="width:100%; margin-bottom:20px;">
+    <tbody>
+      <tr>
+        <td style="width:180px; color:var(--muted); font-weight:600;">Raised By</td>
+        <td>{{ ticket.reporter_name or '-' }} ({{ ticket.reporter_email or '-' }})</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Organization</td>
+        <td>{{ org_name or '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Date</td>
+        <td>{{ ticket.created_at.strftime('%d %B %Y, %I:%M %p') if ticket.created_at else '-' }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600;">Status</td>
+        <td>
+          {% if ticket.status == "open" %}
+            <span class="status-badge status-pending">Open</span>
+          {% elif ticket.status == "in_progress" %}
+            <span class="status-badge status-verified">In Progress</span>
+          {% else %}
+            <span class="status-badge status-active">Resolved</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--muted); font-weight:600; vertical-align:top;">Message</td>
+        <td>
+          <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-family:inherit;">{{ ticket.message }}</pre>
+        </td>
+      </tr>
+      {% if ticket.admin_reply %}
+      <tr>
+        <td style="color:var(--muted); font-weight:600; vertical-align:top;">Previous Reply</td>
+        <td>
+          <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-family:inherit; color:var(--avocado-dark);">{{ ticket.admin_reply }}</pre>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('frontend.super_admin_respond_support_ticket', ticket_id=ticket.id) }}" class="full-form">
+    <label>
+      Reply to this ticket
+      <textarea name="admin_reply" rows="4" placeholder="Type your response - it will be emailed to the reporter"></textarea>
+    </label>
+    <div class="form-actions" style="align-items:end; gap:16px;">
+      <label style="flex:1;">
+        Status
+        <select name="status">
+          <option value="open" {% if ticket.status == "open" %}selected{% endif %}>Open</option>
+          <option value="in_progress" {% if ticket.status == "in_progress" %}selected{% endif %}>In Progress</option>
+          <option value="resolved" {% if ticket.status == "resolved" %}selected{% endif %}>Resolved</option>
+        </select>
+      </label>
+      <button type="submit" class="primary-btn">Save</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

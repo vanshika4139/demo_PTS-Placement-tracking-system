@@ -32,6 +32,7 @@ from app.models.feature_flag_default import FeatureFlagDefault
 from app.models.user_session import UserSession
 from app.models.attendance import Attendance
 from app.models.email_log import EmailLog
+from app.models.support_ticket import SupportTicket
 
 __all__ = [
     "Candidate",

@@ -29,4 +29,24 @@
   <h3>Need More Help?</h3>
   <p>Contact your system administrator or reach out to the Codevocado internal support team.</p>
 </div>
+
+<div class="panel-card">
+  <h3>Report an Issue</h3>
+  <p style="color:var(--muted);">
+    Can't find what you need above? Send us a message and our team will get back to you.
+  </p>
+  <form method="post" action="{{ url_for('frontend.submit_support_ticket') }}" class="form-grid full-form">
+    <label style="grid-column: 1 / -1;">
+      Subject
+      <input type="text" name="subject" required placeholder="e.g. Certificate download not working">
+    </label>
+    <label style="grid-column: 1 / -1;">
+      Message
+      <textarea name="message" required rows="4" placeholder="Describe the issue in a bit of detail..."></textarea>
+    </label>
+    <div>
+      <button type="submit" class="primary-btn">Submit Ticket</button>
+    </div>
+  </form>
+</div>
 {% endblock %}

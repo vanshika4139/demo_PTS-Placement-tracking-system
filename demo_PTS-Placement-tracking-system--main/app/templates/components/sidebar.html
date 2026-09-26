@@ -62,6 +62,8 @@
     <li><a href="/super-admin/rate-limit-monitor">Rate Limit Monitor</a></li>
     <li><a href="/super-admin/system-health">System Health</a></li>
     <li><a href="/super-admin/settings/integrations">Integrations</a></li>
+    <li><a href="/super-admin/email-logs">Email Logs</a></li>
+    <li><a href="/super-admin/support-tickets">Support Tickets</a></li>
     <li><a href="/super-admin/announcements">Announcements</a></li>
     <li><a href="/super-admin/feature-flags">Feature Flags</a></li>
     <li><a href="/super-admin/active-sessions">Active Sessions</a></li>
@@ -74,6 +76,7 @@
     {% endif %}
     {% if not session.user.is_super_admin and has_permission(session.user, 'channel.manage') %}
     <li><a href="/organization/settings/channels">Channels</a></li>
+    <li><a href="/organization/email-logs">Email Logs</a></li>
     {% endif %}
     {% if not session.user.is_super_admin and has_permission(session.user, 'billing.manage') %}
     <li><a href="/organization/billing">Plan &amp; Billing</a></li>

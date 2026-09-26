@@ -4730,14 +4730,14 @@ def _generate_certificate_pdf_bytes(candidate):
             f"and has been placed as "
         )
     elif program_name:
-        # Training ongoing/not marked complete, but a program is on file -
-        # mention the program without claiming completion.
+    # Training ongoing/not marked complete, but a program is on file -
+    # mention the program without claiming completion.
         training_clause = (
             f"has been enrolled under the <b>{program_name}</b> program "
             f"and has been placed as "
         )
     else:
-        # No training status/program info to reference at all.
+    # No training status/program info to reference at all.
         training_clause = "has been placed as "
 
     body_text = (
@@ -4747,6 +4747,7 @@ def _generate_certificate_pdf_bytes(candidate):
         f"<b>{candidate.employer_name}</b>, joining on <b>{joining_str}</b>."
     )
     story.append(Paragraph(body_text, body_style))
+    story.append(Spacer(1, 40))
 
     meta_table = Table(
         [
@@ -7467,3 +7468,422 @@ def organization_billing_contact():
 
     flash("Thanks! Our team will contact you shortly.", "success")
     return redirect(url_for("frontend.organization_billing"))
+# =============================================================================
+# ADD THESE TWO ROUTES to app/routes/frontend.py
+#
+# Where to paste: anywhere inside frontend_bp routes - a good spot is right
+# after the existing "/super-admin/integrations" route (super admin one) and
+# right after "/organization/settings/channels" route (organization one),
+# since both deal with the same Email/WhatsApp/SMS area.
+#
+# No new imports needed at the top of frontend.py - EmailLog is imported
+# locally inside each route below, same pattern already used elsewhere in
+# this file (e.g. "from app.models import Role, UserRole" inside routes).
+# =============================================================================
+
+
+@frontend_bp.route("/super-admin/email-logs")
+@super_admin_required
+def super_admin_email_logs():
+    """Platform-wide email log viewer (SRS: 'Email logs ko dashboard/UI
+    mein dikhana'). Shows every email attempt across every organization -
+    welcome emails, OTPs, placement notifications, certificates, security
+    alerts - written by _log_email() in app/utils/email.py."""
+    from app.models.email_log import EmailLog
+
+    page = _parse_int(request.args.get("page")) or 1
+    per_page = 50
+    status_filter = (request.args.get("status") or "").strip()
+    search_query = (request.args.get("q") or "").strip()
+    organization_filter = _parse_int(request.args.get("organization_id"))
+
+    query = EmailLog.query.order_by(EmailLog.created_at.desc())
+
+    if status_filter in ("sent", "failed"):
+        query = query.filter_by(status=status_filter)
+
+    if search_query:
+        query = query.filter(
+            (EmailLog.to_email.ilike(f"%{search_query}%"))
+            | (EmailLog.subject.ilike(f"%{search_query}%"))
+        )
+
+    if organization_filter:
+        query = query.filter(EmailLog.organization_id == str(organization_filter))
+
+    total_count = query.count()
+    logs = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    # Summary counts - unaffected by pagination, so they always reflect the
+    # totals for the current status/search/organization filter combination.
+    summary_base = EmailLog.query
+    if search_query:
+        summary_base = summary_base.filter(
+            (EmailLog.to_email.ilike(f"%{search_query}%"))
+            | (EmailLog.subject.ilike(f"%{search_query}%"))
+        )
+    if organization_filter:
+        summary_base = summary_base.filter(EmailLog.organization_id == str(organization_filter))
+    total_sent = summary_base.filter(EmailLog.status == "sent").count()
+    total_failed = summary_base.filter(EmailLog.status == "failed").count()
+
+    # Resolve organization_id (stored as string) -> organization name, for
+    # display and for the filter dropdown.
+    org_ids_on_page = {l.organization_id for l in logs if l.organization_id}
+    org_name_by_id = {}
+    if org_ids_on_page:
+        int_ids = [int(i) for i in org_ids_on_page if str(i).isdigit()]
+        if int_ids:
+            org_name_by_id = {
+                str(o.id): o.organization_name
+                for o in Organization.query.filter(Organization.id.in_(int_ids)).all()
+            }
+
+    all_organizations = Organization.query.filter_by(is_deleted=False).order_by(Organization.organization_name).all()
+
+    # Resolve candidate_id / user_id -> display name, so the table doesn't
+    # just show raw ids.
+    candidate_ids = {l.candidate_id for l in logs if l.candidate_id}
+    candidate_name_by_id = {
+        c.id: c.full_name for c in Candidate.query.filter(Candidate.id.in_(candidate_ids)).all()
+    } if candidate_ids else {}
+
+    user_ids = {l.user_id for l in logs if l.user_id}
+    user_name_by_id = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(user_ids)).all()
+    } if user_ids else {}
+
+    total_pages = (total_count + per_page - 1) // per_page
+
+    return render_template(
+        "super_admin/email_logs.html",
+        logs=logs,
+        status_filter=status_filter,
+        search_query=search_query,
+        organization_filter=organization_filter,
+        all_organizations=all_organizations,
+        org_name_by_id=org_name_by_id,
+        candidate_name_by_id=candidate_name_by_id,
+        user_name_by_id=user_name_by_id,
+        total_sent=total_sent,
+        total_failed=total_failed,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+    )
+
+
+@frontend_bp.route("/organization/email-logs")
+@login_required
+@require_permission("channel.manage")
+def organization_email_logs():
+    """Organization-scoped email log viewer - same idea as the super admin
+    page above, but limited to this organization's own emails only. Reuses
+    "channel.manage" (Configure this organization's own Email/WhatsApp/SMS
+    gateways) since anyone who can configure the channel is the natural
+    audience for seeing what it actually sent."""
+    from app.models.email_log import EmailLog
+
+    org_id = session["user"]["organization_id"]
+
+    page = _parse_int(request.args.get("page")) or 1
+    per_page = 50
+    status_filter = (request.args.get("status") or "").strip()
+    search_query = (request.args.get("q") or "").strip()
+
+    query = EmailLog.query.filter_by(organization_id=str(org_id)).order_by(EmailLog.created_at.desc())
+
+    if status_filter in ("sent", "failed"):
+        query = query.filter_by(status=status_filter)
+
+    if search_query:
+        query = query.filter(
+            (EmailLog.to_email.ilike(f"%{search_query}%"))
+            | (EmailLog.subject.ilike(f"%{search_query}%"))
+        )
+
+    total_count = query.count()
+    logs = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    summary_base = EmailLog.query.filter_by(organization_id=str(org_id))
+    if search_query:
+        summary_base = summary_base.filter(
+            (EmailLog.to_email.ilike(f"%{search_query}%"))
+            | (EmailLog.subject.ilike(f"%{search_query}%"))
+        )
+    total_sent = summary_base.filter(EmailLog.status == "sent").count()
+    total_failed = summary_base.filter(EmailLog.status == "failed").count()
+
+    candidate_ids = {l.candidate_id for l in logs if l.candidate_id}
+    candidate_name_by_id = {
+        c.id: c.full_name for c in Candidate.query.filter(Candidate.id.in_(candidate_ids)).all()
+    } if candidate_ids else {}
+
+    user_ids = {l.user_id for l in logs if l.user_id}
+    user_name_by_id = {
+        u.id: u.full_name for u in User.query.filter(User.id.in_(user_ids)).all()
+    } if user_ids else {}
+
+    total_pages = (total_count + per_page - 1) // per_page
+
+    return render_template(
+        "organization/email_logs.html",
+        logs=logs,
+        status_filter=status_filter,
+        search_query=search_query,
+        candidate_name_by_id=candidate_name_by_id,
+        user_name_by_id=user_name_by_id,
+        total_sent=total_sent,
+        total_failed=total_failed,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+    )
+# =============================================================================
+# ADD THESE ROUTES to app/routes/frontend.py
+#
+# Where to paste: right after the existing "super_admin_email_logs" and
+# "organization_email_logs" routes you already added, since these three new
+# routes extend the same feature (detail view + cleanup).
+#
+# No new top-level imports needed - "from datetime import datetime, timedelta"
+# is already imported at the top of frontend.py, and "db" is imported the
+# same local way EmailLog already is (matches the existing pattern in this
+# file, e.g. "from app.extensions import db" inside routes that need it).
+# =============================================================================
+
+
+@frontend_bp.route("/super-admin/email-logs/<log_id>")
+@super_admin_required
+def super_admin_email_log_detail(log_id):
+    """Read-only detail view for a single email log - full untruncated
+    error message, and the organization/candidate/user it relates to."""
+    from app.models.email_log import EmailLog
+
+    log = EmailLog.query.get_or_404(log_id)
+
+    org_name = None
+    if log.organization_id and str(log.organization_id).isdigit():
+        org = Organization.query.get(int(log.organization_id))
+        org_name = org.organization_name if org else None
+
+    candidate_name = None
+    if log.candidate_id:
+        candidate = Candidate.query.get(log.candidate_id)
+        candidate_name = candidate.full_name if candidate else None
+
+    user_name = None
+    if log.user_id:
+        user = User.query.get(log.user_id)
+        user_name = user.full_name if user else None
+
+    return render_template(
+        "super_admin/email_log_detail.html",
+        log=log,
+        org_name=org_name,
+        candidate_name=candidate_name,
+        user_name=user_name,
+    )
+
+
+@frontend_bp.route("/organization/email-logs/<log_id>")
+@login_required
+@require_permission("channel.manage")
+def organization_email_log_detail(log_id):
+    """Same detail view as above, but scoped to the current organization -
+    a log belonging to another organization returns 404 rather than leaking
+    its contents."""
+    from app.models.email_log import EmailLog
+
+    org_id = session["user"]["organization_id"]
+    log = EmailLog.query.get_or_404(log_id)
+
+    if log.organization_id != str(org_id):
+        from flask import abort
+        abort(404)
+
+    candidate_name = None
+    if log.candidate_id:
+        candidate = Candidate.query.get(log.candidate_id)
+        candidate_name = candidate.full_name if candidate else None
+
+    user_name = None
+    if log.user_id:
+        user = User.query.get(log.user_id)
+        user_name = user.full_name if user else None
+
+    return render_template(
+        "organization/email_log_detail.html",
+        log=log,
+        candidate_name=candidate_name,
+        user_name=user_name,
+    )
+
+
+@frontend_bp.route("/super-admin/email-logs/clear-old", methods=["POST"])
+@super_admin_required
+def super_admin_clear_old_email_logs():
+    """Bulk-delete email logs older than N days (default 90). Deliberately
+    bulk/retention-based rather than per-row delete, so a single failed
+    email can't be quietly deleted while it's still relevant for debugging."""
+    from app.extensions import db
+    from app.models.email_log import EmailLog
+
+    days = _parse_int(request.form.get("days")) or 90
+    if days < 7:
+        days = 7  # safety floor - avoid accidentally wiping recent logs
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted_count = EmailLog.query.filter(EmailLog.created_at < cutoff).delete(synchronize_session=False)
+    db.session.commit()
+
+    flash(f"Deleted {deleted_count} email log(s) older than {days} days.", "success")
+    return redirect(url_for("frontend.super_admin_email_logs"))
+# =============================================================================
+# ADD THESE ROUTES to app/routes/frontend.py
+#
+# Where to paste: anywhere near the existing "/help" route (search for
+# "def help" or "@frontend_bp.route(\"/help\")" in the file) - these routes
+# extend that same page. If you can't find an existing "/help" route,
+# paste this whole block at the end of the file, same as the email-logs
+# routes were added.
+#
+# No new top-level imports needed - datetime, request, flash, redirect,
+# render_template, session, url_for are already imported at the top of
+# frontend.py, matching the pattern already used by the email-logs routes.
+# =============================================================================
+
+
+@frontend_bp.route("/help/support-ticket", methods=["POST"])
+@login_required
+def submit_support_ticket():
+    """Called from the form on the /help page. Any logged-in user (org
+    admin, staff, etc.) can raise a ticket - it gets saved and every
+    super admin is emailed so nothing sits unseen."""
+    from app.extensions import db
+    from app.models.support_ticket import SupportTicket
+    from app.utils.email import send_notification_email
+
+    subject = (request.form.get("subject") or "").strip()
+    message = (request.form.get("message") or "").strip()
+
+    if not subject or not message:
+        flash("Please fill in both a subject and a message.", "error")
+        return redirect(url_for("frontend.help_page"))  # rename to match your
+                                                          # actual /help view
+                                                          # function name
+
+    user = session.get("user", {})
+    ticket = SupportTicket(
+        subject=subject,
+        message=message,
+        reporter_name=user.get("full_name"),
+        reporter_email=user.get("email"),
+        organization_id=str(user.get("organization_id")) if user.get("organization_id") else None,
+        user_id=user.get("id"),
+    )
+    db.session.add(ticket)
+    db.session.commit()
+
+    # Notify every super admin by email - failure to send should never block
+    # ticket creation, so this is wrapped defensively.
+    try:
+        super_admins = User.query.filter_by(is_super_admin=True).all()
+        for admin in super_admins:
+                send_notification_email(
+        to_email=admin.email,
+        subject=f"New Support Ticket: {subject}",
+        body=(
+                    f"{ticket.reporter_name or 'A user'} ({ticket.reporter_email or '-'}) "
+                    f"raised a support ticket:\n\n{message}\n\n"
+                    f"View it at /super-admin/support-tickets/{ticket.id}"
+                ),
+            )
+    except Exception:
+        logging.exception("Failed to send support ticket notification email")
+
+    flash("Your issue has been submitted. Our team will get back to you.", "success")
+    return redirect(url_for("frontend.help_page"))
+
+
+@frontend_bp.route("/super-admin/support-tickets")
+@super_admin_required
+def super_admin_support_tickets():
+    """List of every support ticket, newest first, filterable by status."""
+    from app.models.support_ticket import SupportTicket
+
+    status_filter = (request.args.get("status") or "").strip()
+    query = SupportTicket.query.order_by(SupportTicket.created_at.desc())
+    if status_filter in ("open", "in_progress", "resolved"):
+        query = query.filter_by(status=status_filter)
+
+    tickets = query.all()
+    open_count = SupportTicket.query.filter_by(status="open").count()
+    resolved_count = SupportTicket.query.filter_by(status="resolved").count()
+
+    return render_template(
+        "super_admin/support_tickets.html",
+        tickets=tickets,
+        status_filter=status_filter,
+        open_count=open_count,
+        resolved_count=resolved_count,
+        total_count=SupportTicket.query.count(),
+    )
+
+
+@frontend_bp.route("/super-admin/support-tickets/<ticket_id>")
+@super_admin_required
+def super_admin_support_ticket_detail(ticket_id):
+    """Detail view for one ticket - shows the full message and lets the
+    super admin write a reply and change its status."""
+    from app.models.support_ticket import SupportTicket
+
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+
+    org_name = None
+    if ticket.organization_id and str(ticket.organization_id).isdigit():
+        org = Organization.query.get(int(ticket.organization_id))
+        org_name = org.organization_name if org else None
+
+    return render_template(
+        "super_admin/support_ticket_detail.html",
+        ticket=ticket,
+        org_name=org_name,
+    )
+
+
+@frontend_bp.route("/super-admin/support-tickets/<ticket_id>/respond", methods=["POST"])
+@super_admin_required
+def super_admin_respond_support_ticket(ticket_id):
+    """Save the super admin's reply and update the ticket's status. Also
+    emails the reporter their reply, if we have their email on file."""
+    from app.extensions import db
+    from app.models.support_ticket import SupportTicket
+    from app.utils.email import send_notification_email
+
+    ticket = SupportTicket.query.get_or_404(ticket_id)
+
+    reply = (request.form.get("admin_reply") or "").strip()
+    new_status = request.form.get("status") or ticket.status
+
+    if reply:
+        ticket.admin_reply = reply
+    if new_status in ("open", "in_progress", "resolved"):
+        ticket.status = new_status
+        if new_status == "resolved":
+            ticket.resolved_at = datetime.utcnow()
+
+    db.session.commit()
+
+    if reply and ticket.reporter_email:
+        try:
+            send_notification_email(
+                to_email=ticket.reporter_email,
+                subject=f"Re: {ticket.subject}",
+                body=reply,
+            )
+        except Exception:
+            logging.exception("Failed to email support ticket reply to reporter")
+
+    flash("Ticket updated.", "success")
+    return redirect(url_for("frontend.super_admin_support_ticket_detail", ticket_id=ticket.id))

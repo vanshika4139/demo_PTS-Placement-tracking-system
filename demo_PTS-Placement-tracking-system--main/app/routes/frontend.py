@@ -4270,6 +4270,7 @@ def organization_candidate_edit(candidate_id):
 
     if request.method == "POST":
         was_placed = bool(candidate.employer_name)
+        old_email = (candidate.email or "").strip()
 
         new_mobile = (request.form.get("mobile") or "").strip()
         new_email = (request.form.get("email") or "").strip()
@@ -4394,6 +4395,27 @@ def organization_candidate_edit(candidate_id):
             )
             _send_placement_email(candidate)
             _send_certificate_email(candidate)
+
+        new_email_saved = (candidate.email or "").strip()
+        if old_email and new_email_saved and old_email.lower() != new_email_saved.lower():
+            from app.services.messaging_service import send_email
+            try:
+                send_email(
+                    old_email,
+                    "Your email address was changed",
+                    f"Hello {candidate.full_name},\n\nThe email address on your placement profile was changed from {old_email} to {new_email_saved}. If you did not request this change, please contact your organization.\n\nRegards,\nPlacement Tracking Team",
+                    organization_id=candidate.organization_id,
+                    candidate_id=candidate.id,
+                )
+                send_email(
+                    new_email_saved,
+                    "Your email address was updated",
+                    f"Hello {candidate.full_name},\n\nThis email address is now linked to your placement profile.\n\nRegards,\nPlacement Tracking Team",
+                    organization_id=candidate.organization_id,
+                    candidate_id=candidate.id,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to send email-change notification")
 
         _log_activity("Updated candidate", f"{candidate.full_name}")
         invalidate_report_cache("reports")
@@ -5854,10 +5876,7 @@ def _email_delivered_count():
     (OTP, placement, certificate...) is in EmailLog, so count from there and
     add any campaign emails recorded in CommunicationLog."""
     from app.models.email_log import EmailLog
-    return (
-        EmailLog.query.filter_by(status="sent").count()
-        + CommunicationLog.query.filter_by(channel="email", status="sent").count()
-    )
+    return EmailLog.query.filter_by(status="sent").count()
 
 
 @frontend_bp.route("/reports")

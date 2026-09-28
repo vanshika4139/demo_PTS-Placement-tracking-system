@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block title %}{{ 'Edit User' if user else 'Add User' }}{% endblock %}
 
 {% block content %}
@@ -21,7 +21,7 @@
 
       <label>
         Email
-        <input type="email" name="email" value="{{ user.email if user else '' }}" {% if user %}readonly{% else %}required{% endif %}>
+        <input type="email" name="email" value="{{ user.email if user else '' }}" required>
       </label>
 
       <label>

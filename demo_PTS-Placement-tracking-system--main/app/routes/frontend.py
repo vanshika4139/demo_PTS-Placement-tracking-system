@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import logging
 import os
 import random
@@ -786,7 +786,7 @@ def get_super_admin_dashboard_data():
                 {"title": "Total Calls Made", "value": str(CommunicationLog.query.filter_by(channel="voice_call").count()), "link": None, "accent": "#8b5cf6"},
                 {"title": "WhatsApp Delivered", "value": str(CommunicationLog.query.filter_by(channel="whatsapp", status="sent").count()), "link": None, "accent": "#06b6d4"},
                 {"title": "SMS Delivered", "value": str(CommunicationLog.query.filter_by(channel="sms", status="sent").count()), "link": None, "accent": "#f59e0b"},
-                {"title": "Email Delivered", "value": str(CommunicationLog.query.filter_by(channel="email", status="sent").count()), "link": None, "accent": "#ef4444"},
+                {"title": "Email Delivered", "value": str(_email_delivered_count()), "link": url_for("frontend.super_admin_email_logs"), "accent": "#ef4444"},
             ],
         },
     ]
@@ -1622,7 +1622,6 @@ def super_admin_run_notification_schedules():
         "success",
     )
     return redirect(url_for("frontend.super_admin_integrations"))
-    return redirect(url_for("frontend.super_admin_integrations"))
 
 
 @frontend_bp.route("/super-admin/cache-monitor/clear", methods=["POST"])
@@ -2072,12 +2071,22 @@ def super_admin_organization_channel_settings(organization_id):
                 "sms_api_key": request.form.get("sms_api_key", "").strip() or settings.sms_api_key,
                 "sms_sender_id": request.form.get("sms_sender_id", "").strip(),
                 "sms_enabled": _toggle_value("sms_enabled"),
+
+                "voice_provider": request.form.get("voice_provider", "").strip(),
+                "voice_api_key": request.form.get("voice_api_key", "").strip() or settings.voice_api_key,
+                "voice_caller_id": request.form.get("voice_caller_id", "").strip(),
+                "voice_call_enabled": _toggle_value("voice_call_enabled"),
+
+                "push_provider": request.form.get("push_provider", "").strip(),
+                "push_server_key": request.form.get("push_server_key", "").strip() or settings.push_server_key,
+                "push_sender_id": request.form.get("push_sender_id", "").strip(),
+                "push_enabled": _toggle_value("push_enabled"),
             },
             actor_id=actor.get("id"),
         )
         _log_activity(
             "organization.channel_settings_updated",
-            f"Updated channel settings (Email / WhatsApp / SMS) for {organization.organization_name}",
+            f"Updated channel settings (Email / WhatsApp / SMS / Voice / Push) for {organization.organization_name}",
         )
         flash("Channel settings saved.", "success")
         return redirect(url_for("frontend.super_admin_organization_channel_settings", organization_id=organization_id))
@@ -3408,7 +3417,7 @@ def super_admin_create_user():
         # will hit /no-access the moment they try to do anything - require a
         # role up front so nobody gets created in that dead-end state.
         if role != "super_admin" and not rbac_role_id:
-            flash("Please select a role (Trainer, Recruiter, etc.) for this user.", "error")
+            flash("Please select a role (Organization Admin, Placement Officer, HR, Trainer or Call Center Executive) for this user.", "error")
             return render_template("super_admin/users/form.html", user=None, organizations=organizations, roles=roles)
 
         # A role that belongs to one organization can only be given to users of that
@@ -3476,6 +3485,19 @@ def super_admin_edit_user(user_id):
                 flash("This username is already taken. Please choose another.", "error")
             return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
 
+        new_email = (request.form.get("email") or "").strip().lower()
+        if new_email and new_email != user.email:
+            existing_email = User.query.filter(
+                User.email == new_email, User.id != user.id
+            ).first()
+            if existing_email:
+                if existing_email.is_deleted:
+                    flash("This email belongs to a previously deleted account and can't be reused.", "error")
+                else:
+                    flash("A user with this email already exists.", "error")
+                return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
+            user.email = new_email
+
         role = request.form.get("role")
         organization_id = request.form.get("organization_id") or None
         rbac_role_id = request.form.get("rbac_role_id") or None
@@ -3483,7 +3505,7 @@ def super_admin_edit_user(user_id):
         # Same dead-end-prevention as create: a non-super-admin with no RBAC
         # role has zero permissions and lands on /no-access for everything.
         if role != "super_admin" and not rbac_role_id:
-            flash("Please select a role (Trainer, Recruiter, etc.) for this user.", "error")
+            flash("Please select a role (Organization Admin, Placement Officer, HR, Trainer or Call Center Executive) for this user.", "error")
             return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
 
         # A role that belongs to one organization can only be given to users of that
@@ -5827,6 +5849,17 @@ def organization_attendance_report():
     )
 
 
+def _email_delivered_count():
+    """Dashboard 'Email Delivered' card (SRS FR-02): every email the app sent
+    (OTP, placement, certificate...) is in EmailLog, so count from there and
+    add any campaign emails recorded in CommunicationLog."""
+    from app.models.email_log import EmailLog
+    return (
+        EmailLog.query.filter_by(status="sent").count()
+        + CommunicationLog.query.filter_by(channel="email", status="sent").count()
+    )
+
+
 @frontend_bp.route("/reports")
 @login_required
 @require_permission("report.view")
@@ -6064,20 +6097,38 @@ def reports_export():
     candidates = query.all()
 
     export_format = request.args.get("format", "csv").strip().lower()
+    # SRS FR-17/FR-18: include Organization, Course, Attendance % and Dropout
+    # so the export carries every report segment.
+    org_names = {o.id: o.organization_name for o in Organization.query.all()}
+    attendance_pct = {}
+    cand_ids = [c.id for c in candidates]
+    if cand_ids:
+        marked, present = {}, {}
+        for a in Attendance.query.filter(Attendance.candidate_id.in_(cand_ids)).all():
+            marked[a.candidate_id] = marked.get(a.candidate_id, 0) + 1
+            if a.status == "present":
+                present[a.candidate_id] = present.get(a.candidate_id, 0) + 1
+        for cid, m in marked.items():
+            attendance_pct[cid] = round(present.get(cid, 0) / m * 100, 1) if m else 0
+
     headers = [
-        "Registration No", "Full Name", "State", "District", "Trainer",
-        "Sector", "Training Status", "Verification Status",
+        "Registration No", "Full Name", "Organization", "State", "District", "Trainer",
+        "Course", "Sector", "Training Status", "Dropout", "Attendance %", "Verification Status",
         "Employer", "Job Location", "Salary", "Joining Date",
     ]
     rows = [
         [
             c.registration_number or "",
             c.full_name or "",
+            org_names.get(c.organization_id, ""),
             c.state or "",
             c.district or "",
             c.trainer or "",
+            c.course or "",
             c.sector or "",
             c.training_status or "",
+            "Yes" if c.training_status == "dropped_out" else "No",
+            attendance_pct.get(c.id, ""),
             c.verification_status or "",
             c.employer_name or "",
             c.location or "",
@@ -7093,6 +7144,9 @@ ORG_CHANNEL_FIELDS = {
     "email": {"text": ("smtp_host", "smtp_port", "smtp_username"), "secret": ("smtp_password",), "toggle": "email_enabled"},
     "whatsapp": {"text": ("whatsapp_phone_number_id",), "secret": ("whatsapp_api_key",), "toggle": "whatsapp_enabled"},
     "sms": {"text": ("sms_sender_id",), "secret": ("sms_api_key",), "toggle": "sms_enabled"},
+    # SRS FR-14: Voice Call and Push are also configurable at organization level.
+    "voice": {"text": ("voice_provider", "voice_caller_id"), "secret": ("voice_api_key",), "toggle": "voice_call_enabled"},
+    "push": {"text": ("push_provider", "push_sender_id"), "secret": ("push_server_key",), "toggle": "push_enabled"},
 }
 
 
@@ -7169,7 +7223,7 @@ def organization_channel_settings():
             _log_activity("organization.channel_settings_reset", f"[Org {org_id}] {reset_channel} back to platform gateway")
             flash(f"{reset_channel.title()} is back on Codevocado's gateway.", "success")
         else:
-            _log_activity("organization.channel_settings_updated", f"[Org {org_id}] Updated Email / WhatsApp / SMS settings")
+            _log_activity("organization.channel_settings_updated", f"[Org {org_id}] Updated Email / WhatsApp / SMS / Voice / Push settings")
             flash("Channel settings saved.", "success")
         return redirect(url_for("frontend.organization_channel_settings"))
 
@@ -7178,6 +7232,8 @@ def organization_channel_settings():
         "email": bool(getattr(platform, "email_enabled", False)),
         "whatsapp": bool(getattr(platform, "whatsapp_enabled", False)),
         "sms": bool(getattr(platform, "sms_enabled", False)),
+        "voice": bool(getattr(platform, "voice_call_enabled", False)),
+        "push": bool(getattr(platform, "push_enabled", False)),
     }
     # Only whether a secret is saved - never the secret itself.
     has_secret = {

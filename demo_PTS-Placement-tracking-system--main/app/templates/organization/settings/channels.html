@@ -29,7 +29,7 @@
 
 <div class="page-header">
   <h2>Channel settings</h2>
-  <p>Choose how your organization sends email, WhatsApp and SMS messages.</p>
+  <p>Choose how your organization sends email, WhatsApp, SMS, voice call and push messages.</p>
 </div>
 
 <div class="panel-card">
@@ -112,6 +112,52 @@
       <button type="submit" name="reset_channel" value="sms" class="ch-reset" formnovalidate
               onclick="return confirm('Remove your own SMS settings and use Codevocado\'s gateway?');">
         Use Codevocado's SMS gateway
+      </button>
+    </div>
+
+    <div class="ch-card">
+      <div class="ch-head">
+        <h3>Voice Call</h3>
+        <span class="ch-pill {{ 'ch-pill-green' if platform_ready.voice else 'ch-pill-grey' }}">
+          Codevocado gateway: {{ 'available' if platform_ready.voice else 'not set up' }}
+        </span>
+      </div>
+      <p class="ch-help">Your own voice-call provider account, if you have one.</p>
+      <div class="form-grid">
+        <label>Status {{ status_select('voice_call_enabled', settings.voice_call_enabled) }}</label>
+        <label>Provider <input type="text" name="voice_provider" value="{{ settings.voice_provider or '' }}" autocomplete="off"></label>
+        <label>Caller ID <input type="text" name="voice_caller_id" value="{{ settings.voice_caller_id or '' }}" autocomplete="off"></label>
+        <label>API key
+          <input type="password" name="voice_api_key" autocomplete="new-password"
+                 placeholder="{{ 'Saved - leave blank to keep' if has_secret.voice_api_key else '' }}">
+        </label>
+      </div>
+      <button type="submit" name="reset_channel" value="voice" class="ch-reset" formnovalidate
+              onclick="return confirm('Remove your own voice call settings and use Codevocado\'s gateway?');">
+        Use Codevocado's voice call gateway
+      </button>
+    </div>
+
+    <div class="ch-card">
+      <div class="ch-head">
+        <h3>Push Notification</h3>
+        <span class="ch-pill {{ 'ch-pill-green' if platform_ready.push else 'ch-pill-grey' }}">
+          Codevocado gateway: {{ 'available' if platform_ready.push else 'not set up' }}
+        </span>
+      </div>
+      <p class="ch-help">Your own push-notification (e.g. Firebase) account, if you have one.</p>
+      <div class="form-grid">
+        <label>Status {{ status_select('push_enabled', settings.push_enabled) }}</label>
+        <label>Provider <input type="text" name="push_provider" value="{{ settings.push_provider or '' }}" autocomplete="off"></label>
+        <label>Sender ID <input type="text" name="push_sender_id" value="{{ settings.push_sender_id or '' }}" autocomplete="off"></label>
+        <label>Server key
+          <input type="password" name="push_server_key" autocomplete="new-password"
+                 placeholder="{{ 'Saved - leave blank to keep' if has_secret.push_server_key else '' }}">
+        </label>
+      </div>
+      <button type="submit" name="reset_channel" value="push" class="ch-reset" formnovalidate
+              onclick="return confirm('Remove your own push notification settings and use Codevocado\'s gateway?');">
+        Use Codevocado's push notification gateway
       </button>
     </div>
 

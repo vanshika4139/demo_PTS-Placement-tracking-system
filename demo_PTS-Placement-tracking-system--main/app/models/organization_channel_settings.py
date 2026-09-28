@@ -33,6 +33,17 @@ class OrganizationChannelSettings(db.Model):
     sms_sender_id = Column(String(50), nullable=True)
     sms_enabled = Column(Boolean, nullable=True)
 
+    # SRS FR-14: Voice Call and Push Notification overrides
+    voice_provider = Column(String(100), nullable=True)
+    voice_api_key = Column(String(255), nullable=True)
+    voice_caller_id = Column(String(50), nullable=True)
+    voice_call_enabled = Column(Boolean, nullable=True)
+
+    push_provider = Column(String(100), nullable=True)
+    push_server_key = Column(String(255), nullable=True)
+    push_sender_id = Column(String(100), nullable=True)
+    push_enabled = Column(Boolean, nullable=True)
+
     modified_at = Column(DateTime, nullable=True)
     modified_by = Column(MySQLCHAR(32), nullable=True)  # matches User.id's UUID-hex type
     created_at = Column(DateTime, server_default=func.now(), nullable=False)

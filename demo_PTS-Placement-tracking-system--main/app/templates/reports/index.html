@@ -103,7 +103,11 @@
     <h2>Reports</h2>
     <p>Placement performance and candidate lifecycle summary.</p>
   </div>
-  <a href="{{ url_for('frontend.reports_export') }}" class="ghost-btn">Export to CSV</a>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a href="{{ url_for('frontend.reports_export', format='xlsx') }}" class="ghost-btn">Export to Excel</a>
+    <a href="{{ url_for('frontend.reports_export', format='pdf') }}" class="ghost-btn">Export to PDF</a>
+    <a href="{{ url_for('frontend.reports_export', format='csv') }}" class="ghost-btn">Export to CSV</a>
+  </div>
 </div>
 
 <div class="sa-stats-grid">

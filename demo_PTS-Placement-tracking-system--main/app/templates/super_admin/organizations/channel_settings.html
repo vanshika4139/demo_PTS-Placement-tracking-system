@@ -65,7 +65,7 @@
 <div class="page-header page-header-inline">
   <div>
     <h2>Channel Settings — {{ organization.organization_name }}</h2>
-    <p>Override SMTP / WhatsApp / SMS credentials and on/off state for this organization only. Leave a field blank to inherit the platform-wide value.</p>
+    <p>Override SMTP / WhatsApp / SMS / Voice / Push credentials and on/off state for this organization only. Leave a field blank to inherit the platform-wide value.</p>
   </div>
   <a class="ghost-btn" href="{{ url_for('frontend.super_admin_organization_detail', organization_id=organization.id) }}">&larr; Back to Organization</a>
 </div>
@@ -167,6 +167,76 @@
       <div class="cs-field">
         <label>Sender ID</label>
         <input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" placeholder="{{ platform.sms_sender_id or 'e.g. CDVCDO' }}">
+      </div>
+    </div>
+    <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>
+  </div>
+
+  <div class="cs-channel-card">
+    <div class="cs-channel-header">
+      <span class="cs-channel-title">Voice Call</span>
+      {% set current = settings.voice_call_enabled %}
+      <span class="cs-toggle-badge {{ 'cs-toggle-on' if current == True else ('cs-toggle-off' if current == False else 'cs-toggle-inherit') }}">
+        {{ 'Enabled (override)' if current == True else ('Disabled (override)' if current == False else 'Inheriting platform (' + ('Enabled' if platform.voice_call_enabled else 'Disabled') + ')') }}
+      </span>
+    </div>
+    <p class="cs-channel-desc">Used for outbound voice calls for this organization's candidates.</p>
+
+    <div class="cs-field-grid">
+      <div class="cs-field">
+        <label>On/Off Override</label>
+        <select name="voice_call_enabled">
+          <option value="inherit" {{ 'selected' if settings.voice_call_enabled is none }}>Inherit platform setting</option>
+          <option value="on" {{ 'selected' if settings.voice_call_enabled == True }}>Force Enabled</option>
+          <option value="off" {{ 'selected' if settings.voice_call_enabled == False }}>Force Disabled</option>
+        </select>
+      </div>
+      <div class="cs-field">
+        <label>Provider</label>
+        <input type="text" name="voice_provider" value="{{ settings.voice_provider or '' }}" placeholder="{{ platform.voice_provider or '' }}">
+      </div>
+      <div class="cs-field">
+        <label>Caller ID</label>
+        <input type="text" name="voice_caller_id" value="{{ settings.voice_caller_id or '' }}" placeholder="{{ platform.voice_caller_id or '' }}">
+      </div>
+      <div class="cs-field">
+        <label>API Key</label>
+        <input type="password" name="voice_api_key" autocomplete="new-password" placeholder="{{ 'Leave blank to keep current' if settings.voice_api_key else 'Leave blank to inherit platform' }}">
+      </div>
+    </div>
+    <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>
+  </div>
+
+  <div class="cs-channel-card">
+    <div class="cs-channel-header">
+      <span class="cs-channel-title">Push Notification</span>
+      {% set current = settings.push_enabled %}
+      <span class="cs-toggle-badge {{ 'cs-toggle-on' if current == True else ('cs-toggle-off' if current == False else 'cs-toggle-inherit') }}">
+        {{ 'Enabled (override)' if current == True else ('Disabled (override)' if current == False else 'Inheriting platform (' + ('Enabled' if platform.push_enabled else 'Disabled') + ')') }}
+      </span>
+    </div>
+    <p class="cs-channel-desc">Used for push notifications for this organization's candidates.</p>
+
+    <div class="cs-field-grid">
+      <div class="cs-field">
+        <label>On/Off Override</label>
+        <select name="push_enabled">
+          <option value="inherit" {{ 'selected' if settings.push_enabled is none }}>Inherit platform setting</option>
+          <option value="on" {{ 'selected' if settings.push_enabled == True }}>Force Enabled</option>
+          <option value="off" {{ 'selected' if settings.push_enabled == False }}>Force Disabled</option>
+        </select>
+      </div>
+      <div class="cs-field">
+        <label>Provider</label>
+        <input type="text" name="push_provider" value="{{ settings.push_provider or '' }}" placeholder="{{ platform.push_provider or '' }}">
+      </div>
+      <div class="cs-field">
+        <label>Sender ID</label>
+        <input type="text" name="push_sender_id" value="{{ settings.push_sender_id or '' }}" placeholder="{{ platform.push_sender_id or '' }}">
+      </div>
+      <div class="cs-field">
+        <label>Server Key</label>
+        <input type="password" name="push_server_key" autocomplete="new-password" placeholder="{{ 'Leave blank to keep current' if settings.push_server_key else 'Leave blank to inherit platform' }}">
       </div>
     </div>
     <p class="cs-platform-hint">Blank fields fall back to the platform-wide Integrations settings.</p>

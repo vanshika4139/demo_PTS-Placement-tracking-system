@@ -7,7 +7,7 @@ Falls back to environment variables wherever a DB field is blank, so nothing
 breaks if the row hasn't been filled in yet - .env keeps working as the
 default, the DB just overrides it once someone saves the settings form.
 
-SRS FR-14 (per-organization channel configuration): SMTP/WhatsApp/SMS can
+SRS FR-14 (per-organization channel configuration): SMTP/WhatsApp/SMS/Voice/Push can
 also be overridden per-organization via OrganizationChannelSettings (one
 row per organization, all fields nullable). Fallback order everywhere in
 this module is: organization override -> platform-wide DB settings -> .env.
@@ -109,24 +109,25 @@ def get_sms_config(organization_id=None):
     return api_key, sender_id
 
 
-def get_voice_call_config():
-    """Returns (provider, api_key, caller_id) - DB values win, .env is the fallback.
-    No per-organization override yet - voice call has no real provider wired
-    at the platform level either, so there's nothing meaningful to override."""
+def get_voice_call_config(organization_id=None):
+    """Returns (provider, api_key, caller_id). Fallback order: organization
+    override (SRS FR-14) -> platform-wide DB settings -> .env."""
+    org_settings = get_organization_channel_settings(organization_id) if organization_id else None
     settings = get_platform_settings()
-    provider = settings.voice_provider or os.environ.get("VOICE_CALL_PROVIDER", "")
-    api_key = settings.voice_api_key or os.environ.get("VOICE_CALL_API_KEY", "")
-    caller_id = settings.voice_caller_id or os.environ.get("VOICE_CALL_CALLER_ID", "")
+    provider = (org_settings.voice_provider if org_settings else None) or settings.voice_provider or os.environ.get("VOICE_CALL_PROVIDER", "")
+    api_key = (org_settings.voice_api_key if org_settings else None) or settings.voice_api_key or os.environ.get("VOICE_CALL_API_KEY", "")
+    caller_id = (org_settings.voice_caller_id if org_settings else None) or settings.voice_caller_id or os.environ.get("VOICE_CALL_CALLER_ID", "")
     return provider, api_key, caller_id
 
 
-def get_push_config():
-    """Returns (provider, server_key, sender_id) - DB values win, .env is the fallback.
-    No per-organization override yet - same reasoning as get_voice_call_config."""
+def get_push_config(organization_id=None):
+    """Returns (provider, server_key, sender_id). Fallback order: organization
+    override (SRS FR-14) -> platform-wide DB settings -> .env."""
+    org_settings = get_organization_channel_settings(organization_id) if organization_id else None
     settings = get_platform_settings()
-    provider = settings.push_provider or os.environ.get("PUSH_PROVIDER", "")
-    server_key = settings.push_server_key or os.environ.get("PUSH_SERVER_KEY", "")
-    sender_id = settings.push_sender_id or os.environ.get("PUSH_SENDER_ID", "")
+    provider = (org_settings.push_provider if org_settings else None) or settings.push_provider or os.environ.get("PUSH_PROVIDER", "")
+    server_key = (org_settings.push_server_key if org_settings else None) or settings.push_server_key or os.environ.get("PUSH_SERVER_KEY", "")
+    sender_id = (org_settings.push_sender_id if org_settings else None) or settings.push_sender_id or os.environ.get("PUSH_SENDER_ID", "")
     return provider, server_key, sender_id
 
 
@@ -147,6 +148,8 @@ ORG_CHANNEL_ENABLED_FIELD = {
     "EMAIL": "email_enabled",
     "WHATSAPP": "whatsapp_enabled",
     "SMS": "sms_enabled",
+    "VOICE_CALL": "voice_call_enabled",
+    "PUSH": "push_enabled",
 }
 
 
@@ -211,9 +214,11 @@ ORG_STRING_FIELDS = (
     "smtp_host", "smtp_port", "smtp_username", "smtp_password",
     "whatsapp_api_key", "whatsapp_phone_number_id",
     "sms_api_key", "sms_sender_id",
+    "voice_provider", "voice_api_key", "voice_caller_id",
+    "push_provider", "push_server_key", "push_sender_id",
 )
 
-ORG_BOOL_FIELDS = ("email_enabled", "whatsapp_enabled", "sms_enabled")
+ORG_BOOL_FIELDS = ("email_enabled", "whatsapp_enabled", "sms_enabled", "voice_call_enabled", "push_enabled")
 
 
 def update_organization_channel_settings(organization_id, fields, actor_id=None):

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="{{ current_language() }}">
+<head>
+  <meta charset="utf-8">
+  <title>Help &amp; Support</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}">
+  <style>
+    .ch-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .ch-head h2 { margin: 0 0 4px; }
+    .ch-head p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+    .ch-back { white-space: nowrap; flex-shrink: 0; }
+    .ch-card { margin-bottom: 24px; }
+    .ch-card h3 { margin: 0 0 16px; }
+    .ch-form { display: flex; flex-direction: column; gap: 16px; }
+    .ch-form label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 0.9rem; }
+    .ch-form input, .ch-form textarea { width: 100%; box-sizing: border-box; font-weight: 400; }
+    .ch-form textarea { min-height: 140px; resize: vertical; }
+    .ch-note { color: var(--muted); font-size: 0.82rem; margin: 0; }
+    .ch-actions { display: flex; justify-content: flex-start; }
+    .ch-ticket { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .ch-ticket:last-child { margin-bottom: 0; }
+    .ch-ticket-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .ch-ticket-subject { font-weight: 600; color: #111827; }
+    .ch-ticket-meta { color: #6b7280; font-size: 0.8rem; margin-top: 2px; }
+    .ch-ticket-message { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size: 0.9rem; color: #374151; }
+    .ch-reply { margin-top: 12px; padding: 10px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 0.88rem; }
+    .ch-reply strong { color: #15803d; }
+    .ch-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+    .ch-open { background: #fef3c7; color: #d97706; }
+    .ch-progress { background: #dbeafe; color: #2563eb; }
+    .ch-resolved { background: #dcfce7; color: #16a34a; }
+  </style>
+</head>
+<body>
+  <div class="page-content" style="max-width:760px; margin:0 auto; padding-top:24px; padding-bottom:40px;">
+
+    <div class="ch-head">
+      <div>
+        <h2>Help &amp; Support</h2>
+        <p>Stuck with your account, placement details or documents? Tell us and our team will get back to you.</p>
+      </div>
+      <a class="ghost-btn ch-back" href="{{ url_for('frontend.candidate_dashboard') }}">&larr; Back to Dashboard</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="panel-card ch-card">
+      <h3>Raise a Support Ticket</h3>
+      <form method="post" class="ch-form">
+        <label>Subject
+          <input type="text" name="subject" maxlength="200" required placeholder="e.g. Cannot update my bank details">
+        </label>
+        <label>Describe your problem
+          <textarea name="message" maxlength="3000" required placeholder="Please explain what happened and what you need help with."></textarea>
+        </label>
+        <p class="ch-note">
+          {% if candidate.email %}
+          Our reply will also be emailed to <strong>{{ candidate.email }}</strong>.
+          {% else %}
+          You have no email saved, so our reply will only show on this page.
+          {% endif %}
+        </p>
+        <div class="ch-actions">
+          <button type="submit" class="primary-btn">Submit Ticket</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel-card ch-card">
+      <h3>My Tickets</h3>
+      {% for t in tickets %}
+      <div class="ch-ticket">
+        <div class="ch-ticket-head">
+          <div>
+            <div class="ch-ticket-subject">{{ t.subject }}</div>
+            <div class="ch-ticket-meta">Raised {{ t.created_at.strftime('%d-%m-%Y %H:%M') if t.created_at else '-' }}</div>
+          </div>
+          <span class="ch-pill {{ 'ch-resolved' if t.status == 'resolved' else ('ch-progress' if t.status == 'in_progress' else 'ch-open') }}">
+            {{ 'Resolved' if t.status == 'resolved' else ('In progress' if t.status == 'in_progress' else 'Open') }}
+          </span>
+        </div>
+        <div class="ch-ticket-message">{{ t.message }}</div>
+        {% if t.admin_reply %}
+        <div class="ch-reply"><strong>Reply from support:</strong><br>{{ t.admin_reply }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <p style="color:var(--muted); margin:0;">You have not raised any tickets yet.</p>
+      {% endfor %}
+    </div>
+
+  </div>
+</body>
+</html>

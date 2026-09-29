@@ -33,6 +33,7 @@ class SupportTicket(db.Model):
     reporter_email = db.Column(db.String(255))
     organization_id = db.Column(db.String(32), nullable=True)
     user_id = db.Column(db.String(32), nullable=True)
+    candidate_id = db.Column(db.String(32), nullable=True, index=True)  # set when raised from the candidate portal
 
     # Filled in by the super admin when they respond
     admin_reply = db.Column(db.Text, nullable=True)

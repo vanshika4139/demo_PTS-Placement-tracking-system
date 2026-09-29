@@ -290,7 +290,12 @@ def _send_placement_email(candidate):
             if not wants_email:
                 continue
             try:
-                send_notification_email(user.email, subject, body)
+                send_notification_email(
+                    user.email, subject, body,
+                    organization_id=candidate.organization_id,
+                    candidate_id=candidate.id,
+                    user_id=user.id,
+                )
             except Exception:
                 continue
     except Exception:
@@ -320,6 +325,7 @@ def _send_certificate_email(candidate):
             subject,
             body,
             organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
             attachments=[{
                 "data": pdf_bytes,
                 "filename": f"{candidate.full_name.replace(' ', '_')}_certificate.pdf",
@@ -5348,6 +5354,69 @@ def candidate_feedback_submit():
     return redirect(url_for("frontend.candidate_dashboard"))
 
 
+@frontend_bp.route("/candidate/help", methods=["GET", "POST"])
+@candidate_login_required
+@rate_limit("candidate_support_ticket", max_attempts=5, window_seconds=3600)
+def candidate_help():
+    """Help & Support for the candidate portal: raise a support ticket and
+    see your own tickets with the support team's replies."""
+    from app.models.support_ticket import SupportTicket
+    from app.utils.email import send_notification_email
+
+    candidate = Candidate.query.get_or_404(session.get("candidate", {}).get("id"))
+
+    if request.method == "POST":
+        subject = (request.form.get("subject") or "").strip()
+        message = (request.form.get("message") or "").strip()
+
+        if not subject or not message:
+            flash("Please fill in both a subject and a message.", "error")
+            return redirect(url_for("frontend.candidate_help"))
+        if len(subject) > 200 or len(message) > 3000:
+            flash("Your subject or message is too long. Please shorten it.", "error")
+            return redirect(url_for("frontend.candidate_help"))
+
+        reg_no = f" - {candidate.registration_number}" if candidate.registration_number else ""
+        ticket = SupportTicket(
+            subject=subject,
+            message=message,
+            reporter_name=f"{candidate.full_name} (Candidate{reg_no})",
+            reporter_email=candidate.email,
+            organization_id=str(candidate.organization_id) if candidate.organization_id else None,
+            candidate_id=candidate.id,
+        )
+        db.session.add(ticket)
+        db.session.commit()
+
+        # Same notification staff tickets send: every super admin is emailed.
+        # A failed email must never block the ticket, and one bad address
+        # must not stop the others.
+        for admin in User.query.filter_by(is_super_admin=True, is_deleted=False, is_active=True).all():
+            try:
+                send_notification_email(
+                    to_email=admin.email,
+                    subject=f"New Support Ticket: {subject}",
+                    body=(
+                        f"{ticket.reporter_name} ({ticket.reporter_email or '-'}) "
+                        f"raised a support ticket:\n\n{message}\n\n"
+                        f"View it at /super-admin/support-tickets/{ticket.id}"
+                    ),
+                )
+            except Exception:
+                logging.exception("Failed to email candidate support ticket notification")
+
+        flash("Your issue has been submitted. Our team will get back to you.", "success")
+        return redirect(url_for("frontend.candidate_help"))
+
+    tickets = (
+        SupportTicket.query.filter_by(candidate_id=candidate.id)
+        .order_by(SupportTicket.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return render_template("candidate/help.html", candidate=candidate, tickets=tickets)
+
+
 ALLOWED_PROOF_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 
 
@@ -7564,18 +7633,22 @@ def super_admin_email_logs():
     mein dikhana'). Shows every email attempt across every organization -
     welcome emails, OTPs, placement notifications, certificates, security
     alerts - written by _log_email() in app/utils/email.py."""
-    from app.models.email_log import EmailLog
+    from app.models.email_log import EmailLog, EMAIL_TYPES
 
     page = _parse_int(request.args.get("page")) or 1
     per_page = 50
     status_filter = (request.args.get("status") or "").strip()
     search_query = (request.args.get("q") or "").strip()
+    type_filter = (request.args.get("email_type") or "").strip()
     organization_filter = _parse_int(request.args.get("organization_id"))
 
     query = EmailLog.query.order_by(EmailLog.created_at.desc())
 
     if status_filter in ("sent", "failed"):
         query = query.filter_by(status=status_filter)
+
+    if type_filter:
+        query = query.filter(EmailLog.email_type == type_filter)
 
     if search_query:
         query = query.filter(
@@ -7599,6 +7672,8 @@ def super_admin_email_logs():
         )
     if organization_filter:
         summary_base = summary_base.filter(EmailLog.organization_id == str(organization_filter))
+    if type_filter:
+        summary_base = summary_base.filter(EmailLog.email_type == type_filter)
     total_sent = summary_base.filter(EmailLog.status == "sent").count()
     total_failed = summary_base.filter(EmailLog.status == "failed").count()
 
@@ -7631,7 +7706,7 @@ def super_admin_email_logs():
     total_pages = (total_count + per_page - 1) // per_page
 
     return render_template(
-        "super_admin/email_logs.html",
+        "super_admin/email_logs.html", email_types=EMAIL_TYPES, type_filter=type_filter,
         logs=logs,
         status_filter=status_filter,
         search_query=search_query,
@@ -7657,7 +7732,7 @@ def organization_email_logs():
     "channel.manage" (Configure this organization's own Email/WhatsApp/SMS
     gateways) since anyone who can configure the channel is the natural
     audience for seeing what it actually sent."""
-    from app.models.email_log import EmailLog
+    from app.models.email_log import EmailLog, EMAIL_TYPES
 
     org_id = session["user"]["organization_id"]
 
@@ -7665,11 +7740,15 @@ def organization_email_logs():
     per_page = 50
     status_filter = (request.args.get("status") or "").strip()
     search_query = (request.args.get("q") or "").strip()
+    type_filter = (request.args.get("email_type") or "").strip()
 
     query = EmailLog.query.filter_by(organization_id=str(org_id)).order_by(EmailLog.created_at.desc())
 
     if status_filter in ("sent", "failed"):
         query = query.filter_by(status=status_filter)
+
+    if type_filter:
+        query = query.filter(EmailLog.email_type == type_filter)
 
     if search_query:
         query = query.filter(
@@ -7686,6 +7765,8 @@ def organization_email_logs():
             (EmailLog.to_email.ilike(f"%{search_query}%"))
             | (EmailLog.subject.ilike(f"%{search_query}%"))
         )
+    if type_filter:
+        summary_base = summary_base.filter(EmailLog.email_type == type_filter)
     total_sent = summary_base.filter(EmailLog.status == "sent").count()
     total_failed = summary_base.filter(EmailLog.status == "failed").count()
 
@@ -7702,7 +7783,7 @@ def organization_email_logs():
     total_pages = (total_count + per_page - 1) // per_page
 
     return render_template(
-        "organization/email_logs.html",
+        "organization/email_logs.html", email_types=EMAIL_TYPES, type_filter=type_filter,
         logs=logs,
         status_filter=status_filter,
         search_query=search_query,

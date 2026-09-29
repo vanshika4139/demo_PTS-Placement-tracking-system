@@ -179,7 +179,8 @@ def send_email(to_email, subject, body, organization_id=None, candidate_id=None,
         return False
 
     try:
-        send_notification_email(to_email, subject, body, organization_id=organization_id, html_body=html_body)
+        send_notification_email(to_email, subject, body, organization_id=organization_id,
+                                html_body=html_body, candidate_id=candidate_id)
         _log("email", to_email, "sent", organization_id, candidate_id, subject=subject)
         return True
     except Exception as exc:

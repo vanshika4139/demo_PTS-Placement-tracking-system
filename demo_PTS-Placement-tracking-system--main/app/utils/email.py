@@ -1,18 +1,28 @@
-﻿import uuid
-from datetime import datetime
-
+import os
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import ssl
+import uuid
+from datetime import datetime
 from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from app.extensions import db
-from app.models.email_log import EmailLog
-from app.utils.platform_settings import get_smtp_config
+from app.models.email_log import EmailLog, classify_email_type
+from app.utils.platform_settings import get_smtp_config, is_channel_enabled
+
+# Seconds to wait for the SMTP server before giving up. Without a timeout a
+# dead/slow SMTP server hangs the whole web request (or the scheduler thread).
+SMTP_TIMEOUT = int(os.environ.get("SMTP_TIMEOUT", "20") or "20")
+
+
+class EmailChannelDisabled(RuntimeError):
+    """Raised (and logged as a failed EmailLog row) when the Email channel is
+    switched off for the platform / organization."""
 
 
 def _log_email(to_email, subject, status, error_message=None, organization_id=None,
-                candidate_id=None, user_id=None, has_attachment=False):
+                candidate_id=None, user_id=None, has_attachment=False, email_type=None):
     """Writes one row to email_logs. Never raises - a logging failure
     should never break the caller's email-sending flow."""
     try:
@@ -26,6 +36,7 @@ def _log_email(to_email, subject, status, error_message=None, organization_id=No
             candidate_id=candidate_id,
             user_id=user_id,
             has_attachment=has_attachment,
+            email_type=email_type or classify_email_type(subject),
             created_at=datetime.utcnow(),
         )
         db.session.add(log)
@@ -34,39 +45,134 @@ def _log_email(to_email, subject, status, error_message=None, organization_id=No
         db.session.rollback()
 
 
+def _from_address(smtp_username):
+    """Providers like SendGrid/SES use a non-email username ("apikey"), which
+    is not a valid From address. Use SMTP_FROM_EMAIL (.env) in that case."""
+    if smtp_username and "@" in smtp_username:
+        return smtp_username
+    return os.environ.get("SMTP_FROM_EMAIL") or smtp_username
+
+
+def _open_smtp(host, port, username, password):
+    """Port 465 = implicit SSL. Any other port = plain connect + STARTTLS
+    (refuses to log in over an unencrypted connection)."""
+    port = int(port)
+    context = ssl.create_default_context()
+    if port == 465:
+        server = smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT, context=context)
+    else:
+        server = smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT)
+        try:
+            server.ehlo()
+            if not server.has_extn("starttls"):
+                raise smtplib.SMTPException(
+                    f"SMTP server {host}:{port} does not support STARTTLS - refusing to send credentials unencrypted."
+                )
+            server.starttls(context=context)
+            server.ehlo()
+        except Exception:
+            server.close()
+            raise
+    try:
+        server.login(username, password)
+    except Exception:
+        server.close()
+        raise
+    return server
+
+
+def _build_message(from_addr, to_email, subject, body, html_body=None, attachments=None):
+    if not (html_body or attachments):
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = to_email
+        return msg
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_email
+
+    # Text/HTML body goes in its own "alternative" sub-part so mail clients
+    # pick whichever they can render, independent of attachments.
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(body, "plain", "utf-8"))
+    if html_body:
+        body_part.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(body_part)
+
+    for att in (attachments or []):
+        filename = att.get("filename")
+        if not filename:
+            raise ValueError("Each attachment needs a 'filename'")
+
+        if "data" in att:
+            file_bytes = att["data"]
+        elif "path" in att:
+            with open(att["path"], "rb") as f:
+                file_bytes = f.read()
+        else:
+            raise ValueError("Each attachment needs either 'data' or 'path'")
+
+        part = MIMEApplication(file_bytes, Name=filename)
+        part["Content-Disposition"] = f'attachment; filename="{filename}"'
+        msg.attach(part)
+    return msg
+
+
+def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
+              candidate_id, user_id, essential):
+    """Single code path for every outgoing email. Everything that can fail
+    (channel disabled, SMTP not configured, bad attachment, network, login)
+    happens inside the try, so EVERY failure is written to email_logs."""
+    has_attachment = bool(attachments)
+    try:
+        if not essential and not is_channel_enabled("EMAIL", organization_id):
+            raise EmailChannelDisabled(
+                "Email channel is disabled for this organization/platform "
+                "(Integrations page or the organization's Channel Settings)."
+            )
+
+        host, port, username, password = get_smtp_config(organization_id)
+        msg = _build_message(_from_address(username), to_email, subject, body, html_body, attachments)
+
+        server = _open_smtp(host, port, username, password)
+        try:
+            server.sendmail(msg["From"], [to_email], msg.as_string())
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                server.close()
+    except Exception as exc:
+        _log_email(
+            to_email, subject, status="failed", error_message=str(exc),
+            organization_id=organization_id, candidate_id=candidate_id,
+            user_id=user_id, has_attachment=has_attachment,
+        )
+        raise
+
+    _log_email(
+        to_email, subject, status="sent",
+        organization_id=organization_id, candidate_id=candidate_id,
+        user_id=user_id, has_attachment=has_attachment,
+    )
+
+
 def send_otp_email(to_email: str, otp_code: str) -> None:
-    """Send a password-reset OTP via SMTP (configured via the super-admin
-    Integrations page, or .env as a fallback). Raises an exception if SMTP
-    is not configured or sending fails, so the caller (forgot_password
-    route) can show an appropriate error.
+    """Send a password-reset / login OTP. Raises on failure so the caller can
+    show an error.
 
-    Always uses platform-wide SMTP (no organization_id) - password reset
-    happens before we know which organization's "brand" should be sending
-    the email, and it's a platform-level auth flow either way."""
-
-    smtp_host, smtp_port, smtp_username, smtp_password = get_smtp_config()
-
+    Always uses platform-wide SMTP (no organization_id). It is marked
+    `essential`, so it is still sent when the Email channel toggle is off -
+    switching notifications off must never lock people out of logging in."""
     subject = "Your Codevocado Password Reset OTP"
     body = (
         f"Your OTP for resetting your Codevocado password is: {otp_code}\n\n"
         f"This OTP is valid for 10 minutes. If you did not request this, please ignore this email."
     )
-
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = smtp_username
-    msg["To"] = to_email
-
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.sendmail(smtp_username, [to_email], msg.as_string())
-    except Exception as exc:
-        _log_email(to_email, subject, status="failed", error_message=str(exc))
-        raise
-    else:
-        _log_email(to_email, subject, status="sent")
+    _dispatch(to_email, subject, body, None, None, None, None, None, essential=True)
 
 
 def send_notification_email(
@@ -78,91 +184,19 @@ def send_notification_email(
     attachments: list = None,
     candidate_id=None,
     user_id=None,
+    essential: bool = False,
 ) -> None:
-    """Send a notification email (e.g. candidate placement alerts, welcome
-    emails). Raises an exception on failure - callers should wrap this in
-    try/except so an email failure never breaks the main request flow.
+    """Send a notification email. Raises on failure - callers should wrap
+    this in try/except so an email failure never breaks the main request.
 
-    organization_id (optional, SRS FR-14): when given, uses that
-    organization's own SMTP override if it has one configured, falling
-    back to platform-wide settings otherwise - see get_smtp_config().
-
-    html_body (optional): when given, sends a multipart email with both
-    the plain-text `body` (fallback for clients that don't render HTML)
-    and this HTML version (what most modern email clients will actually
-    display). When omitted, sends plain text only.
-
-    attachments (optional): list of dicts, each either
-        {"path": "/absolute/path/to/file.pdf", "filename": "certificate.pdf"}
-    or
-        {"data": <bytes>, "filename": "certificate.pdf"}
-    Use "path" when the file already exists on disk; use "data" when you
-    have the bytes in memory already (e.g. straight from a PDF-generation
-    function) and don't want to write a temp file first. "filename" is
-    required in both cases - it's what the recipient sees.
-
-    candidate_id / user_id (optional): who this email relates to, for the
-    email_logs audit trail (see app/models/email_log.py).
+    - The Email channel on/off toggle is enforced here (organization override
+      first, then platform). Pass essential=True to bypass it.
+    - organization_id: uses that organization's own SMTP server if it saved a
+      complete one (host + username + password), else platform-wide SMTP.
+    - html_body: adds an HTML alternative next to the plain-text body.
+    - attachments: list of {"path": ..., "filename": ...} or
+      {"data": <bytes>, "filename": ...}.
+    - candidate_id / user_id: who the email relates to (email_logs audit).
     """
-
-    smtp_host, smtp_port, smtp_username, smtp_password = get_smtp_config(organization_id)
-
-    # Attachments (or an HTML alternative) require a multipart message.
-    needs_multipart = html_body or attachments
-
-    if needs_multipart:
-        msg = MIMEMultipart("mixed")
-        msg["Subject"] = subject
-        msg["From"] = smtp_username
-        msg["To"] = to_email
-
-        # Text/HTML body goes in its own "alternative" sub-part so mail
-        # clients pick whichever they can render, independent of attachments.
-        body_part = MIMEMultipart("alternative")
-        body_part.attach(MIMEText(body, "plain"))
-        if html_body:
-            body_part.attach(MIMEText(html_body, "html"))
-        msg.attach(body_part)
-
-        for att in (attachments or []):
-            filename = att.get("filename")
-            if not filename:
-                raise ValueError("Each attachment needs a 'filename'")
-
-            if "data" in att:
-                file_bytes = att["data"]
-            elif "path" in att:
-                with open(att["path"], "rb") as f:
-                    file_bytes = f.read()
-            else:
-                raise ValueError("Each attachment needs either 'data' or 'path'")
-
-            part = MIMEApplication(file_bytes, Name=filename)
-            part["Content-Disposition"] = f'attachment; filename="{filename}"'
-            msg.attach(part)
-    else:
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = smtp_username
-        msg["To"] = to_email
-
-    has_attachment = bool(attachments)
-
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.sendmail(smtp_username, [to_email], msg.as_string())
-    except Exception as exc:
-        _log_email(
-            to_email, subject, status="failed", error_message=str(exc),
-            organization_id=organization_id, candidate_id=candidate_id,
-            user_id=user_id, has_attachment=has_attachment,
-        )
-        raise
-    else:
-        _log_email(
-            to_email, subject, status="sent",
-            organization_id=organization_id, candidate_id=candidate_id,
-            user_id=user_id, has_attachment=has_attachment,
-        )
+    _dispatch(to_email, subject, body, html_body, attachments, organization_id,
+              candidate_id, user_id, essential)

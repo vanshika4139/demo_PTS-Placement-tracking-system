@@ -47,19 +47,23 @@ def get_organization_channel_settings(organization_id):
 
 
 def get_smtp_config(organization_id=None):
-    """Returns (host, port, username, password). Fallback order: this
-    organization's own SMTP override (if organization_id is given and it
-    has one set) -> platform-wide DB settings -> .env. Passing no
-    organization_id (or an organization with no override) behaves exactly
-    as before - platform-wide settings, falling back to .env."""
-    org_settings = get_organization_channel_settings(organization_id) if organization_id else None
+    """Returns (host, port, username, password).
+
+    All-or-nothing: if this organization saved its OWN complete SMTP server
+    (host + username + password), that whole server is used. Otherwise the
+    platform-wide DB settings are used as a whole, falling back to .env.
+    Fields are never mixed between the two (an organization host with the
+    platform's password can never authenticate)."""
+    if organization_id:
+        org = get_organization_channel_settings(organization_id)
+        if org and org.smtp_host and org.smtp_username and org.smtp_password:
+            return org.smtp_host, org.smtp_port or 587, org.smtp_username, org.smtp_password
 
     platform = get_platform_settings()
-
-    host = (org_settings.smtp_host if org_settings else None) or platform.smtp_host or os.environ.get("SMTP_HOST", "")
-    port = (org_settings.smtp_port if org_settings else None) or platform.smtp_port or int(os.environ.get("SMTP_PORT", "587") or "587")
-    username = (org_settings.smtp_username if org_settings else None) or platform.smtp_username or os.environ.get("SMTP_USERNAME", "")
-    password = (org_settings.smtp_password if org_settings else None) or platform.smtp_password or os.environ.get("SMTP_PASSWORD", "")
+    host = platform.smtp_host or os.environ.get("SMTP_HOST", "")
+    port = platform.smtp_port or int(os.environ.get("SMTP_PORT", "587") or "587")
+    username = platform.smtp_username or os.environ.get("SMTP_USERNAME", "")
+    password = platform.smtp_password or os.environ.get("SMTP_PASSWORD", "")
 
     if not host or not username or not password:
         raise RuntimeError(

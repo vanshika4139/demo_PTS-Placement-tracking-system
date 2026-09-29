@@ -27,7 +27,7 @@
 
 <!-- Filters -->
 <div class="panel-card" style="margin-top:20px;">
-  <form method="get" class="form-grid full-form" style="align-items:end;">
+  <form method="get" class="form-grid full-form el-filter">
     <label>
       Search (email or subject)
       <input type="text" name="q" value="{{ search_query }}" placeholder="e.g. candidate@example.com">
@@ -40,7 +40,16 @@
         <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Failed</option>
       </select>
     </label>
-    <div style="display:flex; align-items:flex-end;">
+    <label>
+      Type
+      <select name="email_type">
+        <option value="">All Types</option>
+        {% for key, label in email_types %}
+        <option value="{{ key }}" {% if type_filter == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="el-btn-wrap">
       <button type="submit" class="primary-btn" style="width:100%;">Filter</button>
     </div>
   </form>
@@ -49,10 +58,11 @@
 <!-- Table -->
 <div class="panel-card" style="margin-top:20px; padding:0;">
   <div style="overflow-x:auto;">
-    <table class="data-table">
+    <table class="data-table el-table">
       <thead>
         <tr>
           <th>Date / Time</th>
+          <th>Type</th>
           <th>To</th>
           <th>Subject</th>
           <th>Related To</th>
@@ -65,8 +75,9 @@
         {% for log in logs %}
         <tr class="clickable-row" data-href="{{ url_for('frontend.organization_email_log_detail', log_id=log.id) }}">
           <td style="white-space:nowrap;">{{ log.created_at.strftime('%d-%m-%Y %H:%M') if log.created_at else '-' }}</td>
-          <td>{{ log.to_email }}</td>
-          <td>{{ log.subject or '-' }}</td>
+          <td><span style="display:inline-block; padding:2px 10px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:0.75rem; font-weight:600; white-space:nowrap;">{{ log.email_type_label }}</span></td>
+          <td class="el-to">{{ log.to_email }}</td>
+          <td class="el-subject">{{ log.subject or '-' }}</td>
           <td>
             {% if log.candidate_id %}
               Candidate: {{ candidate_name_by_id.get(log.candidate_id, log.candidate_id) }}
@@ -102,7 +113,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" style="text-align:center; color:var(--muted); padding:32px;">No email logs found.</td>
+          <td colspan="8" style="text-align:center; color:var(--muted); padding:32px;">No email logs found.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -114,7 +125,7 @@
 {% if total_pages > 1 %}
 <div style="display:flex; justify-content:center; gap:6px; margin-top:20px; flex-wrap:wrap;">
   {% for p in range(1, total_pages + 1) %}
-  <a href="{{ url_for('frontend.organization_email_logs', page=p, status=status_filter, q=search_query) }}"
+  <a href="{{ url_for('frontend.organization_email_logs', page=p, status=status_filter, q=search_query, email_type=type_filter) }}"
      class="{{ 'primary-btn' if p == page else 'ghost-btn' }}"
      style="padding:8px 14px; font-size:0.85rem;">{{ p }}</a>
   {% endfor %}
@@ -122,6 +133,15 @@
 {% endif %}
 
 <style>
+  .el-filter { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; align-items: end; }
+  .el-filter label { min-width: 0; }
+  .el-filter .el-btn-wrap { display: flex; align-items: flex-end; }
+  .el-table { min-width: 1050px; }
+  .el-table th { white-space: nowrap; font-size: 0.72rem; padding: 12px 14px; }
+  .el-table td { font-size: 0.88rem; padding: 12px 14px; vertical-align: middle; line-height: 1.4; }
+  .el-table td.el-subject { min-width: 280px; max-width: 380px; }
+  .el-table td.el-to { min-width: 190px; word-break: break-word; }
+  .el-table td.el-org, .el-table td.el-related { min-width: 110px; }
   .clickable-row { cursor: pointer; }
   .clickable-row:hover { background: var(--avocado-pale); }
 </style>

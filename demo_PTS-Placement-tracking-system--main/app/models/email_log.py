@@ -40,7 +40,7 @@ def classify_email_type(subject):
         return "verification"
     if "certificate" in s:
         return "certificate"
-    if "email address was" in s or "password was" in s or "security" in s:
+    if "email address was" in s or "password was" in s or "account details" in s or "security" in s:
         return "security"
     if "subscription" in s or "invoice" in s or "payment" in s:
         return "subscription"

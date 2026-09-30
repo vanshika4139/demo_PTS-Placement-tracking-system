@@ -6,6 +6,9 @@ from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import html as _html
+import re
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 from app.extensions import db
 from app.models.email_log import EmailLog, classify_email_type
@@ -45,6 +48,76 @@ def _log_email(to_email, subject, status, error_message=None, organization_id=No
         db.session.rollback()
 
 
+BRAND_NAME = os.environ.get("EMAIL_BRAND_NAME", "Codevocado")
+BRAND_TAGLINE = os.environ.get("EMAIL_BRAND_TAGLINE", "Placement Tracking System")
+FROM_NAME = os.environ.get("EMAIL_FROM_NAME", f"{BRAND_NAME} Placement Tracking")
+
+
+def _from_header(address):
+    """'Codevocado Placement Tracking <user@example.com>' instead of a bare address."""
+    if not address:
+        return address
+    return formataddr((FROM_NAME, address))
+
+
+def _msgid(address):
+    """Message-ID on the sender's own domain (looks more legitimate than the PC's hostname)."""
+    domain = address.split("@", 1)[1] if address and "@" in address else None
+    return make_msgid(domain=domain)
+
+
+def _email_shell(title, inner_html):
+    """Branded, email-client-safe (table + inline CSS) HTML wrapper."""
+    brand = _html.escape(BRAND_NAME)
+    tagline = _html.escape(BRAND_TAGLINE)
+    return (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        f'<title>{_html.escape(title or brand)}</title></head>'
+        '<body style="margin:0;padding:0;background:#f3f4f6;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="background:#f3f4f6;padding:24px 12px;"><tr><td align="center">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" '
+        'style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;'
+        'border:1px solid #e5e7eb;font-family:Segoe UI,Arial,sans-serif;">'
+        '<tr><td style="background:#1f2937;padding:18px 24px;color:#ffffff;">'
+        f'<div style="font-size:18px;font-weight:700;">{brand}</div>'
+        f'<div style="font-size:12px;color:#d1d5db;margin-top:2px;">{tagline}</div></td></tr>'
+        '<tr><td style="padding:28px 24px 12px 24px;color:#111827;font-size:15px;line-height:1.6;">'
+        f'{inner_html}</td></tr>'
+        '<tr><td style="padding:16px 24px 24px 24px;color:#6b7280;font-size:12px;line-height:1.5;'
+        'border-top:1px solid #f3f4f6;">'
+        f'This is an automated message from {brand} {tagline}. '
+        'If you did not expect it, you can ignore it.</td></tr>'
+        '</table></td></tr></table></body></html>'
+    )
+
+
+def _wrap_html(subject, body):
+    """Turns a plain-text notification into a branded HTML email."""
+    text = _html.escape(body or "")
+    text = re.sub(r'(https?://[^\s<]+)', r'<a href="\1" style="color:#2563eb;">\1</a>', text)
+    text = text.replace("\r\n", "\n").replace("\n", "<br>")
+    inner = (
+        f'<h2 style="margin:0 0 16px 0;font-size:18px;color:#111827;">{_html.escape(subject or "")}</h2>'
+        f'<div>{text}</div>'
+    )
+    return _email_shell(subject, inner)
+
+
+def _otp_html(otp_code):
+    inner = (
+        '<h2 style="margin:0 0 12px 0;font-size:18px;color:#111827;">Password reset</h2>'
+        '<p style="margin:0 0 8px 0;">Use this one-time password (OTP) to reset your password:</p>'
+        '<div style="text-align:center;margin:22px 0;">'
+        '<span style="display:inline-block;font-size:30px;letter-spacing:8px;font-weight:700;'
+        'color:#1f2937;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:12px 22px;">'
+        f'{_html.escape(str(otp_code))}</span></div>'
+        '<p style="margin:0;">This OTP is valid for 10 minutes. If you did not request it, '
+        'please ignore this email. Never share this OTP with anyone.</p>'
+    )
+    return _email_shell("Password reset OTP", inner)
+
+
 def _from_address(smtp_username):
     """Providers like SendGrid/SES use a non-email username ("apikey"), which
     is not a valid From address. Use SMTP_FROM_EMAIL (.env) in that case."""
@@ -82,17 +155,24 @@ def _open_smtp(host, port, username, password):
 
 
 def _build_message(from_addr, to_email, subject, body, html_body=None, attachments=None):
+    if not html_body:
+        html_body = _wrap_html(subject, body)
+
     if not (html_body or attachments):
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"] = subject
-        msg["From"] = from_addr
+        msg["From"] = _from_header(from_addr)
         msg["To"] = to_email
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = _msgid(from_addr)
         return msg
 
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
-    msg["From"] = from_addr
+    msg["From"] = _from_header(from_addr)
     msg["To"] = to_email
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = _msgid(from_addr)
 
     # Text/HTML body goes in its own "alternative" sub-part so mail clients
     # pick whichever they can render, independent of attachments.
@@ -139,7 +219,7 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
 
         server = _open_smtp(host, port, username, password)
         try:
-            server.sendmail(msg["From"], [to_email], msg.as_string())
+            server.sendmail(parseaddr(msg["From"])[1] or msg["From"], [to_email], msg.as_string())
         finally:
             try:
                 server.quit()
@@ -172,7 +252,7 @@ def send_otp_email(to_email: str, otp_code: str) -> None:
         f"Your OTP for resetting your Codevocado password is: {otp_code}\n\n"
         f"This OTP is valid for 10 minutes. If you did not request this, please ignore this email."
     )
-    _dispatch(to_email, subject, body, None, None, None, None, None, essential=True)
+    _dispatch(to_email, subject, body, _otp_html(otp_code), None, None, None, None, essential=True)
 
 
 def send_notification_email(

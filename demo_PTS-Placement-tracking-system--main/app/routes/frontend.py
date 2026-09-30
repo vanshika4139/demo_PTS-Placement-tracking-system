@@ -5396,10 +5396,14 @@ def candidate_help():
                 send_notification_email(
                     to_email=admin.email,
                     subject=f"New Support Ticket: {subject}",
+                    candidate_id=candidate.id,
                     body=(
-                        f"{ticket.reporter_name} ({ticket.reporter_email or '-'}) "
-                        f"raised a support ticket:\n\n{message}\n\n"
-                        f"View it at /super-admin/support-tickets/{ticket.id}"
+                        f"A candidate has raised a new support ticket.\n\n"
+                        f"Raised by: {ticket.reporter_name}\n"
+                        f"Email: {ticket.reporter_email or '-'}\n"
+                        f"Subject: {subject}\n\n"
+                        f"Message:\n{message}\n\n"
+                        f"View it at {url_for('frontend.super_admin_support_ticket_detail', ticket_id=ticket.id, _external=True)}"
                     ),
                 )
             except Exception:
@@ -7952,7 +7956,7 @@ def submit_support_ticket():
         body=(
                     f"{ticket.reporter_name or 'A user'} ({ticket.reporter_email or '-'}) "
                     f"raised a support ticket:\n\n{message}\n\n"
-                    f"View it at /super-admin/support-tickets/{ticket.id}"
+                    f"View it at {url_for('frontend.super_admin_support_ticket_detail', ticket_id=ticket.id, _external=True)}"
                 ),
             )
     except Exception:
@@ -8033,10 +8037,21 @@ def super_admin_respond_support_ticket(ticket_id):
 
     if reply and ticket.reporter_email:
         try:
+            _who = (ticket.reporter_name or "").split(" (")[0].strip() or "there"
+            _link = url_for("frontend.candidate_help", _external=True) if ticket.candidate_id else None
             send_notification_email(
                 to_email=ticket.reporter_email,
                 subject=f"Re: {ticket.subject}",
-                body=reply,
+                body=(
+                    f"Hello {_who},\n\n"
+                    "Our support team has replied to your ticket.\n\n"
+                    f"Ticket subject: {ticket.subject}\n"
+                    f"Status: {(ticket.status or 'open').replace('_', ' ').title()}\n\n"
+                    f"Your message:\n{ticket.message}\n\n"
+                    f"Reply from support:\n{reply}"
+                    + (f"\n\nYou can see all your tickets here: {_link}" if _link else "")
+                ),
+                candidate_id=ticket.candidate_id,
             )
         except Exception:
             logging.exception("Failed to email support ticket reply to reporter")

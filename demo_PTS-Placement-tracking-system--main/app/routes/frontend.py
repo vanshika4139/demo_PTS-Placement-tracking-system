@@ -4160,66 +4160,33 @@ def organization_candidate_create():
                 f"We wish you the best for your training and placement journey.\n\n"
                 f"Regards,\nPlacement Tracking Team"
             )
-            welcome_html = f"""\
-<!DOCTYPE html>
-<html>
-<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:Arial, Helvetica, sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7; padding:24px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden;">
-          <tr>
-            <td style="background-color:#2563eb; padding:24px 32px;">
-              <span style="color:#ffffff; font-size:20px; font-weight:bold;">Placement Tracking System</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px;">
-              <h2 style="margin:0 0 16px 0; color:#111827; font-size:20px;">Welcome, {candidate.full_name}!</h2>
-              <p style="margin:0 0 16px 0; color:#374151; font-size:15px; line-height:22px;">
-                Your registration has been completed successfully. Here are your details:
-              </p>
-              <table role="presentation" width="100%" cellpadding="8" cellspacing="0" style="background-color:#f9fafb; border-radius:6px; margin:0 0 24px 0;">
-                <tr>
-                  <td style="color:#6b7280; font-size:13px; width:160px;">Registration Number</td>
-                  <td style="color:#111827; font-size:14px; font-weight:bold;">{candidate.registration_number or 'Not assigned yet'}</td>
-                </tr>
-                <tr>
-                  <td style="color:#6b7280; font-size:13px;">Training Center</td>
-                  <td style="color:#111827; font-size:14px; font-weight:bold;">{candidate.training_center or 'Not assigned yet'}</td>
-                </tr>
-              </table>
-              <p style="margin:0 0 12px 0; color:#374151; font-size:15px; line-height:22px;">
-                Please set your password to get started (this link is valid for 24 hours):
-              </p>
-              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;">
-                <tr>
-                  <td style="border-radius:6px; background-color:#2563eb;">
-                    <a href="{set_password_url}" style="display:inline-block; padding:12px 28px; color:#ffffff; font-size:15px; font-weight:bold; text-decoration:none;">
-                      Set Your Password
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:0 0 24px 0; color:#374151; font-size:15px; line-height:22px;">
-                We wish you the best for your training and placement journey.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px 32px; background-color:#f9fafb; border-top:1px solid #e5e7eb;">
-              <p style="margin:0; color:#9ca3af; font-size:12px;">
-                Regards,<br>Placement Tracking Team
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
+            from app.utils.email import _email_shell
+            import html as _h
+            _esc = lambda v: _h.escape(str(v if v is not None else ""), quote=True)
+            welcome_html = _email_shell(welcome_subject, f"""
+<h2 style="margin:0 0 16px 0;font-size:20px;color:#111827;">Welcome, {_esc(candidate.full_name)}!</h2>
+<p style="margin:0 0 16px 0;">Your registration has been completed successfully. Here are your details:</p>
+<table role="presentation" width="100%" cellpadding="8" cellspacing="0" style="background:#f9fafb;border-radius:6px;margin:0 0 24px 0;">
+  <tr>
+    <td style="color:#6b7280;font-size:13px;width:160px;">Registration Number</td>
+    <td style="color:#111827;font-size:14px;font-weight:bold;">{_esc(candidate.registration_number or 'Not assigned yet')}</td>
+  </tr>
+  <tr>
+    <td style="color:#6b7280;font-size:13px;">Training Center</td>
+    <td style="color:#111827;font-size:14px;font-weight:bold;">{_esc(candidate.training_center or 'Not assigned yet')}</td>
+  </tr>
+</table>
+<p style="margin:0 0 12px 0;">Please set your password to get started (this link is valid for 24 hours):</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;">
+  <tr>
+    <td style="border-radius:6px;background:#2563eb;">
+      <a href="{_esc(set_password_url)}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;">Set Your Password</a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 16px 0;font-size:12px;color:#6b7280;">If the button does not work, copy this link into your browser:<br>{_esc(set_password_url)}</p>
+<p style="margin:0;">We wish you the best for your training and placement journey.</p>
+""")
             send_email(
                 candidate.email,
                 welcome_subject,
@@ -4228,6 +4195,37 @@ def organization_candidate_create():
                 candidate_id=candidate.id,
                 html_body=welcome_html,
             )
+
+        # Admin notification email: tells the super admins a candidate was added.
+        # Never blocks candidate creation - failures are only logged.
+        try:
+            from app.utils.email import send_notification_email as _notify_admin
+            _org = Organization.query.get(candidate.organization_id) if candidate.organization_id else None
+            _admin_body = (
+                "A new candidate has been added.\n\n"
+                f"Name: {candidate.full_name}\n"
+                f"Registration Number: {candidate.registration_number or '-'}\n"
+                f"Training Center: {candidate.training_center or '-'}\n"
+                f"Course: {candidate.course or '-'}\n"
+                f"Email: {candidate.email or '-'}\n"
+                f"Mobile: {candidate.mobile or '-'}\n"
+                f"Organization: {_org.organization_name if _org else '-'}\n"
+                f"Added by: {user.get('full_name') or user.get('email') or '-'}"
+            )
+            for _admin in User.query.filter_by(is_super_admin=True, is_deleted=False, is_active=True).all():
+                if not _admin.email:
+                    continue
+                try:
+                    _notify_admin(
+                        to_email=_admin.email,
+                        subject=f"New Candidate Added: {candidate.full_name}",
+                        body=_admin_body,
+                        candidate_id=candidate.id,
+                    )
+                except Exception:
+                    logging.exception("Failed to email new-candidate notification")
+        except Exception:
+            logging.exception("New-candidate admin notification failed")
 
         _create_notification(
             title=f"New candidate added: {candidate.full_name}",

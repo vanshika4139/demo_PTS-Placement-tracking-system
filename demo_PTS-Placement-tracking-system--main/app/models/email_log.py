@@ -12,6 +12,7 @@ EMAIL_TYPES = [
     ("support_ticket_reply", "Support Ticket Reply"),
     ("otp", "Password Reset OTP"),
     ("welcome", "Welcome"),
+    ("candidate_added", "New Candidate Added"),
     ("placement", "Placement"),
     ("salary", "Salary Update"),
     ("verification", "Verification Request"),
@@ -26,6 +27,8 @@ EMAIL_TYPE_LABELS = dict(EMAIL_TYPES)
 def classify_email_type(subject):
     """Works out the email type from the subject line."""
     s = (subject or "").strip().lower()
+    if s.startswith("new candidate added"):
+        return "candidate_added"
     if s.startswith("new support ticket"):
         return "support_ticket_raised"
     if s.startswith("re:"):

@@ -757,6 +757,12 @@ def get_super_admin_dashboard_data():
         if (c.verification_status or "pending") == "pending" and c.employer_name
     )
 
+    from app.models.support_ticket import SupportTicket
+    _st_total = SupportTicket.query.count()
+    _st_open = SupportTicket.query.filter_by(status="open").count()
+    _st_progress = SupportTicket.query.filter_by(status="in_progress").count()
+    _st_resolved = SupportTicket.query.filter_by(status="resolved").count()
+
     stat_sections = [
         {
             "title": "Organizations",
@@ -765,6 +771,15 @@ def get_super_admin_dashboard_data():
                 {"title": "Active Organizations", "value": str(active), "link": url_for("frontend.super_admin_organizations", filter="active"), "accent": "#16a34a"},
                 {"title": "Expired Organizations", "value": str(expired_organizations), "link": url_for("frontend.super_admin_organizations"), "accent": "#f59e0b"},
                 {"title": "Pending KYC", "value": str(pending_kyc), "link": url_for("frontend.super_admin_organizations", filter="pending_kyc"), "accent": "#ef4444"},
+            ],
+        },
+        {
+            "title": "Support Tickets",
+            "cards": [
+                {"title": "Total Tickets", "value": str(_st_total), "link": url_for("frontend.super_admin_support_tickets"), "accent": "#2563eb"},
+                {"title": "Open", "value": str(_st_open), "link": url_for("frontend.super_admin_support_tickets", status="open"), "accent": "#f59e0b"},
+                {"title": "In Progress", "value": str(_st_progress), "link": url_for("frontend.super_admin_support_tickets", status="in_progress"), "accent": "#06b6d4"},
+                {"title": "Resolved", "value": str(_st_resolved), "link": url_for("frontend.super_admin_support_tickets", status="resolved"), "accent": "#16a34a"},
             ],
         },
         {

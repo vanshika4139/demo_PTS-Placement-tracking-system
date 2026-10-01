@@ -36,3 +36,5 @@ backup_pg/
 
 # --- user uploads ---
 app/static/uploads/
+
+app/private_uploads/

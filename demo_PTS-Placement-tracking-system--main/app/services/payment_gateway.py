@@ -1,18 +1,14 @@
-﻿"""
+"""
 Payment gateway integration - SRS FR-09.
 
-This module is intentionally a thin, provider-agnostic shell. It cannot be
-fully wired up without a real Razorpay/Cashfree/Stripe account and API keys
-(entered on the Integrations page) - there is nothing to test end-to-end
-without those.
+Razorpay, Cashfree and Stripe are all wired (create_payment_link + webhook
+routes in app/routes/frontend.py). Each provider's keys are stored in their
+own columns on platform_settings, so switching the active provider on the
+Integrations page never overwrites another provider's saved keys.
 
-What IS real here: the Invoice bookkeeping. `mark_invoice_paid` is what a
-real webhook handler (or a manual "Mark as Paid" button) should call - it's
-the one place that updates both the Invoice and the Organization consistently.
-
-Razorpay and Cashfree are fully wired (create_payment_link + webhook route
-in app/routes/frontend.py). Stripe is not - see the module docstring on
-that branch below for what's needed to finish it.
+`mark_invoice_paid` is what a real webhook handler (or a manual "Mark as
+Paid" button) calls - it's the one place that updates both the Invoice and
+the Organization consistently.
 """
 
 import logging
@@ -23,40 +19,47 @@ from app.utils.platform_settings import get_platform_settings
 
 logger = logging.getLogger(__name__)
 
+PROVIDERS = ("stripe", "razorpay", "cashfree")
+
 
 def get_payment_gateway_config():
-    """Returns (provider, key_id, key_secret, webhook_secret). All may be
-    None/blank if the super admin hasn't configured a gateway yet - callers
-    must check before attempting to create a payment link."""
+    """Returns (provider, key_id, key_secret, webhook_secret) of the ACTIVE
+    provider only. Each provider's keys live in their own columns
+    (payment_gateway_<provider>_key_id / _key_secret / _webhook_secret).
+    All may be None if nothing is configured yet - callers must check
+    before attempting to create a payment link."""
     settings = get_platform_settings()
+    p = settings.payment_gateway_provider
+    if p not in PROVIDERS:
+        return None, None, None, None
     return (
-        settings.payment_gateway_provider,
-        settings.payment_gateway_key_id,
-        settings.payment_gateway_key_secret,
-        settings.payment_gateway_webhook_secret,
+        p,
+        getattr(settings, f"payment_gateway_{p}_key_id", None),
+        getattr(settings, f"payment_gateway_{p}_key_secret", None),
+        getattr(settings, f"payment_gateway_{p}_webhook_secret", None),
     )
 
 
 def is_gateway_configured():
     settings = get_platform_settings()
-    return bool(
-        settings.payment_gateway_enabled
-        and settings.payment_gateway_provider
-        and settings.payment_gateway_key_id
-        and settings.payment_gateway_key_secret
-    )
+    provider, key_id, key_secret, _ = get_payment_gateway_config()
+    if not (settings.payment_gateway_enabled and provider and key_secret):
+        return False
+    # Stripe's backend only needs the secret key; Razorpay/Cashfree need both.
+    if provider == "stripe":
+        return True
+    return bool(key_id)
 
 
 def create_payment_link(invoice: Invoice):
     """Returns a checkout URL the organization can be sent to pay this
     invoice. Raises RuntimeError if no gateway is configured, or
     NotImplementedError for a configured provider whose SDK call hasn't
-    been filled in yet (see module docstring).
+    been filled in yet.
 
     Each branch below shows the shape (invoice.amount in the provider's
     expected unit, a reference id to correlate the webhook back to this
-    Invoice, etc.) so wiring in the real SDK is a small, obvious diff
-    rather than a redesign.
+    Invoice, etc.).
     """
     provider, key_id, key_secret, _ = get_payment_gateway_config()
 
@@ -127,7 +130,10 @@ def create_payment_link(invoice: Invoice):
         # Cashfree's Payment Links API requires a customer phone number.
         # Our Invoice model doesn't carry one directly, so fall back to the
         # Organization's mobile number.
-        customer_phone = (invoice.organization.mobile or "").strip() or "9999999999"
+        from app.models import Organization as _Org
+        _inv_org = _Org.query.get(invoice.organization_id)
+        _digits = "".join(ch for ch in ((_inv_org.mobile if _inv_org else "") or "") if ch.isdigit())[-10:]
+        customer_phone = _digits if (len(_digits) == 10 and _digits[0] in "6789") else "9876543210"
 
         customer_details = LinkCustomerDetailsEntity(
             customer_phone=customer_phone,
@@ -143,11 +149,28 @@ def create_payment_link(invoice: Invoice):
         )
 
         try:
-            api_response = cashfree_instance.PGCreateLink(
-                create_link_request=create_link_request,
-                x_api_version=x_api_version,
-            )
-            payment_link = api_response.data
+            import requests as _rq
+            from types import SimpleNamespace as _NS
+            _base = ("https://sandbox.cashfree.com/pg/links" if str(key_id).upper().startswith("TEST")
+                     else "https://api.cashfree.com/pg/links")
+            _h = {"x-client-id": key_id, "x-client-secret": key_secret,
+                  "x-api-version": x_api_version, "Content-Type": "application/json"}
+            _body = {
+                "link_id": invoice.invoice_number,
+                "link_amount": float(invoice.amount),
+                "link_currency": "INR",
+                "link_purpose": f"Invoice {invoice.invoice_number}",
+                "customer_details": {"customer_phone": customer_phone,
+                                     "customer_name": invoice.organization.organization_name},
+                "link_notes": {"invoice_id": str(invoice.id), "organization_id": str(invoice.organization_id)},
+            }
+            _r = _rq.post(_base, json=_body, headers=_h, timeout=30)
+            if not _r.ok and "already" in _r.text.lower():
+                _r = _rq.get(_base + "/" + invoice.invoice_number, headers=_h, timeout=30)
+            if not _r.ok:
+                raise RuntimeError(_r.text[:300])
+            _d = _r.json()
+            payment_link = _NS(link_id=_d["link_id"], link_url=_d["link_url"])
         except Exception as exc:
             logger.exception("payment_gateway: Cashfree payment link creation failed for invoice %s", invoice.invoice_number)
             raise RuntimeError(f"Could not create Cashfree payment link: {exc}") from exc
@@ -315,3 +338,101 @@ def activate_self_serve_purchase(invoice, org):
     except Exception:
         pass
     return True
+
+
+def sync_cashfree_invoice(invoice):
+    """Asks Cashfree if this invoice's payment link is PAID and, if so,
+    marks the invoice paid (same as the webhook would). Works without a
+    public webhook URL. Returns True if the invoice was marked paid."""
+    import requests
+
+    if invoice.status == "PAID" or invoice.payment_gateway != "cashfree" or not invoice.gateway_reference:
+        return False
+    try:
+        key_id, key_secret = _provider_keys("cashfree")
+        base = ("https://sandbox.cashfree.com/pg/links/" if str(key_id).upper().startswith("TEST")
+                else "https://api.cashfree.com/pg/links/")
+        r = requests.get(
+            base + str(invoice.gateway_reference),
+            headers={"x-client-id": key_id, "x-client-secret": key_secret, "x-api-version": "2025-01-01"},
+            timeout=15,
+        )
+        if not r.ok:
+            return False
+        data = r.json()
+        if data.get("link_status") == "PAID":
+            mark_invoice_paid(
+                invoice,
+                gateway="cashfree",
+                gateway_reference=invoice.gateway_reference,
+                raw_response=str(data)[:2000],
+            )
+            return True
+    except Exception:
+        logger.exception("sync_cashfree_invoice failed for %s", invoice.invoice_number)
+    return False
+
+def _provider_keys(provider):
+    s = get_platform_settings()
+    return (getattr(s, f"payment_gateway_{provider}_key_id", None),
+            getattr(s, f"payment_gateway_{provider}_key_secret", None))
+
+
+def sync_razorpay_invoice(invoice):
+    """Asks Razorpay if this invoice's payment link is paid; if so marks it paid."""
+    import requests
+
+    if invoice.status == "PAID" or invoice.payment_gateway != "razorpay" or not invoice.gateway_reference:
+        return False
+    try:
+        key_id, key_secret = _provider_keys("razorpay")
+        r = requests.get(
+            f"https://api.razorpay.com/v1/payment_links/{invoice.gateway_reference}",
+            auth=(key_id, key_secret),
+            timeout=15,
+        )
+        if not r.ok:
+            return False
+        data = r.json()
+        if data.get("status") == "paid":
+            mark_invoice_paid(
+                invoice,
+                gateway="razorpay",
+                gateway_reference=invoice.gateway_reference,
+                raw_response=str(data)[:2000],
+            )
+            return True
+    except Exception:
+        logger.exception("sync_razorpay_invoice failed for %s", invoice.invoice_number)
+    return False
+
+
+def sync_stripe_invoice(invoice):
+    """Asks Stripe if this invoice's Checkout Session is paid; if so marks it paid."""
+    if invoice.status == "PAID" or invoice.payment_gateway != "stripe" or not invoice.gateway_reference:
+        return False
+    try:
+        import stripe
+
+        _key_id, key_secret = _provider_keys("stripe")
+        stripe.api_key = key_secret
+        sess = stripe.checkout.Session.retrieve(invoice.gateway_reference)
+        if sess.payment_status == "paid":
+            mark_invoice_paid(
+                invoice,
+                gateway="stripe",
+                gateway_reference=sess.payment_intent or invoice.gateway_reference,
+                raw_response=str(sess)[:2000],
+            )
+            return True
+    except Exception:
+        logger.exception("sync_stripe_invoice failed for %s", invoice.invoice_number)
+    return False
+
+
+def sync_pending_invoice(invoice):
+    return (
+        sync_cashfree_invoice(invoice)
+        or sync_razorpay_invoice(invoice)
+        or sync_stripe_invoice(invoice)
+    )

@@ -1257,7 +1257,8 @@ def super_admin_integrations():
                 "push_sender_id": request.form.get("push_sender_id", "").strip(),
                 "push_enabled": bool(request.form.get("push_enabled")),
 
-                "payment_gateway_provider": request.form.get("payment_gateway_provider", "").strip(),
+                "payment_gateway_provider": request.form.get("payment_gateway_provider", "").strip() or settings.payment_gateway_provider,
+                **{f"payment_gateway_{p}_{f}": request.form.get(f"pg_{p}_{f}", "").strip() or getattr(settings, f"payment_gateway_{p}_{f}") for p in ("stripe", "razorpay", "cashfree") for f in ("key_id", "key_secret", "webhook_secret")},
                 "payment_gateway_key_id": request.form.get("payment_gateway_key_id", "").strip() or settings.payment_gateway_key_id,
                 "payment_gateway_key_secret": request.form.get("payment_gateway_key_secret", "").strip() or settings.payment_gateway_key_secret,
                 "payment_gateway_webhook_secret": request.form.get("payment_gateway_webhook_secret", "").strip() or settings.payment_gateway_webhook_secret,
@@ -1312,6 +1313,8 @@ def super_admin_message_template_create():
             channel=channel,
             subject=subject,
             body=body,
+            whatsapp_template_name=(request.form.get("whatsapp_template_name") or "").strip() or None,
+            whatsapp_language=(request.form.get("whatsapp_language") or "").strip() or None,
             is_active=bool(request.form.get("is_active")),
             created_by=actor.get("id"),
         )
@@ -1338,6 +1341,8 @@ def super_admin_message_template_edit(template_id):
         actor = session.get("user") or {}
         template.subject = request.form.get("subject", "").strip() or None
         template.body = body
+        template.whatsapp_template_name = (request.form.get("whatsapp_template_name") or "").strip() or None
+        template.whatsapp_language = (request.form.get("whatsapp_language") or "").strip() or None
         template.is_active = bool(request.form.get("is_active"))
         template.modified_by = actor.get("id")
         db.session.commit()
@@ -1619,11 +1624,13 @@ def super_admin_run_notification_schedules():
         "notifications.run_manually",
         f"Schedules run: {results['schedules_run']}, "
         f"Emails sent: {results['emails_sent']}, "
+        f"WhatsApp sent: {results['whatsapp_sent']}, "
         f"Skipped (no provider): {results['skipped_channels']}",
     )
     flash(
         f"Notification schedules checked: {results['schedules_run']} schedule(s) ran, "
         f"{results['emails_sent']} email(s) sent, "
+        f"{results['whatsapp_sent']} WhatsApp message(s) sent, "
         f"{results['skipped_channels']} skipped (no provider configured for that channel).",
         "success",
     )
@@ -2702,6 +2709,11 @@ def super_admin_subscription(organization_id):
         invalidate_report_cache("dashboard:super_admin")
         flash("Subscription updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
+
+    from app.services.payment_gateway import sync_pending_invoice
+    for _pi in Invoice.query.filter_by(organization_id=organization.id, status="PENDING").all():
+        if sync_pending_invoice(_pi):
+            invalidate_report_cache("dashboard:super_admin")
 
     invoices = (
         Invoice.query.filter_by(organization_id=organization.id)
@@ -7463,6 +7475,10 @@ def organization_billing():
     current_plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
     plans = Plan.query.filter_by(status=1).order_by(Plan.display_order.asc(), Plan.name.asc()).all()
     plan_actions = {p.id: _org_plan_change(organization, current_plan, p) for p in plans}
+
+    from app.services.payment_gateway import sync_pending_invoice
+    for _pi in Invoice.query.filter_by(organization_id=org_id, status="PENDING").all():
+        sync_pending_invoice(_pi)
 
     invoices = Invoice.query.filter_by(organization_id=org_id).order_by(Invoice.issued_at.desc()).all()
     invoice_plan_ids = {i.plan_id for i in invoices if i.plan_id}

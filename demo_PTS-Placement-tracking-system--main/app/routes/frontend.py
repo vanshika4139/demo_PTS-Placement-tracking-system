@@ -768,16 +768,6 @@ def get_super_admin_dashboard_data():
             ],
         },
         {
-            "title": "Candidates & Placements",
-            "cards": [
-                {"title": "Total Candidates", "value": str(total_candidates), "link": None, "accent": "#2563eb"},
-                {"title": "Active Candidates", "value": str(active_candidates), "link": None, "accent": "#16a34a"},
-                {"title": "Monthly Placements", "value": str(current_month_placements), "link": None, "accent": "#06b6d4"},
-                {"title": "Pending Follow-ups", "value": str(pending_followups), "link": None, "accent": "#f59e0b"},
-                {"title": "Verification-Pending Candidates", "value": str(verification_pending), "link": None, "accent": "#ef4444"},
-            ],
-        },
-        {
             "title": "Subscriptions & Revenue",
             "cards": [
                 {"title": "Pending Payment", "value": str(pending_payment), "link": url_for("frontend.super_admin_organizations", filter="pending_payment"), "accent": "#8b5cf6"},
@@ -3037,6 +3027,12 @@ def super_admin_modules():
     from app.models import Module, SubModule
 
     modules = Module.query.filter_by(status=True).order_by(Module.order_no).all()
+    # Super Admin does not manage placement modules; hide them from this view only
+    _HIDDEN_FOR_SUPER_ADMIN = {
+        "candidate management", "batches", "schemes",
+        "placement", "tracking", "reports",
+    }
+    modules = [m for m in modules if (m.name or "").strip().lower() not in _HIDDEN_FOR_SUPER_ADMIN]
     sub_modules_by_module = {}
     for module in modules:
         sub_modules_by_module[module.id] = (
@@ -3046,6 +3042,7 @@ def super_admin_modules():
         )
 
     inactive_modules = Module.query.filter_by(status=False).order_by(Module.name).all()
+    inactive_modules = [m for m in inactive_modules if (m.name or "").strip().lower() not in _HIDDEN_FOR_SUPER_ADMIN]
 
     # Resolve created_by/modified_by user IDs to display names for the audit trail
     user_ids = set()
@@ -5967,6 +5964,8 @@ def _email_delivered_count():
 @require_permission("report.view")
 def reports():
     user = session.get("user")
+    if user.get("is_super_admin"):
+        return redirect("/super-admin/support-tickets")
     created_by_filter = None
     if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
         created_by_filter = user.get("id")
@@ -6191,6 +6190,8 @@ def reports_export():
     Format selected via ?format=csv|xlsx|pdf, defaulting to csv for any
     old bookmarked/shared links that predate the xlsx/pdf options."""
     user = session.get("user")
+    if user.get("is_super_admin"):
+        return redirect("/super-admin/support-tickets")
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))

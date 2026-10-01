@@ -732,31 +732,6 @@ def get_super_admin_dashboard_data():
         Notification.is_read == False,
     ).count()
 
-    # ---------------- SRS FR-01 / FR-03: platform-wide candidate/placement
-    # aggregates. Read-only counts and charts only - no candidate CRUD is
-    # touched or re-enabled here, per the "SRS ke hisab se sab karo, CRUD
-    # shuru nahi hua wo mat karna" decision. ----------------
-    all_candidates = Candidate.query.filter_by(is_deleted=False).all()
-    total_candidates = len(all_candidates)
-    active_candidates = sum(1 for c in all_candidates if (c.account_status or "active") == "active")
-
-    current_month_placements = sum(
-        1 for c in all_candidates
-        if c.joining_date and (
-            c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date
-        ) >= current_month_start
-    )
-
-    pending_followups = FollowUpCheckpoint.query.filter(
-        FollowUpCheckpoint.status == "pending",
-        FollowUpCheckpoint.due_date < today,
-    ).count()
-
-    verification_pending = sum(
-        1 for c in all_candidates
-        if (c.verification_status or "pending") == "pending" and c.employer_name
-    )
-
     from app.models.support_ticket import SupportTicket
     _st_total = SupportTicket.query.count()
     _st_open = SupportTicket.query.filter_by(status="open").count()
@@ -816,52 +791,6 @@ def get_super_admin_dashboard_data():
         count = sum(1 for o in all_orgs if o.created_at and o.created_at.year == year and o.created_at.month == month)
         org_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         org_growth_data.append(count)
-
-    # ---------------- SRS FR-03: Candidate Growth + Placement Rate charts.
-    # Placement Rate is a CUMULATIVE to-date rate at each month-end (placed
-    # / total candidates that existed by that month) - there is no
-    # snapshot/history table for a true point-in-time rate. Flag back if a
-    # different definition (e.g. rate among only that month's new
-    # candidates) was intended. ----------------
-    candidate_growth_labels = []
-    candidate_growth_data = []
-    for month_key in months:
-        year, month = map(int, month_key.split("-"))
-        count = sum(
-            1 for c in all_candidates
-            if c.created_at and c.created_at.year == year and c.created_at.month == month
-        )
-        candidate_growth_labels.append(datetime(year, month, 1).strftime("%b %Y"))
-        candidate_growth_data.append(count)
-
-    platform_placement_rate_labels = []
-    platform_placement_rate_data = []
-    for month_key in months:
-        year, month = map(int, month_key.split("-"))
-        month_end = (datetime(year, month, 1) + relativedelta(months=1) - timedelta(days=1)).date()
-        existed_by_then = [
-            c for c in all_candidates
-            if c.created_at and c.created_at.date() <= month_end
-        ]
-        placed_by_then = sum(1 for c in existed_by_then if c.employer_name)
-        rate = round((placed_by_then / len(existed_by_then) * 100), 1) if existed_by_then else 0
-        platform_placement_rate_labels.append(datetime(year, month, 1).strftime("%b %Y"))
-        platform_placement_rate_data.append(rate)
-
-    # ---------------- SRS item #21: Placement Trend Over Time (raw monthly
-    # placement COUNT, not the % rate above) ----------------
-    platform_placement_count_labels = []
-    platform_placement_count_data = []
-    placed_candidates_platform = [c for c in all_candidates if c.joining_date]
-    for month_key in months:
-        year, month = map(int, month_key.split("-"))
-        count = sum(
-            1 for c in placed_candidates_platform
-            if (c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date).year == year
-            and (c.joining_date.date() if isinstance(c.joining_date, datetime) else c.joining_date).month == month
-        )
-        platform_placement_count_labels.append(datetime(year, month, 1).strftime("%b %Y"))
-        platform_placement_count_data.append(count)
 
     # Top 10 states by organization count.
     state_counts = {}
@@ -1031,12 +960,6 @@ def get_super_admin_dashboard_data():
         "stat_sections": stat_sections,
         "org_growth_labels": org_growth_labels,
         "org_growth_data": org_growth_data,
-        "candidate_growth_labels": candidate_growth_labels,
-        "candidate_growth_data": candidate_growth_data,
-        "platform_placement_rate_labels": platform_placement_rate_labels,
-        "platform_placement_rate_data": platform_placement_rate_data,
-        "platform_placement_count_labels": platform_placement_count_labels,
-        "platform_placement_count_data": platform_placement_count_data,
         "state_distribution_labels": state_distribution_labels,
         "state_distribution_data": state_distribution_data,
         "kyc_status_labels": kyc_status_labels,

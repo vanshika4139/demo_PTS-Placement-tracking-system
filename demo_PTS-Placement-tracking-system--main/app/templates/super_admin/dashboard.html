@@ -178,6 +178,43 @@
 </div>
 {% endfor %}
 
+<!-- ================= NEW: Recent Support Tickets ================= -->
+<div class="sa-section-title">Support</div>
+<div class="sa-alert-panel">
+  <div class="sa-alert-panel-header">
+    <h3>Recent Support Tickets</h3>
+    <a href="{{ url_for('frontend.super_admin_support_tickets') }}" style="font-size:0.85rem; font-weight:600;">View all</a>
+  </div>
+  {% if recent_support_tickets %}
+  <table class="sa-alert-table" style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr><th>Date</th><th>Subject</th><th>Raised By</th><th>Organization</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for tk in recent_support_tickets %}
+      <tr>
+        <td>{{ tk.created_at }}</td>
+        <td>{{ tk.subject }}</td>
+        <td>{{ tk.reporter }}</td>
+        <td>{{ tk.organization or '-' }}</td>
+        <td>
+          {% if tk.status == 'open' %}
+          <span class="sa-pill sa-pill-amber">Open</span>
+          {% elif tk.status == 'in_progress' %}
+          <span class="sa-pill" style="background:#cffafe; color:#0e7490;">In Progress</span>
+          {% else %}
+          <span class="sa-pill sa-pill-active" style="background:#dcfce7; color:#16a34a;">Resolved</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sa-alert-empty">No support tickets yet.</div>
+  {% endif %}
+</div>
+
 <!-- ================= NEW: Subscription Expiry Alerts ================= -->
 <div class="sa-section-title">Alerts</div>
 <div class="sa-alert-panel">

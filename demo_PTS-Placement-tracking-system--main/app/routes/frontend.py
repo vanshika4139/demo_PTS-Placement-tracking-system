@@ -951,6 +951,19 @@ def get_super_admin_dashboard_data():
     expiring_subscriptions.sort(key=lambda x: x["days_left"])
     expiring_subscriptions = expiring_subscriptions[:10]
 
+    # ---------------- Recent support tickets ----------------
+    from app.models.support_ticket import SupportTicket
+    _org_names = {str(o.id): o.organization_name for o in all_orgs}
+    recent_support_tickets = []
+    for _t in SupportTicket.query.order_by(SupportTicket.created_at.desc()).limit(5).all():
+        recent_support_tickets.append({
+            "subject": _t.subject,
+            "reporter": _t.reporter_name or "-",
+            "organization": _org_names.get(str(_t.organization_id)) if _t.organization_id else None,
+            "status": _t.status,
+            "created_at": _t.created_at.strftime("%d-%m-%Y %H:%M") if _t.created_at else "-",
+        })
+
     # ---------------- Low credit balance alerts ----------------
     LOW_CREDIT_THRESHOLD = 50
     low_credit_organizations = []
@@ -1036,6 +1049,7 @@ def get_super_admin_dashboard_data():
         "subscription_trend_data": subscription_trend_data,
         "recent_organizations": recent_organizations,
         "expiring_subscriptions": expiring_subscriptions,
+        "recent_support_tickets": recent_support_tickets,
         "low_credit_organizations": low_credit_organizations,
         "failed_logins_24h": failed_logins_24h,
         "successful_logins_24h": successful_logins_24h,

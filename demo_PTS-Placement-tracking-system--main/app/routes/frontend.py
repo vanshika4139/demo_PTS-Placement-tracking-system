@@ -8010,6 +8010,7 @@ def super_admin_support_tickets():
     tickets = query.all()
     open_count = SupportTicket.query.filter_by(status="open").count()
     resolved_count = SupportTicket.query.filter_by(status="resolved").count()
+    in_progress_count = SupportTicket.query.filter_by(status="in_progress").count()
 
     return render_template(
         "super_admin/support_tickets.html",
@@ -8017,6 +8018,7 @@ def super_admin_support_tickets():
         status_filter=status_filter,
         open_count=open_count,
         resolved_count=resolved_count,
+        in_progress_count=in_progress_count,
         total_count=SupportTicket.query.count(),
     )
 

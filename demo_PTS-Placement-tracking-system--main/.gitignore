@@ -17,3 +17,22 @@ venv/
 ngrok.exe
 
 *.bak_*
+
+# --- local scratch / one-off scripts (repo root only) ---
+/apply_*.py
+/patch_*.py
+/check_*.py
+/fix_*.py
+/merge_fix.py
+/full_check.py
+/smoke_test.py
+/email_log_info.py
+/email_new.py
+/help.html
+
+# --- backups ---
+backup_pg/
+*.bak
+
+# --- user uploads ---
+app/static/uploads/

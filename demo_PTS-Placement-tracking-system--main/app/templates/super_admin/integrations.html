@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Integrations{% endblock %}
 
 {% block content %}
@@ -80,6 +80,16 @@
   .ig-toggle input:checked + .ig-toggle-slider:before { transform: translateX(18px); }
 
   .ig-channel-card.is-off { opacity: 0.7; }
+
+  /* per-provider payment gateway blocks */
+  .pg-block { display: none; margin-top: 14px; }
+  .pg-saved-tag {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #16a34a;
+  }
 </style>
 
 <div class="page-header">
@@ -126,7 +136,7 @@
       <label>SMTP Port<input type="number" name="smtp_port" value="{{ settings.smtp_port or '' }}" placeholder="587"></label>
       <label>SMTP Username<input type="text" name="smtp_username" value="{{ settings.smtp_username or '' }}" placeholder="you@example.com"></label>
       <label>SMTP Password
-        <input type="password" name="smtp_password" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.smtp_password else 'Enter password' }}" autocomplete="new-password">
+        <input type="password" name="smtp_password" placeholder="{{ 'Saved - leave blank to keep current' if settings.smtp_password else 'Enter password' }}" autocomplete="new-password">
       </label>
     </div>
   </div>
@@ -148,7 +158,7 @@
     <p class="ig-hint">Used for sending WhatsApp notifications (deducts from an organization's WhatsApp credits).</p>
     <div class="form-grid">
       <label>API Key / Access Token
-        <input type="password" name="whatsapp_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.whatsapp_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="whatsapp_api_key" placeholder="{{ 'Saved - leave blank to keep current' if settings.whatsapp_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Phone Number ID<input type="text" name="whatsapp_phone_number_id" value="{{ settings.whatsapp_phone_number_id or '' }}" placeholder="e.g. 109876543210123"></label>
     </div>
@@ -171,7 +181,7 @@
     <p class="ig-hint">Used for sending SMS notifications (deducts from an organization's SMS credits).</p>
     <div class="form-grid">
       <label>API Key
-        <input type="password" name="sms_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.sms_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="sms_api_key" placeholder="{{ 'Saved - leave blank to keep current' if settings.sms_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Sender ID<input type="text" name="sms_sender_id" value="{{ settings.sms_sender_id or '' }}" placeholder="e.g. CDVOCD"></label>
     </div>
@@ -195,7 +205,7 @@
     <div class="form-grid">
       <label>Provider<input type="text" name="voice_provider" value="{{ settings.voice_provider or '' }}" placeholder="e.g. Exotel, Twilio"></label>
       <label>API Key
-        <input type="password" name="voice_api_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.voice_api_key else 'Enter API key' }}" autocomplete="new-password">
+        <input type="password" name="voice_api_key" placeholder="{{ 'Saved - leave blank to keep current' if settings.voice_api_key else 'Enter API key' }}" autocomplete="new-password">
       </label>
       <label>Caller ID / From Number<input type="text" name="voice_caller_id" value="{{ settings.voice_caller_id or '' }}" placeholder="e.g. +911140000000"></label>
     </div>
@@ -219,17 +229,26 @@
     <div class="form-grid">
       <label>Provider<input type="text" name="push_provider" value="{{ settings.push_provider or '' }}" placeholder="e.g. Firebase Cloud Messaging"></label>
       <label>Server Key
-        <input type="password" name="push_server_key" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.push_server_key else 'Enter server key' }}" autocomplete="new-password">
+        <input type="password" name="push_server_key" placeholder="{{ 'Saved - leave blank to keep current' if settings.push_server_key else 'Enter server key' }}" autocomplete="new-password">
       </label>
       <label>Sender ID<input type="text" name="push_sender_id" value="{{ settings.push_sender_id or '' }}" placeholder="e.g. 1234567890"></label>
     </div>
   </div>
 
+  {# ------------------------------------------------------------------
+     Payment Gateway - every provider keeps its own saved keys. The
+     dropdown only picks which provider is ACTIVE and which block of
+     fields is shown. Blank field = keep the saved value.
+     ------------------------------------------------------------------ #}
+  {% set pg_providers = [('stripe', 'Stripe'), ('razorpay', 'Razorpay'), ('cashfree', 'Cashfree')] %}
+  {% set pg_active = settings.payment_gateway_provider %}
+  {% set pg_active_secret = settings['payment_gateway_' ~ pg_active ~ '_key_secret'] if pg_active else None %}
+
   <div class="panel-card ig-channel-card {{ '' if settings.payment_gateway_enabled else 'is-off' }}" style="margin-bottom:20px;">
     <div class="ig-section-title">
       <span>
         Payment Gateway
-        {% if settings.payment_gateway_key_id %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Not configured</span>{% endif %}
+        {% if pg_active_secret %}<span class="ig-status-pill ig-status-set">Configured here</span>{% else %}<span class="ig-status-pill ig-status-env">Not configured</span>{% endif %}
       </span>
       <span class="ig-toggle-wrap">
         <span class="ig-toggle-label">{{ 'Enabled' if settings.payment_gateway_enabled else 'Disabled' }}</span>
@@ -239,26 +258,37 @@
         </label>
       </span>
     </div>
-    <p class="ig-hint">Lets organizations pay invoices online (Razorpay/Cashfree/Stripe) instead of only bank transfer + manual "Mark as Paid". Leave a field blank to keep its current value.</p>
+    <p class="ig-hint">Lets organizations pay invoices online (Razorpay/Cashfree/Stripe) instead of only bank transfer + manual "Mark as Paid". Each provider's keys are saved separately - switching the provider never erases the other one's keys. Leave a field blank to keep its saved value.</p>
+
     <div class="form-grid">
-      <label>Provider
-        <select name="payment_gateway_provider">
-          <option value="" {{ 'selected' if not settings.payment_gateway_provider }}>â€” Select provider â€”</option>
-          <option value="razorpay" {{ 'selected' if settings.payment_gateway_provider == 'razorpay' }}>Razorpay</option>
-          <option value="cashfree" {{ 'selected' if settings.payment_gateway_provider == 'cashfree' }}>Cashfree</option>
-          <option value="stripe" {{ 'selected' if settings.payment_gateway_provider == 'stripe' }}>Stripe</option>
+      <label>Active Provider
+        <select name="payment_gateway_provider" id="pg_provider">
+          <option value="" {{ 'selected' if not pg_active }}>-- Select provider --</option>
+          {% for code, label in pg_providers %}
+            <option value="{{ code }}" {{ 'selected' if pg_active == code }}>{{ label }}</option>
+          {% endfor %}
         </select>
       </label>
-      <label>Key ID / Publishable Key
-        <input type="password" name="payment_gateway_key_id" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_key_id else 'Enter key ID' }}" autocomplete="new-password">
-      </label>
-      <label>Key Secret
-        <input type="password" name="payment_gateway_key_secret" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_key_secret else 'Enter key secret' }}" autocomplete="new-password">
-      </label>
-      <label>Webhook Secret
-        <input type="password" name="payment_gateway_webhook_secret" placeholder="{{ 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (leave blank to keep current)' if settings.payment_gateway_webhook_secret else 'Enter webhook secret' }}" autocomplete="new-password">
-      </label>
     </div>
+
+    {% for code, label in pg_providers %}
+    <div class="pg-block" data-provider="{{ code }}">
+      <div class="form-grid">
+        {% for field, field_label, hint in [
+            ('key_id', 'Key ID / Publishable Key', 'pk_test_... / rzp_test_...'),
+            ('key_secret', 'Key Secret', 'sk_test_... / secret'),
+            ('webhook_secret', 'Webhook Secret', 'whsec_...')
+        ] %}
+          {% set saved = settings['payment_gateway_' ~ code ~ '_' ~ field] %}
+          <label>{{ label }} - {{ field_label }}{% if saved %}<span class="pg-saved-tag">Saved &#10003;</span>{% endif %}
+            <input type="password" name="pg_{{ code }}_{{ field }}"
+                   placeholder="{{ 'Saved - leave blank to keep current' if saved else hint }}"
+                   autocomplete="new-password">
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
   </div>
 
   <div class="form-actions">
@@ -280,5 +310,20 @@
   }
   window.addEventListener('pageshow', syncIntegrationToggles);
   document.addEventListener('DOMContentLoaded', syncIntegrationToggles);
+
+  // Show only the key fields of the provider currently selected in the dropdown.
+  function showPaymentProviderFields() {
+    var select = document.getElementById('pg_provider');
+    if (!select) return;
+    document.querySelectorAll('.pg-block').forEach(function (block) {
+      block.style.display = (block.dataset.provider === select.value) ? 'block' : 'none';
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var select = document.getElementById('pg_provider');
+    if (select) select.addEventListener('change', showPaymentProviderFields);
+    showPaymentProviderFields();
+  });
+  window.addEventListener('pageshow', showPaymentProviderFields);
 </script>
 {% endblock %}

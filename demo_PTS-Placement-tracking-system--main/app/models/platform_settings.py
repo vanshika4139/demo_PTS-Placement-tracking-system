@@ -60,5 +60,15 @@ class PlatformSettings(db.Model):
     payment_gateway_key_secret = Column(String(500), nullable=True)   # Razorpay key_secret / Cashfree secret_key / Stripe secret key
     payment_gateway_webhook_secret = Column(String(500), nullable=True)  # used to verify inbound webhook signatures
 
+    payment_gateway_stripe_key_id = Column(String(255), nullable=True)
+    payment_gateway_stripe_key_secret = Column(String(500), nullable=True)
+    payment_gateway_stripe_webhook_secret = Column(String(500), nullable=True)
+    payment_gateway_razorpay_key_id = Column(String(255), nullable=True)
+    payment_gateway_razorpay_key_secret = Column(String(500), nullable=True)
+    payment_gateway_razorpay_webhook_secret = Column(String(500), nullable=True)
+    payment_gateway_cashfree_key_id = Column(String(255), nullable=True)
+    payment_gateway_cashfree_key_secret = Column(String(500), nullable=True)
+    payment_gateway_cashfree_webhook_secret = Column(String(500), nullable=True)
+
     modified_by = Column(MySQLCHAR(32), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

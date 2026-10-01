@@ -24,7 +24,7 @@ from app.extensions import db
 from app.models.candidate import Candidate
 from app.models.message_template import MessageTemplate
 from app.models.notification_schedule import NotificationSchedule
-from app.services.messaging_service import send_email
+from app.services.messaging_service import send_email, send_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +131,19 @@ def _render(body, candidate):
     )
 
 
+def _whatsapp_params(body, candidate):
+    """Values for a Meta template's {{1}}, {{2}}, ... : one per placeholder
+    in the template body, in order of appearance."""
+    import re
+
+    values = {
+        "candidate_name": candidate.full_name or "",
+        "employer_name": candidate.employer_name or "",
+        "joining_date": candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "",
+    }
+    return [values.get(name, "") for name in re.findall(r"\{(\w+)\}", body)]
+
+
 def run_notification_schedules(force=False):
     """Entry point called hourly by the scheduler. Returns a summary dict
     for logging - never raises, so one bad schedule/template does not stop
@@ -140,6 +153,7 @@ def run_notification_schedules(force=False):
     today = now.date()
     schedules_run = 0
     emails_sent = 0
+    whatsapp_sent = 0
     skipped_channels = 0
 
     due_schedules = NotificationSchedule.query.filter_by(is_active=True).all()
@@ -162,8 +176,34 @@ def run_notification_schedules(force=False):
                     body = _render(template.body, candidate)
                     if send_email(candidate.email, subject, body, organization_id=candidate.organization_id, candidate_id=candidate.id):
                         emails_sent += 1
+            elif template.channel == "WHATSAPP":
+                for candidate in candidates:
+                    if not candidate.mobile:
+                        continue
+                    body = _render(template.body, candidate)
+                    if template.whatsapp_template_name:
+                        sent = send_whatsapp(
+                            candidate.mobile,
+                            body,
+                            organization_id=candidate.organization_id,
+                            candidate_id=candidate.id,
+                            template_name=template.whatsapp_template_name,
+                            template_params=_whatsapp_params(template.body, candidate),
+                            language=template.whatsapp_language or "en",
+                        )
+                    else:
+                        # No approved template saved: free-form text, which Meta
+                        # only delivers inside the 24-hour customer-service window.
+                        sent = send_whatsapp(
+                            candidate.mobile,
+                            body,
+                            organization_id=candidate.organization_id,
+                            candidate_id=candidate.id,
+                        )
+                    if sent:
+                        whatsapp_sent += 1
             else:
-                # WHATSAPP/SMS/VOICE_CALL/PUSH have no real provider configured
+                # SMS/VOICE_CALL/PUSH have no real provider configured
                 # yet - see app/services/messaging_service.py. Not attempting
                 # to send avoids pretending this schedule did something it
                 # did not; the dashboard channel-delivered counts stay honest.
@@ -184,5 +224,6 @@ def run_notification_schedules(force=False):
     return {
         "schedules_run": schedules_run,
         "emails_sent": emails_sent,
+        "whatsapp_sent": whatsapp_sent,
         "skipped_channels": skipped_channels,
     }

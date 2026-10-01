@@ -36,6 +36,7 @@ class Invoice(db.Model):
     id = Column(MySQLCHAR(32), primary_key=True, default=lambda: str(uuid.uuid4()).replace("-", ""))
     invoice_number = Column(String(40), unique=True, nullable=False)  # e.g. INV-2026-000123, human-facing
     organization_id = Column(BigInteger, ForeignKey("organizations.id"), nullable=False, index=True)
+    organization = db.relationship('Organization', foreign_keys=[organization_id], lazy='joined')
     plan_id = Column(MySQLCHAR(32), ForeignKey("plans.id"), nullable=True, index=True)
 
     billing_cycle = Column(String(20), nullable=False, default="monthly")  # monthly | quarterly | yearly

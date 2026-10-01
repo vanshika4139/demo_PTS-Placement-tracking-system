@@ -202,7 +202,8 @@ def send_sms(to_number, message, organization_id=None, candidate_id=None):
     return False
 
 
-def send_whatsapp(to_number, message, organization_id=None, candidate_id=None):
+def send_whatsapp(to_number, message, organization_id=None, candidate_id=None,
+                  template_name=None, template_params=None, language="en"):
     """Sends a WhatsApp message via Meta's WhatsApp Cloud API (POST
     /{phone_number_id}/messages) and logs the attempt to CommunicationLog.
     Returns True if Meta accepted the message, False otherwise.
@@ -243,12 +244,34 @@ def send_whatsapp(to_number, message, organization_id=None, candidate_id=None):
         return False
 
     url = f"{WHATSAPP_GRAPH_API_BASE.rstrip('/')}/{phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": clean_number,
-        "type": "text",
-        "text": {"body": message, "preview_url": False},
-    }
+    if template_name:
+        # Approved-template message: the only kind Meta allows outside the
+        # 24-hour customer-service window (scheduled notifications).
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_number,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language or "en"},
+            },
+        }
+        if template_params:
+            payload["template"]["components"] = [{
+                "type": "body",
+                # Meta rejects empty parameter text, so blanks become "-".
+                "parameters": [
+                    {"type": "text", "text": str(p) if p not in (None, "") else "-"}
+                    for p in template_params
+                ],
+            }]
+    else:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_number,
+            "type": "text",
+            "text": {"body": message, "preview_url": False},
+        }
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",

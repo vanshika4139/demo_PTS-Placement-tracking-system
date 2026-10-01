@@ -34,6 +34,12 @@ class MessageTemplate(db.Model):
     channel = Column(String(20), nullable=False)
     subject = Column(String(255), nullable=True)
     body = Column(Text, nullable=False)
+    # WhatsApp only (Meta Cloud API): a business-initiated message outside the
+    # 24-hour window must use a pre-approved template. Each placeholder in
+    # `body` ({candidate_name}, {employer_name}, ...) is sent, in order of
+    # appearance, as {{1}}, {{2}}, ... of that template.
+    whatsapp_template_name = Column(String(100), nullable=True)
+    whatsapp_language = Column(String(10), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_by = Column(MySQLCHAR(32), nullable=True)
     modified_by = Column(MySQLCHAR(32), nullable=True)

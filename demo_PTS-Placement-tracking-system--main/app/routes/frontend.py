@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import logging
 import os
 import random
@@ -162,6 +162,15 @@ def candidate_login_required(view_func):
             session.pop("candidate", None)
             flash("Your account has been blocked. Please contact your training center.", "error")
             return redirect(url_for("frontend.candidate_login"))
+
+        # Force a password change while the password is still the default
+        # (the candidate's mobile number). The check runs once per login and
+        # is remembered in the session, so it does not slow every request.
+        if session.get("candidate_pw_ok") != candidate.id:
+            mobile = (candidate.mobile or "").strip()
+            if mobile and candidate.password_hash and check_password_hash(candidate.password_hash, mobile):
+                return redirect(url_for("frontend.candidate_force_password"))
+            session["candidate_pw_ok"] = candidate.id
 
         return view_func(*args, **kwargs)
     return wrapped
@@ -5151,6 +5160,7 @@ def candidate_set_password(token):
 @frontend_bp.route("/candidate/logout")
 def candidate_logout():
     session.pop("candidate", None)
+    session.pop("candidate_pw_ok", None)
     flash("You have been logged out", "success")
     return redirect(url_for("frontend.candidate_login"))
 
@@ -5250,6 +5260,42 @@ def candidate_dashboard():
     )
 
 
+@frontend_bp.route("/candidate/force-change-password", methods=["GET", "POST"])
+def candidate_force_password():
+    """Shown right after login while the candidate still has the default
+    password (their mobile number). Not wrapped in candidate_login_required,
+    since that decorator is what redirects here."""
+    session_candidate = session.get("candidate")
+    if not session_candidate:
+        return redirect(url_for("frontend.candidate_login"))
+
+    candidate = Candidate.query.filter_by(id=session_candidate.get("id"), is_deleted=False).first()
+    if not candidate or candidate.account_status == "blocked":
+        session.pop("candidate", None)
+        return redirect(url_for("frontend.candidate_login"))
+
+    error = None
+    if request.method == "POST":
+        new_password = request.form.get("new_password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+        mobile = (candidate.mobile or "").strip()
+
+        if len(new_password) < 6:
+            error = "Password must be at least 6 characters long."
+        elif new_password != confirm_password:
+            error = "Passwords do not match."
+        elif mobile and new_password.strip() == mobile:
+            error = "Your new password cannot be the same as your mobile number."
+        else:
+            candidate.password_hash = generate_password_hash(new_password)
+            db.session.commit()
+            session["candidate_pw_ok"] = candidate.id
+            flash("Password updated. Welcome!", "success")
+            return redirect(url_for("frontend.candidate_dashboard"))
+
+    return render_template("candidate/force_password.html", error=error, candidate=candidate)
+
+    
 @frontend_bp.route("/candidate/change-password", methods=["POST"])
 @candidate_login_required
 def candidate_change_password():

@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import logging
 import os
 import random
@@ -7936,27 +7936,84 @@ def submit_support_ticket():
 @frontend_bp.route("/super-admin/support-tickets")
 @super_admin_required
 def super_admin_support_tickets():
-    """List of every support ticket, newest first, filterable by status."""
+    """List of support tickets with status, search, organization and date
+    filters, paginated, newest first."""
+    from datetime import timedelta
+
+    from sqlalchemy import or_
+
+    from app.extensions import db
     from app.models.support_ticket import SupportTicket
 
     status_filter = (request.args.get("status") or "").strip()
-    query = SupportTicket.query.order_by(SupportTicket.created_at.desc())
-    if status_filter in ("open", "in_progress", "resolved"):
-        query = query.filter_by(status=status_filter)
+    q = (request.args.get("q") or "").strip()
+    org_filter = (request.args.get("organization_id") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    page = request.args.get("page", 1, type=int)
 
-    tickets = query.all()
-    open_count = SupportTicket.query.filter_by(status="open").count()
-    resolved_count = SupportTicket.query.filter_by(status="resolved").count()
-    in_progress_count = SupportTicket.query.filter_by(status="in_progress").count()
+    query = SupportTicket.query
+    if status_filter in ("open", "in_progress", "resolved"):
+        query = query.filter(SupportTicket.status == status_filter)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            SupportTicket.subject.ilike(like),
+            SupportTicket.reporter_name.ilike(like),
+            SupportTicket.reporter_email.ilike(like),
+        ))
+    if org_filter:
+        query = query.filter(SupportTicket.organization_id == org_filter)
+    try:
+        if date_from:
+            query = query.filter(SupportTicket.created_at >= datetime.strptime(date_from, "%Y-%m-%d"))
+        if date_to:
+            query = query.filter(SupportTicket.created_at < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+    except ValueError:
+        flash("Invalid date filter ignored.", "error")
+
+    pagination = query.order_by(SupportTicket.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+
+    # Status counts in one query
+    counts = dict(
+        db.session.query(SupportTicket.status, db.func.count(SupportTicket.id))
+        .group_by(SupportTicket.status)
+        .all()
+    )
+
+    # Organization names for the table column and the filter dropdown
+    org_ids = [
+        r[0] for r in db.session.query(SupportTicket.organization_id).distinct().all()
+        if r[0] and str(r[0]).isdigit()
+    ]
+    org_names = {}
+    if org_ids:
+        for org in Organization.query.filter(Organization.id.in_([int(i) for i in org_ids])).all():
+            org_names[str(org.id)] = org.organization_name
+    org_options = sorted(org_names.items(), key=lambda kv: kv[1].lower())
+
+    filters = {
+        "status": status_filter,
+        "q": q,
+        "organization_id": org_filter,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
 
     return render_template(
         "super_admin/support_tickets.html",
-        tickets=tickets,
+        pagination=pagination,
+        tickets=pagination.items,
+        filters=filters,
         status_filter=status_filter,
-        open_count=open_count,
-        resolved_count=resolved_count,
-        in_progress_count=in_progress_count,
-        total_count=SupportTicket.query.count(),
+        org_names=org_names,
+        org_options=org_options,
+        open_count=counts.get("open", 0),
+        in_progress_count=counts.get("in_progress", 0),
+        resolved_count=counts.get("resolved", 0),
+        total_count=sum(counts.values()),
     )
 
 

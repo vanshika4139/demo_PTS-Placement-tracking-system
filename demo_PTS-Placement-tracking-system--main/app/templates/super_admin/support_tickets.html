@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Support Tickets{% endblock %}
 
 {% block content %}
@@ -28,17 +28,30 @@
 
 <div class="panel-card" style="margin-top:20px;">
   <form method="get" class="form-grid full-form" style="align-items:end;">
-    <label>
-      Status
+    <label>Search
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="Subject, name or email">
+    </label>
+    <label>Status
       <select name="status">
-        <option value="" {% if not status_filter %}selected{% endif %}>All</option>
-        <option value="open" {% if status_filter == "open" %}selected{% endif %}>Open</option>
-        <option value="in_progress" {% if status_filter == "in_progress" %}selected{% endif %}>In Progress</option>
-        <option value="resolved" {% if status_filter == "resolved" %}selected{% endif %}>Resolved</option>
+        <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+        <option value="open" {% if filters.status == "open" %}selected{% endif %}>Open</option>
+        <option value="in_progress" {% if filters.status == "in_progress" %}selected{% endif %}>In Progress</option>
+        <option value="resolved" {% if filters.status == "resolved" %}selected{% endif %}>Resolved</option>
       </select>
     </label>
+    <label>Organization
+      <select name="organization_id">
+        <option value="">All</option>
+        {% for oid, oname in org_options %}
+        <option value="{{ oid }}" {% if filters.organization_id == oid %}selected{% endif %}>{{ oname }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From <input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+    <label>To <input type="date" name="date_to" value="{{ filters.date_to }}"></label>
     <div>
       <button type="submit" class="primary-btn">Filter</button>
+      <a href="{{ url_for('frontend.super_admin_support_tickets') }}" class="ghost-btn">Reset</a>
     </div>
   </form>
 </div>
@@ -51,6 +64,7 @@
           <th>Date</th>
           <th>Subject</th>
           <th>Raised By</th>
+          <th>Organization</th>
           <th>Status</th>
         </tr>
       </thead>
@@ -60,6 +74,7 @@
           <td style="white-space:nowrap;">{{ ticket.created_at.strftime('%d-%m-%Y %H:%M') if ticket.created_at else '-' }}</td>
           <td>{{ ticket.subject }}</td>
           <td>{{ ticket.reporter_name or ticket.reporter_email or '-' }}</td>
+          <td>{{ org_names.get(ticket.organization_id|string) or '-' }}</td>
           <td>
             {% if ticket.status == "open" %}
               <span class="status-badge status-pending">Open</span>
@@ -72,13 +87,25 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="4" style="text-align:center; color:var(--muted); padding:32px;">No support tickets yet.</td>
+          <td colspan="5" style="text-align:center; color:var(--muted); padding:32px;">No support tickets found.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+{% if pagination.pages > 1 %}
+<div style="display:flex; gap:12px; justify-content:center; align-items:center; margin-top:16px;">
+  {% if pagination.has_prev %}
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_support_tickets', page=pagination.prev_num, **filters) }}">&larr; Prev</a>
+  {% endif %}
+  <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+  {% if pagination.has_next %}
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_support_tickets', page=pagination.next_num, **filters) }}">Next &rarr;</a>
+  {% endif %}
+</div>
+{% endif %}
 
 <style>
   .clickable-row { cursor: pointer; }

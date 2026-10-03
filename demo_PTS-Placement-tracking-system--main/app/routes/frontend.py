@@ -4988,6 +4988,7 @@ def candidate_import_template():
 
 
 @frontend_bp.route("/candidate/login", methods=["GET", "POST"])
+@rate_limit("candidate_login", max_attempts=5, window_seconds=900)
 def candidate_login():
     error = None
     if request.method == "POST":

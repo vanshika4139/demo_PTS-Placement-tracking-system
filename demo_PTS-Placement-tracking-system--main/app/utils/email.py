@@ -10,6 +10,8 @@ import html as _html
 import re
 from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
+import requests
+
 from app.extensions import db
 from app.models.email_log import EmailLog, classify_email_type
 from app.utils.platform_settings import get_smtp_config, is_channel_enabled
@@ -201,6 +203,26 @@ def _build_message(from_addr, to_email, subject, body, html_body=None, attachmen
     return msg
 
 
+def _send_via_gateway(to_email, subject, body, html_body):
+    """Sends through the REST email gateway configured in .env
+    (EMAIL_API_URL, EMAIL_API_KEY, EMAIL_FROM). Raises on any failure so
+    _dispatch logs it to email_logs."""
+    url = os.environ.get("EMAIL_API_URL")
+    key = os.environ.get("EMAIL_API_KEY")
+    sender = os.environ.get("EMAIL_FROM")
+    payload = {"from": sender, "to": to_email, "subject": subject, "text": body}
+    if html_body:
+        payload["html"] = html_body
+    resp = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=SMTP_TIMEOUT,
+    )
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Email gateway error {resp.status_code}: {resp.text[:200]}")
+
+
 def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
               candidate_id, user_id, essential):
     """Single code path for every outgoing email. Everything that can fail
@@ -214,17 +236,24 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
                 "(Integrations page or the organization's Channel Settings)."
             )
 
-        host, port, username, password = get_smtp_config(organization_id)
-        msg = _build_message(_from_address(username), to_email, subject, body, html_body, attachments)
+        use_gateway = bool(
+            os.environ.get("EMAIL_API_KEY") and os.environ.get("EMAIL_API_URL")
+        ) and not attachments
 
-        server = _open_smtp(host, port, username, password)
-        try:
-            server.sendmail(parseaddr(msg["From"])[1] or msg["From"], [to_email], msg.as_string())
-        finally:
+        if use_gateway:
+            _send_via_gateway(to_email, subject, body, html_body or _wrap_html(subject, body))
+        else:
+            host, port, username, password = get_smtp_config(organization_id)
+            msg = _build_message(_from_address(username), to_email, subject, body, html_body, attachments)
+
+            server = _open_smtp(host, port, username, password)
             try:
-                server.quit()
-            except Exception:
-                server.close()
+                server.sendmail(parseaddr(msg["From"])[1] or msg["From"], [to_email], msg.as_string())
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    server.close()
     except Exception as exc:
         _log_email(
             to_email, subject, status="failed", error_message=str(exc),

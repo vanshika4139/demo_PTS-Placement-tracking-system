@@ -343,6 +343,45 @@ def _send_certificate_email(candidate):
     except Exception:
         pass
 
+def _send_training_complete_email(candidate):
+    """Tells the candidate their training is complete and where to download the
+    certificate (a link, so no attachment is needed). Never raises."""
+    from app.utils.email import send_notification_email
+
+    if not candidate.email:
+        return
+    try:
+        link = url_for("frontend.candidate_login", _external=True)
+        course_part = f" ({candidate.course})" if candidate.course else ""
+        send_notification_email(
+            candidate.email,
+            "Your Training Completion Certificate",
+            (
+                f"Dear {candidate.full_name},\n\n"
+                f"Congratulations on completing your training{course_part}!\n\n"
+                f"You can download your certificate from your candidate dashboard "
+                f"after logging in:\n{link}\n\n"
+                f"Regards,\nPlacement Tracking Team"
+            ),
+            organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
+        )
+    except Exception:
+        pass
+
+
+def _training_certificate_pdf_response(candidate):
+    from flask import Response
+    from app.models.organization import Organization
+    from app.utils.certificate import build_certificate_pdf
+
+    org = Organization.query.get(candidate.organization_id)
+    pdf = build_certificate_pdf(candidate, org.organization_name if org else "")
+    safe = "".join(ch if ch.isalnum() else "_" for ch in (candidate.full_name or "candidate"))
+    disposition = "attachment; filename=" + safe + "_training_certificate.pdf"
+    return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": disposition})
+
+
 def _log_activity(action, details=None):
     user = session.get("user")
     log = ActivityLog(
@@ -4226,6 +4265,36 @@ def organization_candidate_detail(candidate_id):
     return render_template("organization/candidates/detail.html", candidate=candidate)
 
 
+@frontend_bp.route("/organization/candidates/<candidate_id>/training-certificate")
+@login_required
+@require_permission("candidate.view")
+def organization_candidate_training_certificate(candidate_id):
+    from app.utils.certificate import is_certificate_eligible
+
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    if not is_certificate_eligible(candidate):
+        flash("Certificate is available only after training is completed.", "error")
+        return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate.id))
+    return _training_certificate_pdf_response(candidate)
+
+
+@frontend_bp.route("/candidate/training-certificate")
+@candidate_login_required
+def candidate_training_certificate():
+    from app.utils.certificate import is_certificate_eligible
+
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.filter_by(id=session_candidate.get("id"), is_deleted=False).first_or_404()
+    if not is_certificate_eligible(candidate):
+        flash("Certificate is available only after training is completed.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+    return _training_certificate_pdf_response(candidate)
+
+
 @frontend_bp.route("/organization/candidates/<candidate_id>/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("candidate.update")
@@ -4244,6 +4313,7 @@ def organization_candidate_edit(candidate_id):
 
     if request.method == "POST":
         was_placed = bool(candidate.employer_name)
+        old_training_status = candidate.training_status
         old_email = (candidate.email or "").strip()
 
         new_mobile = (request.form.get("mobile") or "").strip()
@@ -4357,6 +4427,9 @@ def organization_candidate_edit(candidate_id):
             candidate.password_hash = generate_password_hash(candidate.mobile.strip())
 
         db.session.commit()
+
+        if candidate.training_status == "training_completed" and old_training_status != "training_completed":
+            _send_training_complete_email(candidate)
 
         is_placed_now = bool(candidate.employer_name)
         if is_placed_now and not was_placed:

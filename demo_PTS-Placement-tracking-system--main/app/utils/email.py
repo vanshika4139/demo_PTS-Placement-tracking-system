@@ -203,6 +203,20 @@ def _build_message(from_addr, to_email, subject, body, html_body=None, attachmen
     return msg
 
 
+def _org_has_own_smtp(organization_id):
+    """True if this organization saved its OWN complete SMTP server (host,
+    username and password). Such emails must keep using that SMTP, not the
+    platform gateway (same rule as messaging_service._org_uses_own_smtp)."""
+    if not organization_id:
+        return False
+    try:
+        from app.utils.platform_settings import get_organization_channel_settings
+        s = get_organization_channel_settings(organization_id)
+    except Exception:
+        return False
+    return bool(s and s.smtp_host and s.smtp_username and s.smtp_password)
+
+
 def _send_via_gateway(to_email, subject, body, html_body):
     """Sends through the REST email gateway configured in .env
     (EMAIL_API_URL, EMAIL_API_KEY, EMAIL_FROM). Raises on any failure so
@@ -236,9 +250,11 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
                 "(Integrations page or the organization's Channel Settings)."
             )
 
-        use_gateway = bool(
-            os.environ.get("EMAIL_API_KEY") and os.environ.get("EMAIL_API_URL")
-        ) and not attachments
+        use_gateway = (
+            bool(os.environ.get("EMAIL_API_KEY") and os.environ.get("EMAIL_API_URL"))
+            and not attachments
+            and not _org_has_own_smtp(organization_id)
+        )
 
         if use_gateway:
             _send_via_gateway(to_email, subject, body, html_body or _wrap_html(subject, body))

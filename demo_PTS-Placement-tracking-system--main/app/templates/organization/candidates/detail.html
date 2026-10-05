@@ -40,6 +40,7 @@
     <p>Registration No. {{ candidate.registration_number or '-' }} • {{ candidate.mobile or '-' }}</p>
   </div>
   <div class="inline-actions">
+  {% if candidate.training_status == 'training_completed' and not candidate.employer_name %}<a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_training_certificate', candidate_id=candidate.id) }}">Training Certificate</a>{% endif %}
   <a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_edit', candidate_id=candidate.id) }}">Edit</a>
   {% if candidate.employer_name %}
   <a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_certificate_pdf', candidate_id=candidate.id) }}">Download Certificate</a>

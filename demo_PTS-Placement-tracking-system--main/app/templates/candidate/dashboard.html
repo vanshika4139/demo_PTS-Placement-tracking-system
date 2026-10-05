@@ -22,7 +22,7 @@
         <h2>{{ _('welcome') }} {{ candidate.full_name }}</h2>
         <p>{{ _('registration_no_label') }} {{ candidate.registration_number or '-' }}</p>
       </div>
-      {% if candidate.training_status == 'training_completed' %}<a href="{{ url_for('frontend.candidate_training_certificate') }}" class="ghost-btn">Download Certificate</a>{% endif %}
+      {% if candidate.training_status == 'training_completed' and not candidate.employer_name %}<a href="{{ url_for('frontend.candidate_training_certificate') }}" class="ghost-btn">Download Certificate</a>{% endif %}
       <a href="{{ url_for('frontend.candidate_logout') }}" class="ghost-btn">{{ _('logout') }}</a>
     </div>
 

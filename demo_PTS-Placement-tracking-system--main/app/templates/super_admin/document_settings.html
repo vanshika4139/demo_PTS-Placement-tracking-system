@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Documents &amp; Reminders{% endblock %}
+
+{% block content %}
+<style>
+  .doc-check input[type=checkbox] { width:auto; margin:0; }
+</style>
+<div class="page-header">
+  <div>
+    <h2>Documents &amp; Reminders</h2>
+    <p>Choose which post-placement documents are required. Candidates get one reminder email listing the documents still missing.</p>
+  </div>
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <h3>Required documents</h3>
+    <label class="doc-check" style="display:flex; flex-direction:row; justify-content:flex-start; align-items:center; gap:10px; text-align:left;">
+      <input type="checkbox" name="doc_require_offer_letter" {% if settings.doc_require_offer_letter %}checked{% endif %}>
+      Offer letter / placement document
+    </label>
+    <label class="doc-check" style="display:flex; flex-direction:row; justify-content:flex-start; align-items:center; gap:10px; text-align:left;">
+      <input type="checkbox" name="doc_require_joining_letter" {% if settings.doc_require_joining_letter %}checked{% endif %}>
+      Joining letter
+    </label>
+    <label class="doc-check" style="display:flex; flex-direction:row; justify-content:flex-start; align-items:center; gap:10px; text-align:left;">
+      <input type="checkbox" name="doc_require_salary_slip" {% if settings.doc_require_salary_slip %}checked{% endif %}>
+      Salary slip
+    </label>
+    <h3 style="margin-top:16px;">Reminder</h3>
+    <label>Send the reminder after this many days from the joining date
+      <input type="number" name="doc_reminder_days" min="1" max="365" value="{{ settings.doc_reminder_days or 30 }}">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

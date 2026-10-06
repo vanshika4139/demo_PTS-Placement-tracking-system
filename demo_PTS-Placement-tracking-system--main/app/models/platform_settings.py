@@ -70,5 +70,11 @@ class PlatformSettings(db.Model):
     payment_gateway_cashfree_key_secret = Column(String(500), nullable=True)
     payment_gateway_cashfree_webhook_secret = Column(String(500), nullable=True)
 
+    # --- Post-placement documents (reminders) ---
+    doc_require_offer_letter = Column(Boolean, nullable=False, default=True)
+    doc_require_joining_letter = Column(Boolean, nullable=False, default=False)
+    doc_require_salary_slip = Column(Boolean, nullable=False, default=False)
+    doc_reminder_days = Column(Integer, nullable=False, default=30)
+
     modified_by = Column(MySQLCHAR(32), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

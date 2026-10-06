@@ -1258,6 +1258,28 @@ def webhook_stripe():
 
     return "", 200
 
+@frontend_bp.route("/super-admin/settings/documents", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_document_settings():
+    """Which post-placement documents are required, and after how many days
+    from the joining date the reminder email goes out."""
+    settings = get_platform_settings()
+    if request.method == "POST":
+        try:
+            days = int(request.form.get("doc_reminder_days") or 30)
+        except ValueError:
+            days = 30
+        days = max(1, min(days, 365))
+        settings.doc_require_offer_letter = bool(request.form.get("doc_require_offer_letter"))
+        settings.doc_require_joining_letter = bool(request.form.get("doc_require_joining_letter"))
+        settings.doc_require_salary_slip = bool(request.form.get("doc_require_salary_slip"))
+        settings.doc_reminder_days = days
+        db.session.commit()
+        flash("Document settings saved.", "success")
+        return redirect(url_for("frontend.super_admin_document_settings"))
+    return render_template("super_admin/document_settings.html", settings=settings)
+
+
 @frontend_bp.route("/super-admin/settings/integrations", methods=["GET", "POST"])
 @super_admin_required
 def super_admin_integrations():
@@ -5725,6 +5747,107 @@ def candidate_upload_proof():
 
     flash(translate("proof_upload_success"), "success")
     return redirect(url_for("frontend.candidate_dashboard"))
+
+
+DOCUMENT_FIELDS = {
+    "joining_letter": ("joining_letter_path", "joining_letter_filename", "Joining letter"),
+    "salary_slip": ("salary_slip_path", "salary_slip_filename", "Salary slip"),
+}
+MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+
+
+def _save_candidate_document(candidate, doc_type, upload):
+    """Stores a candidate's joining letter / salary slip in private_uploads
+    (not static). Returns (ok, message)."""
+    path_attr, name_attr, label = DOCUMENT_FIELDS[doc_type]
+    if not upload or not upload.filename:
+        return False, "Please choose a file to upload."
+    original = secure_filename(upload.filename)
+    if not original or not _allowed_proof_file(original):
+        return False, "Only PDF, JPG and PNG files are allowed."
+    upload.stream.seek(0, os.SEEK_END)
+    size = upload.stream.tell()
+    upload.stream.seek(0)
+    if size > MAX_DOCUMENT_BYTES:
+        return False, "File is too large (maximum 5 MB)."
+
+    upload_dir = os.path.join("app", "private_uploads", "candidate_documents", str(candidate.organization_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{original}")
+    upload.save(path)
+
+    old_path = getattr(candidate, path_attr)
+    setattr(candidate, path_attr, path)
+    setattr(candidate, name_attr, original)
+    db.session.commit()
+    if old_path and old_path != path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    return True, f"{label} uploaded."
+
+
+def _send_candidate_document(candidate, doc_type):
+    from flask import abort, send_file
+    if doc_type not in DOCUMENT_FIELDS:
+        abort(404)
+    path_attr, name_attr, _label = DOCUMENT_FIELDS[doc_type]
+    path = getattr(candidate, path_attr)
+    if not path:
+        abort(404)
+    abs_path = os.path.abspath(path)
+    if not os.path.exists(abs_path):
+        abort(404)
+    return send_file(
+        abs_path, as_attachment=True,
+        download_name=getattr(candidate, name_attr) or os.path.basename(abs_path),
+    )
+
+
+@frontend_bp.route("/candidate/upload-document/<doc_type>", methods=["POST"])
+@candidate_login_required
+def candidate_upload_document(doc_type):
+    from flask import abort
+    if doc_type not in DOCUMENT_FIELDS:
+        abort(404)
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+    if not candidate.employer_name:
+        flash("You can upload this document after your placement is recorded.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    ok, message = _save_candidate_document(candidate, doc_type, request.files.get("document"))
+    if ok:
+        label = DOCUMENT_FIELDS[doc_type][2]
+        _create_notification(
+            title=f"{label} uploaded: {candidate.full_name}",
+            message=f"{candidate.full_name} uploaded their {label.lower()}.",
+            notif_type="info",
+            organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
+        )
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/candidate/document/<doc_type>/download")
+@candidate_login_required
+def candidate_download_document(doc_type):
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+    return _send_candidate_document(candidate, doc_type)
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/document/<doc_type>")
+@login_required
+def organization_candidate_document(candidate_id, doc_type):
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    return _send_candidate_document(candidate, doc_type)
 
 
 @frontend_bp.route("/candidate/report-placement", methods=["POST"])

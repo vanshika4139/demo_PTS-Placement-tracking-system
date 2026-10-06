@@ -63,7 +63,7 @@
 <div class="panel-card" style="margin-bottom:16px;">
   <h3>Certificate</h3>
   <p style="font-size:0.9rem; opacity:0.8; margin:6px 0 12px;">
-    Apna certificate upload karo (PDF, JPG ya PNG, max 5 MB). Upload kiya hua certificate candidate aur admin dono ke download mein system wale ki jagah milega.
+    Upload your organization's certificate (PDF, JPG or PNG, max 5 MB). The uploaded certificate is given to the candidate and the admin instead of the system-generated one.
   </p>
   <form method="post" action="{{ url_for('frontend.organization_candidate_certificate_upload', candidate_id=candidate.id) }}" enctype="multipart/form-data" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
     {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}

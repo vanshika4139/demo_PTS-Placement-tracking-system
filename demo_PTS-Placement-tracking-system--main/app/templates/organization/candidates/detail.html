@@ -41,20 +41,6 @@
   </div>
   <div class="inline-actions">
   {% if candidate.training_status == 'training_completed' and not candidate.employer_name %}<a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_training_certificate', candidate_id=candidate.id) }}">Training Certificate</a>{% endif %}
-  {% if candidate.training_status == 'training_completed' %}
-  <form method="post" action="{{ url_for('frontend.organization_candidate_certificate_upload', candidate_id=candidate.id) }}" enctype="multipart/form-data" style="display:inline-flex; gap:6px; align-items:center;">
-    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-    <input type="file" name="certificate_file" accept=".pdf,.jpg,.jpeg,.png" required>
-    <button type="submit" class="ghost-btn">Upload Certificate</button>
-  </form>
-  {% if candidate.certificate_file_path %}
-  <span style="font-size:0.85rem;">Uploaded: {{ candidate.certificate_original_filename }}</span>
-  <form method="post" action="{{ url_for('frontend.organization_candidate_certificate_remove', candidate_id=candidate.id) }}" style="display:inline;">
-    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-    <button type="submit" class="ghost-btn">Remove uploaded</button>
-  </form>
-  {% endif %}
-  {% endif %}
   <a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_edit', candidate_id=candidate.id) }}">Edit</a>
   {% if candidate.employer_name %}
   <a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_certificate_pdf', candidate_id=candidate.id) }}">Download Certificate</a>
@@ -62,6 +48,29 @@
   <a class="primary-btn" href="{{ url_for('frontend.organization_candidates') }}">Back</a>
 </div>
 </div>
+
+{% if candidate.training_status == 'training_completed' %}
+<div class="panel-card" style="margin-bottom:16px;">
+  <h3>Certificate</h3>
+  <p style="font-size:0.9rem; opacity:0.8; margin:6px 0 12px;">
+    Apna certificate upload karo (PDF, JPG ya PNG, max 5 MB). Upload kiya hua certificate candidate aur admin dono ke download mein system wale ki jagah milega.
+  </p>
+  <form method="post" action="{{ url_for('frontend.organization_candidate_certificate_upload', candidate_id=candidate.id) }}" enctype="multipart/form-data" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <input type="file" name="certificate_file" accept=".pdf,.jpg,.jpeg,.png" required>
+    <button type="submit" class="ghost-btn">Upload Certificate</button>
+  </form>
+  {% if candidate.certificate_file_path %}
+  <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:12px;">
+    <span style="font-size:0.9rem;">Uploaded: <strong>{{ candidate.certificate_original_filename }}</strong></span>
+    <form method="post" action="{{ url_for('frontend.organization_candidate_certificate_remove', candidate_id=candidate.id) }}" style="display:inline;">
+      {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+      <button type="submit" class="ghost-btn">Remove uploaded</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="detail-layout">
 

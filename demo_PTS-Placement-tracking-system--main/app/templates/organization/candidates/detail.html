@@ -32,6 +32,16 @@
   .detail-table th {
     white-space: nowrap;
   }
+  .detail-card-row {
+    align-items: stretch;
+  }
+  .detail-wide {
+    grid-column: 1 / -1;
+  }
+  .detail-table td .ghost-btn {
+    display: inline-block;
+    white-space: nowrap;
+  }
 </style>
 
 <div class="page-header page-header-inline">
@@ -128,7 +138,7 @@
         {% endif %}
       </div>
 
-      <div class="panel-card">
+      <div class="panel-card detail-wide">
         <h3>Placement</h3>
         <table class="data-table detail-table">
           <tbody>

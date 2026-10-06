@@ -17,6 +17,12 @@
       <label>Website<input type="url" name="website" value="{{ organization.website or '' if organization else '' }}" placeholder="https://example.com"></label>
       <label>Contact Person<input type="text" name="contact_person" value="{{ organization.contact_person or '' if organization else '' }}"></label>
       <label>Designation<input type="text" name="designation" value="{{ organization.designation or '' if organization else '' }}" placeholder="e.g. HR Manager"></label>
+      <label>Certificate Authority Name<input type="text" name="authority_name" value="{{ organization.authority_name or '' if organization else '' }}" placeholder="e.g. Rahul Sharma"></label>
+      <label>Certificate Authority Designation<input type="text" name="authority_designation" value="{{ organization.authority_designation or '' if organization else '' }}" placeholder="e.g. Director"></label>
+      <label>Certificate Signature (PNG/JPG)
+      <input type="file" name="signature_file" accept="image/png,image/jpeg">
+      {% if organization and organization.signature_url %}<span> Current: <img src="{{ organization.signature_url }}" alt="Current signature" style="height:28px; vertical-align:middle; margin-left:6px;"></span>{% endif %}
+      </label>
       <label>Email<input type="email" name="email" value="{{ organization.email or '' if organization else '' }}"></label>
       <label>Mobile<input type="text" name="mobile" value="{{ organization.mobile or '' if organization else '' }}"></label>
       <label>Address<input type="text" name="address" value="{{ organization.address or '' if organization else '' }}"></label>

@@ -375,8 +375,17 @@ def _training_certificate_pdf_response(candidate):
     from app.models.organization import Organization
     from app.utils.certificate import build_certificate_pdf
 
+    if candidate.certificate_file_path:
+        abs_path = os.path.abspath(candidate.certificate_file_path)
+        if os.path.exists(abs_path):
+            from flask import send_file
+            return send_file(
+                abs_path, as_attachment=True,
+                download_name=candidate.certificate_original_filename or os.path.basename(abs_path),
+            )
+
     org = Organization.query.get(candidate.organization_id)
-    pdf = build_certificate_pdf(candidate, org.organization_name if org else "")
+    pdf = build_certificate_pdf(candidate, org)
     safe = "".join(ch if ch.isalnum() else "_" for ch in (candidate.full_name or "candidate"))
     disposition = "attachment; filename=" + safe + "_training_certificate.pdf"
     return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": disposition})
@@ -1989,6 +1998,21 @@ def super_admin_organizations_bulk_topup():
     return redirect(url_for("frontend.super_admin_organizations"))
 
 
+def _save_org_signature(signature_file):
+    """Saves an organization's certificate signature image. Returns its
+    /static URL, or None (with a flash message) if the file type is not allowed."""
+    filename = secure_filename(signature_file.filename)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("png", "jpg", "jpeg"):
+        flash("Signature must be a PNG or JPG image.", "error")
+        return None
+    unique_name = f"{uuid.uuid4().hex}_{filename}"
+    upload_dir = os.path.join("app", "static", "uploads", "org_signatures")
+    os.makedirs(upload_dir, exist_ok=True)
+    signature_file.save(os.path.join(upload_dir, unique_name))
+    return f"/static/uploads/org_signatures/{unique_name}"
+
+
 @frontend_bp.route("/super-admin/organizations/create", methods=["GET", "POST"])
 @super_admin_required
 def super_admin_create_organization():
@@ -2002,6 +2026,11 @@ def super_admin_create_organization():
             os.makedirs(upload_dir, exist_ok=True)
             logo_file.save(os.path.join(upload_dir, unique_name))
             logo_url = f"/static/uploads/org_logos/{unique_name}"
+
+        signature_url = None
+        _sig = request.files.get("signature_file")
+        if _sig and _sig.filename:
+            signature_url = _save_org_signature(_sig)
 
         org = Organization(
             organization_code=request.form.get("organization_code"),
@@ -2020,6 +2049,9 @@ def super_admin_create_organization():
             district=request.form.get("district"),
             pincode=request.form.get("pincode"),
             logo=logo_url,
+            authority_name=(request.form.get("authority_name") or "").strip() or None,
+            authority_designation=(request.form.get("authority_designation") or "").strip() or None,
+            signature_url=signature_url,
             subscription_plan_id=_parse_int(request.form.get("subscription_plan_id")),
             subscription_expiry_date=_parse_date(request.form.get("subscription_expiry_date")),
             storage_used=0,
@@ -2432,6 +2464,13 @@ def super_admin_edit_organization(organization_id):
         organization.mobile = request.form.get("mobile")
         organization.contact_person = request.form.get("contact_person")
         organization.designation = request.form.get("designation")
+        organization.authority_name = (request.form.get("authority_name") or "").strip() or None
+        organization.authority_designation = (request.form.get("authority_designation") or "").strip() or None
+        _sig = request.files.get("signature_file")
+        if _sig and _sig.filename:
+            _sig_url = _save_org_signature(_sig)
+            if _sig_url:
+                organization.signature_url = _sig_url
         organization.address = request.form.get("address")
         organization.country_id = _parse_int(request.form.get("country_id"))
         organization.state_id = _parse_int(request.form.get("state_id"))
@@ -4302,6 +4341,87 @@ def organization_candidate_detail(candidate_id):
         flash("You do not have permission to view this candidate.", "error")
         return redirect(url_for("frontend.no_access"))
     return render_template("organization/candidates/detail.html", candidate=candidate)
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/certificate/upload", methods=["POST"])
+@login_required
+@require_permission("candidate.update")
+def organization_candidate_certificate_upload(candidate_id):
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to edit this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    back = redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate.id))
+
+    if candidate.training_status != "training_completed":
+        flash("A certificate can be uploaded only after training is completed.", "error")
+        return back
+
+    upload = request.files.get("certificate_file")
+    if not upload or not upload.filename:
+        flash("Please choose a file to upload.", "error")
+        return back
+
+    original = secure_filename(upload.filename)
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in ("pdf", "jpg", "jpeg", "png"):
+        flash("Only PDF, JPG and PNG files are allowed.", "error")
+        return back
+
+    upload.stream.seek(0, os.SEEK_END)
+    size = upload.stream.tell()
+    upload.stream.seek(0)
+    if size > 5 * 1024 * 1024:
+        flash("File is too large (maximum 5 MB).", "error")
+        return back
+
+    upload_dir = os.path.join("app", "private_uploads", "candidate_certificates", str(candidate.organization_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{original}")
+    upload.save(path)
+
+    old_path = candidate.certificate_file_path
+    candidate.certificate_file_path = path
+    candidate.certificate_original_filename = original
+    candidate.certificate_uploaded_at = datetime.utcnow()
+    db.session.commit()
+
+    if old_path and old_path != path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+
+    _log_activity("candidate.certificate_uploaded", f"Uploaded certificate for {candidate.full_name}")
+    flash("Certificate uploaded. The candidate will now receive this file.", "success")
+    return back
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/certificate/remove", methods=["POST"])
+@login_required
+@require_permission("candidate.update")
+def organization_candidate_certificate_remove(candidate_id):
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to edit this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+
+    old_path = candidate.certificate_file_path
+    candidate.certificate_file_path = None
+    candidate.certificate_original_filename = None
+    candidate.certificate_uploaded_at = None
+    db.session.commit()
+    if old_path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+
+    _log_activity("candidate.certificate_removed", f"Removed uploaded certificate for {candidate.full_name}")
+    flash("Uploaded certificate removed. The system-generated certificate will be used.", "success")
+    return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate.id))
 
 
 @frontend_bp.route("/organization/candidates/<candidate_id>/training-certificate")

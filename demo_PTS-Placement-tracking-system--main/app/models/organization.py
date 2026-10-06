@@ -24,6 +24,9 @@ class Organization(db.Model):
     district = Column(String(150), nullable=True)  # free text - no districts master table exists yet
     pincode = Column(String(10), nullable=True)
     logo = Column(String(500), nullable=True)
+    authority_name = Column(String(150), nullable=True)  # certificate signatory name
+    authority_designation = Column(String(150), nullable=True)
+    signature_url = Column(String(500), nullable=True)  # signature image used on certificates
     subscription_plan_id = Column(MySQLCHAR(32), ForeignKey("plans.id"), nullable=True, index=True)
     billing_cycle = Column(String(20), nullable=True, default="monthly")  # monthly | quarterly | yearly
     subscription_expiry_date = Column(Date, nullable=True)

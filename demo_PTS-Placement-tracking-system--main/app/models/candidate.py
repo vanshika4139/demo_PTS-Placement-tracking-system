@@ -56,6 +56,9 @@ class Candidate(db.Model):
     course = Column(String(255), nullable=True)
     course_duration = Column(String(120), nullable=True)
     training_status = Column(String(80), nullable=False, default="training_started")
+    certificate_file_path = Column(String(500), nullable=True)  # certificate uploaded by the organization admin
+    certificate_original_filename = Column(String(255), nullable=True)
+    certificate_uploaded_at = Column(DateTime, nullable=True)
     bank_name = Column(String(255), nullable=True)
     account_number = Column(String(100), nullable=True)
     ifsc = Column(String(30), nullable=True)

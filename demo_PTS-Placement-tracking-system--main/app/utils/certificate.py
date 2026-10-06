@@ -6,10 +6,12 @@ training_status is "training_completed", so if the status is moved back the
 certificate stops being available automatically.
 """
 import io
+import os
 from datetime import datetime
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
@@ -39,12 +41,32 @@ def _fit_font_size(text, font, max_size, max_width, min_size=14):
     return size
 
 
-def build_certificate_pdf(candidate, organization_name):
+def _draw_image(c, url, x, y, max_w, max_h, center=False):
+    """Draws an uploaded image (stored as /static/... URL) inside a max box,
+    keeping its aspect ratio. Silently skipped if missing or unreadable."""
+    if not url:
+        return
+    try:
+        path = os.path.join("app", url.lstrip("/"))
+        if not os.path.exists(path):
+            return
+        img = ImageReader(path)
+        iw, ih = img.getSize()
+        scale = min(max_w / iw, max_h / ih)
+        w, h = iw * scale, ih * scale
+        left = x - w / 2 if center else x
+        c.drawImage(img, left, y, width=w, height=h, mask="auto")
+    except Exception:
+        return
+
+
+def build_certificate_pdf(candidate, organization):
     """Returns the certificate as PDF bytes. Raises ValueError if the
     candidate has not completed training."""
     if not is_certificate_eligible(candidate):
         raise ValueError("Certificate is available only after training is completed.")
 
+    organization_name = getattr(organization, "organization_name", organization)
     buf = io.BytesIO()
     width, height = landscape(A4)
     c = canvas.Canvas(buf, pagesize=(width, height))
@@ -68,6 +90,7 @@ def build_certificate_pdf(candidate, organization_name):
     c.setFillColor(grey)
     c.setFont("Helvetica-Bold", 14)
     c.drawCentredString(cx, height - 85, (organization_name or "").upper())
+    _draw_image(c, getattr(organization, "logo", None), 62, height - 110, 100, 60)
 
     c.setFillColor(dark)
     c.setFont("Helvetica-Bold", 34)
@@ -121,12 +144,23 @@ def build_certificate_pdf(candidate, organization_name):
     c.drawString(70, 70, f"Certificate No: {certificate_number(candidate)}")
     c.drawString(70, 55, f"Issued on: {_fmt(datetime.utcnow())}")
 
+    _draw_image(c, getattr(organization, "signature_url", None), width - 165, 90, 150, 45, center=True)
     c.setStrokeColor(dark)
     c.setLineWidth(0.8)
     c.line(width - 260, 85, width - 70, 85)
     c.setFillColor(dark)
-    c.setFont("Helvetica", 11)
-    c.drawCentredString(width - 165, 70, "Authorized Signatory")
+    authority_name = getattr(organization, "authority_name", None)
+    authority_designation = getattr(organization, "authority_designation", None)
+    if authority_name:
+        c.setFont("Helvetica-Bold", 11)
+        c.drawCentredString(width - 165, 70, authority_name)
+        if authority_designation:
+            c.setFont("Helvetica", 9)
+            c.setFillColor(grey)
+            c.drawCentredString(width - 165, 57, authority_designation)
+    else:
+        c.setFont("Helvetica", 11)
+        c.drawCentredString(width - 165, 70, "Authorized Signatory")
 
     c.showPage()
     c.save()

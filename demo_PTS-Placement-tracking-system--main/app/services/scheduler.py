@@ -88,6 +88,24 @@ def init_scheduler(app, hour=2, minute=0):
         id="notification_schedules_check",
         replace_existing=True,
     )
+    from app.services.document_reminders import run_document_reminders
+
+    def _run_document_reminders():
+        with app.app_context():
+            logger.info("scheduler: checking post-placement document reminders")
+            try:
+                results = run_document_reminders()
+                logger.info("scheduler: document reminders finished: %s", results)
+            except Exception:
+                logger.exception("scheduler: document reminders failed")
+
+    _scheduler.add_job(
+        _run_document_reminders,
+        trigger="interval",
+        hours=1,
+        id="document_reminders_check",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("scheduler: daily billing cycle scheduled for %02d:%02d every day", hour, minute)
     

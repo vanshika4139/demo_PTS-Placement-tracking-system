@@ -1,4 +1,4 @@
-﻿from app.models.candidate import Candidate
+from app.models.candidate import Candidate
 from app.models.follow_up_checkpoint import FollowUpCheckpoint
 from app.models.organization import Organization
 from app.models.permission import Permission
@@ -33,6 +33,7 @@ from app.models.user_session import UserSession
 from app.models.attendance import Attendance
 from app.models.email_log import EmailLog
 from app.models.support_ticket import SupportTicket
+from app.models.document_reminder_log import DocumentReminderLog
 
 __all__ = [
     "Candidate",
@@ -68,5 +69,6 @@ __all__ = [
     "FeatureFlagDefault",
     "UserSession",
     "Attendance",
-    "EmailLog"
+    "EmailLog",
+    "DocumentReminderLog",
 ]

@@ -614,6 +614,35 @@ def _is_trusted_device(candidate):
     return bool(device and device.is_valid())
 
 
+OTP_RESEND_COOLDOWN_SECONDS = 300  # 5 minutes between OTP emails (admin, organization, candidate)
+
+
+def _otp_cooldown_remaining(email, cooldown_seconds=OTP_RESEND_COOLDOWN_SECONDS):
+    """Seconds left before another OTP may be sent to this email (0 = allowed).
+    Derived from the latest unused OTP: it was created with expires_at =
+    now + 10 minutes, so created time = expires_at - 10 minutes. Server-side,
+    so clearing cookies does not bypass it."""
+    try:
+        last = (
+            PasswordResetOTP.query
+            .filter(PasswordResetOTP.email == email, PasswordResetOTP.is_used == False)
+            .order_by(PasswordResetOTP.expires_at.desc())
+            .first()
+        )
+        if not last:
+            return 0
+        sent_at = last.expires_at - timedelta(minutes=10)
+        remaining = cooldown_seconds - (datetime.utcnow() - sent_at).total_seconds()
+        return int(remaining) + 1 if remaining > 0 else 0
+    except Exception:
+        return 0
+
+
+def _otp_wait_text(seconds):
+    minutes = (seconds + 59) // 60
+    return f"{minutes} minute" + ("" if minutes == 1 else "s")
+
+
 @frontend_bp.route("/forgot-password", methods=["GET", "POST"])
 @rate_limit("forgot_password", max_attempts=3, window_seconds=600)
 def forgot_password():
@@ -624,6 +653,11 @@ def forgot_password():
 
         if not user:
             error = "No account found with this email address"
+        elif _otp_cooldown_remaining(email) > 0:
+            error = (
+                f"Please wait {_otp_wait_text(_otp_cooldown_remaining(email))} before requesting another OTP. "
+                "The OTP already sent to your email is still valid."
+            )
         else:
             otp_code = _generate_otp()
             otp_entry = PasswordResetOTP(
@@ -637,6 +671,11 @@ def forgot_password():
             try:
                 send_otp_email(email, otp_code)
             except Exception:
+                try:
+                    otp_entry.is_used = True
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
                 error = "Could not send OTP email. Please check SMTP configuration or try again later."
                 return render_template("auth/forgot_password.html", error=error)
 
@@ -5110,6 +5149,17 @@ def candidate_login():
             flash(f"Welcome, {candidate.full_name}", "success")
             return redirect(url_for("frontend.candidate_dashboard"))
         else:
+            _wait = _otp_cooldown_remaining(candidate.email)
+            if _wait > 0:
+                session["candidate_otp_pending_id"] = candidate.id
+                session["candidate_otp_email"] = candidate.email
+                flash(
+                    f"An OTP was already sent. Please wait {_otp_wait_text(_wait)} before requesting another one, "
+                    "or use the OTP already sent to your email.",
+                    "error",
+                )
+                return redirect(url_for("frontend.candidate_verify_login_otp"))
+
             from app.utils.email import send_otp_email
 
             otp_code = _generate_otp()
@@ -5124,6 +5174,11 @@ def candidate_login():
             try:
                 send_otp_email(candidate.email, otp_code)
             except Exception:
+                try:
+                    otp_entry.is_used = True
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
                 error = "Could not send OTP email. Please try again later."
                 return render_template("candidate/login.html", error=error)
 

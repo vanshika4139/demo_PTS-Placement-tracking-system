@@ -19,3 +19,4 @@ razorpay
 cashfree-pg
 cashfree-pg
 croniter
+APScheduler==3.11.3

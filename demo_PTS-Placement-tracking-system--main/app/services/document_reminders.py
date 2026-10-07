@@ -2,8 +2,7 @@
 Super Admin marked as required (offer letter, joining letter, salary slip).
 
 Called hourly from app/services/scheduler.py. Settings live in
-platform_settings (doc_require_*, doc_reminder_days). A candidate gets ONE
-email, doc_reminder_days days after joining_date, listing only the required
+platform_settings (doc_require_*, doc_reminder_days). A candidate gets the first email doc_reminder_days days after joining_date, then one every 30 days until uploaded, listing only the required
 documents still missing. Nothing missing means no email.
 Only sent within GRACE_DAYS of that day, so old candidates are not
 mass-emailed on go-live. Sent reminders are recorded in
@@ -25,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_REMINDER_DAY = 30
 GRACE_DAYS = 7
+REPEAT_DAYS = 30  # after the first reminder, repeat every 30 days until documents are uploaded
 
 
 def _missing_documents(c, s):
@@ -89,16 +89,20 @@ def run_document_reminders(dry_run=False, now=None):
 
     for c in candidates:
         days = (now - c.joining_date).days
-        if days < step or days >= step + GRACE_DAYS:
+        if days < step:
             continue
-        if step in sent_days.get(c.id, set()):
+        cycles = (days - step) // REPEAT_DAYS
+        due_day = step + cycles * REPEAT_DAYS  # 15, 45, 75, ...
+        if days - due_day >= GRACE_DAYS:
+            continue
+        if due_day in sent_days.get(c.id, set()):
             continue
         missing = _missing_documents(c, settings)
         if not missing:
             continue
 
         if dry_run:
-            result["would_send"].append(f"{c.full_name} <{c.email}> day {step}: {', '.join(missing)}")
+            result["would_send"].append(f"{c.full_name} <{c.email}> day {due_day}: {', '.join(missing)}")
             continue
 
         subject, body = _build_email(c, link, missing)
@@ -113,7 +117,7 @@ def run_document_reminders(dry_run=False, now=None):
             continue
 
         try:
-            db.session.add(DocumentReminderLog(candidate_id=c.id, reminder_day=step))
+            db.session.add(DocumentReminderLog(candidate_id=c.id, reminder_day=due_day))
             db.session.commit()
             result["sent"] += 1
         except IntegrityError:

@@ -8,7 +8,7 @@
 <div class="page-header">
   <div>
     <h2>Documents &amp; Reminders</h2>
-    <p>Choose which post-placement documents are required. Candidates get one reminder email listing the documents still missing.</p>
+    <p>Choose which post-placement documents are required. Candidates get a reminder email every month, listing the documents still missing, until they upload them.</p>
   </div>
 </div>
 
@@ -29,7 +29,7 @@
       Salary slip
     </label>
     <h3 style="margin-top:16px;">Reminder</h3>
-    <label>Send the reminder after this many days from the joining date
+    <label>Send the first reminder after this many days from the joining date
       <input type="number" name="doc_reminder_days" min="1" max="365" value="{{ settings.doc_reminder_days or 30 }}">
     </label>
     <div class="form-actions">

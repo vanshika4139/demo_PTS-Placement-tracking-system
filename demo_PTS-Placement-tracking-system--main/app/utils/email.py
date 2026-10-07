@@ -221,7 +221,7 @@ def _org_has_own_smtp(organization_id):
 import logging as _logging
 logger = _logging.getLogger(__name__)
 
-GATEWAY_TIMEOUT = 8  # seconds; gateway is tried first, SMTP is the fallback
+GATEWAY_TIMEOUT = 25  # seconds; gateway is tried first, SMTP is the fallback
 
 
 def _send_via_gateway(to_email, subject, body, html_body):
@@ -267,6 +267,11 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
         if use_gateway:
             try:
                 _send_via_gateway(to_email, subject, body, html_body or _wrap_html(subject, body))
+                sent_via_gateway = True
+            except requests.exceptions.ReadTimeout as gw_exc:
+                # Request reached the gateway but no reply came back: the mail
+                # is probably sent already. Do NOT resend via SMTP (duplicates).
+                logger.warning("email gateway read timeout (%s); assuming sent, no SMTP fallback", gw_exc)
                 sent_via_gateway = True
             except Exception as gw_exc:
                 logger.warning("email gateway failed (%s), falling back to SMTP", gw_exc)

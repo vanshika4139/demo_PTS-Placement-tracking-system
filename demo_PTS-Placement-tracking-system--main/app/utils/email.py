@@ -1,3 +1,4 @@
+import logging
 import os
 import smtplib
 import ssl
@@ -217,6 +218,12 @@ def _org_has_own_smtp(organization_id):
     return bool(s and s.smtp_host and s.smtp_username and s.smtp_password)
 
 
+import logging as _logging
+logger = _logging.getLogger(__name__)
+
+GATEWAY_TIMEOUT = 8  # seconds; gateway is tried first, SMTP is the fallback
+
+
 def _send_via_gateway(to_email, subject, body, html_body):
     """Sends through the REST email gateway configured in .env
     (EMAIL_API_URL, EMAIL_API_KEY, EMAIL_FROM). Raises on any failure so
@@ -231,7 +238,7 @@ def _send_via_gateway(to_email, subject, body, html_body):
         url,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json=payload,
-        timeout=SMTP_TIMEOUT,
+        timeout=GATEWAY_TIMEOUT,
     )
     if resp.status_code >= 300:
         raise RuntimeError(f"Email gateway error {resp.status_code}: {resp.text[:200]}")
@@ -256,9 +263,14 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
             and not _org_has_own_smtp(organization_id)
         )
 
+        sent_via_gateway = False
         if use_gateway:
-            _send_via_gateway(to_email, subject, body, html_body or _wrap_html(subject, body))
-        else:
+            try:
+                _send_via_gateway(to_email, subject, body, html_body or _wrap_html(subject, body))
+                sent_via_gateway = True
+            except Exception as gw_exc:
+                logger.warning("email gateway failed (%s), falling back to SMTP", gw_exc)
+        if not sent_via_gateway:
             host, port, username, password = get_smtp_config(organization_id)
             msg = _build_message(_from_address(username), to_email, subject, body, html_body, attachments)
 

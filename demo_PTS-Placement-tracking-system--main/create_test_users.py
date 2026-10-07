@@ -34,7 +34,8 @@ TEST_USERS = [
     },
 ]
 
-PASSWORD = "Test@123"
+import os
+PASSWORD = os.environ.get("TEST_USER_PASSWORD", "Test@123")  # set TEST_USER_PASSWORD to override
 
 
 def run():

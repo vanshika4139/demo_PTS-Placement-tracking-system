@@ -111,11 +111,16 @@
             <tr>
               <th>Offer Letter</th>
               <td>
-                {% if candidate.offer_letter_url %}
-                  <a href="{{ candidate.offer_letter_url }}" target="_blank" rel="noopener">View / Download</a>
-                {% else %}
-                  Not uploaded
-                {% endif %}
+                <div style="display:flex; flex-direction:column; align-items:stretch; gap:6px; max-width:100%;">
+                  {% if candidate.offer_letter_url %}
+                    <a class="ghost-btn" style="text-align:center; padding:6px 10px; font-size:0.85rem;" href="{{ candidate.offer_letter_url }}" target="_blank" rel="noopener">Uploaded</a>
+                  {% endif %}
+                  {% if candidate.employer_name and candidate.joining_date %}
+                    <a class="ghost-btn" style="text-align:center; padding:6px 10px; font-size:0.85rem;" href="{{ url_for('frontend.organization_candidate_offer_letter', candidate_id=candidate.id) }}" target="_blank" rel="noopener">Generated</a>
+                  {% elif not candidate.offer_letter_url %}
+                    Not available
+                  {% endif %}
+                </div>
               </td>
             </tr>
           </tbody>

@@ -4476,6 +4476,49 @@ def candidate_training_certificate():
     return _training_certificate_pdf_response(candidate)
 
 
+def _offer_letter_pdf_response(candidate):
+    from flask import Response
+    from app.models.organization import Organization
+    from app.utils.offer_letter import build_offer_letter_pdf
+
+    org = Organization.query.get(candidate.organization_id)
+    pdf = build_offer_letter_pdf(candidate, org)
+    safe = "".join(ch if ch.isalnum() else "_" for ch in (candidate.full_name or "candidate"))
+    disposition = "inline; filename=" + safe + "_offer_letter.pdf"
+    return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": disposition})
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/offer-letter")
+@login_required
+@require_permission("candidate.view")
+def organization_candidate_offer_letter(candidate_id):
+    from app.utils.offer_letter import is_offer_letter_eligible
+
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    if not is_offer_letter_eligible(candidate):
+        flash("Offer letter needs the employer name and joining date.", "error")
+        return redirect(url_for("frontend.organization_candidate_detail", candidate_id=candidate.id))
+    _log_activity("Generated offer letter", candidate.full_name)
+    return _offer_letter_pdf_response(candidate)
+
+
+@frontend_bp.route("/candidate/offer-letter")
+@candidate_login_required
+def candidate_offer_letter():
+    from app.utils.offer_letter import is_offer_letter_eligible
+
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.filter_by(id=session_candidate.get("id"), is_deleted=False).first_or_404()
+    if not is_offer_letter_eligible(candidate):
+        flash("Offer letter is not available yet.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+    return _offer_letter_pdf_response(candidate)
+
+
 @frontend_bp.route("/organization/candidates/<candidate_id>/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("candidate.update")

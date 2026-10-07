@@ -23,7 +23,7 @@ _redis_client = None
 # @rate_limit(...) call elsewhere, add its prefix/limits here too so the
 # monitor page can show "3 / 5 attempts" instead of just "3 attempts".
 KNOWN_RATE_LIMITS = {
-    "login": {"max_attempts": 5, "window_seconds": 900, "label": "Login"},
+    "login": {"max_attempts": 5, "window_seconds": 300, "label": "Login"},
     "forgot_password": {"max_attempts": 3, "window_seconds": 600, "label": "Forgot Password"},
     "verify_otp": {"max_attempts": 5, "window_seconds": 600, "label": "Verify OTP"},
 }

@@ -303,6 +303,25 @@ def _dispatch(to_email, subject, body, html_body, attachments, organization_id,
 
 
 def send_otp_email(to_email: str, otp_code: str) -> None:
+    """Sends the OTP from a background thread, so the page does not wait
+    for the (slow) email gateway. A failure is written to email_logs and
+    the app log, but is not raised to the caller."""
+    import threading
+    from flask import current_app
+
+    app = current_app._get_current_object()
+
+    def _run():
+        with app.app_context():
+            try:
+                _send_otp_email_sync(to_email, otp_code)
+            except Exception:
+                logger.exception("OTP email to %s failed", to_email)
+
+    threading.Thread(target=_run, daemon=False).start()
+
+
+def _send_otp_email_sync(to_email: str, otp_code: str) -> None:
     """Send a password-reset / login OTP. Raises on failure so the caller can
     show an error.
 

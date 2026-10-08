@@ -89,7 +89,7 @@
     <tbody>
       <tr><th>Offer Letter</th><td>{% if candidate.offer_letter_url %}<a class="ghost-btn" href="{{ candidate.offer_letter_url }}" target="_blank" rel="noopener">View uploaded</a> {% endif %}{% if candidate.employer_name and candidate.joining_date %}<a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_offer_letter', candidate_id=candidate.id) }}" target="_blank" rel="noopener">System-generated</a>{% elif not candidate.offer_letter_url %}Not available{% endif %}</td></tr>
       <tr><th>Joining Letter</th><td>{% if candidate.joining_letter_path %}<a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_document', candidate_id=candidate.id, doc_type='joining_letter') }}">Download</a>{% else %}Not uploaded{% endif %}</td></tr>
-      <tr><th>Salary Slip</th><td>{% if candidate.salary_slip_path %}<a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_document', candidate_id=candidate.id, doc_type='salary_slip') }}">Download</a>{% else %}Not uploaded{% endif %}</td></tr>
+      <tr><th>Monthly Salary Slips</th><td>{% if candidate.salary_slips %}{% for s in candidate.salary_slips %}<div><a href="{{ url_for('frontend.organization_candidate_salary_slip', candidate_id=candidate.id, slip_id=s.id) }}">{{ s.month }}</a></div>{% endfor %}{% else %}Not uploaded{% endif %}</td></tr>
     </tbody>
   </table>
 </div>

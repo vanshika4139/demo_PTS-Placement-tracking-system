@@ -34,6 +34,7 @@ from app.models.attendance import Attendance
 from app.models.email_log import EmailLog
 from app.models.support_ticket import SupportTicket
 from app.models.document_reminder_log import DocumentReminderLog
+from app.models.salary_slip import SalarySlip
 
 __all__ = [
     "Candidate",
@@ -71,4 +72,5 @@ __all__ = [
     "Attendance",
     "EmailLog",
     "DocumentReminderLog",
+    "SalarySlip",
 ]

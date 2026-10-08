@@ -5893,6 +5893,117 @@ def organization_candidate_document(candidate_id, doc_type):
     return _send_candidate_document(candidate, doc_type)
 
 
+SALARY_SLIP_EXTS = {".pdf", ".jpg", ".jpeg", ".png"}
+
+
+def _save_salary_slip(candidate, month, upload):
+    import re
+    import uuid
+    from werkzeug.utils import secure_filename
+    from app.models.salary_slip import SalarySlip
+
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month or ""):
+        return False, "Please choose a valid month."
+    if month > datetime.utcnow().strftime("%Y-%m"):
+        return False, "You cannot upload a salary slip for a future month."
+    if not upload or not upload.filename:
+        return False, "Please choose a file."
+    original = secure_filename(upload.filename)
+    ext = os.path.splitext(original)[1].lower()
+    if ext not in SALARY_SLIP_EXTS:
+        return False, "Only PDF, JPG or PNG files are allowed."
+    upload.stream.seek(0, os.SEEK_END)
+    size = upload.stream.tell()
+    upload.stream.seek(0)
+    if size == 0:
+        return False, "The file is empty."
+    if size > 5 * 1024 * 1024:
+        return False, "File is too large (max 5 MB)."
+
+    folder = os.path.join("app", "private_uploads", "salary_slips", str(candidate.organization_id), str(candidate.id))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{month}_{uuid.uuid4().hex[:8]}{ext}")
+    upload.save(path)
+
+    old_path = None
+    try:
+        slip = SalarySlip.query.filter_by(candidate_id=candidate.id, month=month).first()
+        if slip:
+            old_path = slip.file_path
+            slip.file_path = path
+            slip.original_filename = original
+            slip.uploaded_at = datetime.utcnow()
+        else:
+            db.session.add(SalarySlip(candidate_id=candidate.id, month=month, file_path=path, original_filename=original))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        if os.path.exists(path):
+            os.remove(path)
+        return False, "Could not save the salary slip. Please try again."
+
+    if old_path and old_path != path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    return True, f"Salary slip for {month} uploaded."
+
+
+def _send_salary_slip(candidate, slip_id):
+    from flask import abort, send_file
+    from app.models.salary_slip import SalarySlip
+
+    slip = SalarySlip.query.filter_by(id=slip_id, candidate_id=candidate.id).first()
+    if not slip:
+        abort(404)
+    abs_path = os.path.abspath(slip.file_path)
+    if not os.path.exists(abs_path):
+        abort(404)
+    return send_file(abs_path, as_attachment=True, download_name=slip.original_filename or os.path.basename(abs_path))
+
+
+@frontend_bp.route("/candidate/salary-slip", methods=["POST"])
+@candidate_login_required
+def candidate_upload_salary_slip():
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+    if not candidate.employer_name:
+        flash("You can upload a salary slip after your placement is recorded.", "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+    month = (request.form.get("month") or "").strip()
+    ok, message = _save_salary_slip(candidate, month, request.files.get("document"))
+    if ok:
+        _create_notification(
+            title=f"Salary slip uploaded: {candidate.full_name}",
+            message=f"{candidate.full_name} uploaded the salary slip for {month}.",
+            notif_type="info",
+            organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
+        )
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("frontend.candidate_dashboard"))
+
+
+@frontend_bp.route("/candidate/salary-slip/<slip_id>/download")
+@candidate_login_required
+def candidate_download_salary_slip(slip_id):
+    session_candidate = session.get("candidate")
+    candidate = Candidate.query.get_or_404(session_candidate.get("id"))
+    return _send_salary_slip(candidate, slip_id)
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/salary-slip/<slip_id>")
+@login_required
+def organization_candidate_salary_slip(candidate_id, slip_id):
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    return _send_salary_slip(candidate, slip_id)
+
+
 @frontend_bp.route("/candidate/report-placement", methods=["POST"])
 @candidate_login_required
 def candidate_report_placement():

@@ -111,12 +111,33 @@ def _candidates_for_template_type(template_type):
             c for c in base.filter(Candidate.joining_date.isnot(None)).all()
             if c.joining_date.month == today.month and c.joining_date.day == today.day
         ]
-    # SALARY_UPDATE, SURVEY, OFFER_LETTER - all active placed candidates
+    if template_type == "SALARY_UPDATE":
+        # Only placed, active candidates who have NOT uploaded last month's slip.
+        from app.models.salary_slip import SalarySlip
+        month_key, _label = _previous_month()
+        first_this_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        uploaded = db.session.query(SalarySlip.candidate_id).filter(SalarySlip.month == month_key)
+        return base.filter(
+            Candidate.employer_name.isnot(None),
+            Candidate.employer_name != "",
+            Candidate.account_status == "active",
+            Candidate.joining_date.isnot(None),
+            Candidate.joining_date < first_this_month,
+            ~Candidate.id.in_(uploaded),
+        ).all()
+    # SURVEY, OFFER_LETTER - all active placed candidates
     return base.filter(
         Candidate.employer_name.isnot(None),
         Candidate.employer_name != "",
         Candidate.account_status == "active",
     ).all()
+
+
+def _previous_month():
+    """('YYYY-MM', 'September 2026') for the month before today."""
+    first = datetime.utcnow().replace(day=1)
+    prev = first - timedelta(days=1)
+    return prev.strftime("%Y-%m"), prev.strftime("%B %Y")
 
 
 def _render(body, candidate):
@@ -125,6 +146,7 @@ def _render(body, candidate):
     template referencing {employer_name} still sends to a candidate who
     has none yet."""
     return body.format(
+        month=_previous_month()[1],
         candidate_name=candidate.full_name or "",
         employer_name=candidate.employer_name or "",
         joining_date=candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "",
@@ -137,6 +159,7 @@ def _whatsapp_params(body, candidate):
     import re
 
     values = {
+        "month": _previous_month()[1],
         "candidate_name": candidate.full_name or "",
         "employer_name": candidate.employer_name or "",
         "joining_date": candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "",

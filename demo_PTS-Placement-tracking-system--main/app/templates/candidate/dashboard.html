@@ -241,8 +241,8 @@
 
     {% if candidate.employer_name %}
     <div class="panel-card">
-      <h3>Joining Letter &amp; Salary Slip</h3>
-      <p style="color:var(--muted); font-size:0.85rem; margin-top:-6px; margin-bottom:12px;">Upload a PDF, JPG or PNG (max 5 MB).</p>
+      <h3>Joining Letter</h3>
+      <p style="color:var(--muted); font-size:0.85rem; margin-top:-6px; margin-bottom:12px;">Upload a PDF, JPG or PNG (max 5 MB). Salary slips are uploaded month by month in the card below.</p>
       <form method="post" action="{{ url_for('frontend.candidate_upload_document', doc_type='joining_letter') }}" enctype="multipart/form-data" class="full-form">
         {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
         <label>Joining letter
@@ -251,17 +251,29 @@
         </label>
         <div class="form-actions"><button type="submit" class="primary-btn">Upload</button></div>
       </form>
-      <form method="post" action="{{ url_for('frontend.candidate_upload_document', doc_type='salary_slip') }}" enctype="multipart/form-data" class="full-form" style="margin-top:16px;">
-        {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-        <label>Salary slip
-          {% if candidate.salary_slip_path %}<span style="color:#16a34a; font-size:0.85rem;">&#10003; {{ candidate.salary_slip_filename }} - <a href="{{ url_for('frontend.candidate_download_document', doc_type='salary_slip') }}">Download</a></span>{% endif %}
-          <input type="file" name="document" accept=".pdf,.jpg,.jpeg,.png" required>
-        </label>
-        <div class="form-actions"><button type="submit" class="primary-btn">Upload</button></div>
-      </form>
     </div>
     {% endif %}
 
+
+    {% if candidate.employer_name %}
+    <div class="panel-card">
+      <h3>Monthly Salary Slips</h3>
+      <p style="color:var(--muted); font-size:0.85rem; margin-top:-6px; margin-bottom:12px;">Upload your salary slip for each month (PDF, JPG or PNG, max 5 MB). Uploading the same month again replaces it.</p>
+      <form method="post" action="{{ url_for('frontend.candidate_upload_salary_slip') }}" enctype="multipart/form-data" class="full-form">
+        {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+        <label>Month<input type="month" name="month" required></label>
+        <label>Salary slip<input type="file" name="document" accept=".pdf,.jpg,.jpeg,.png" required></label>
+        <div class="form-actions"><button type="submit" class="primary-btn">Upload</button></div>
+      </form>
+      {% if candidate.salary_slips %}
+      <div style="margin-top:14px; font-size:0.9rem;">
+        {% for s in candidate.salary_slips %}
+          <div style="color:#16a34a;">&#10003; {{ s.month }} - {{ s.original_filename }} - <a href="{{ url_for('frontend.candidate_download_salary_slip', slip_id=s.id) }}">Download</a></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
 
     <div class="panel-card">
       <h3>{{ _('change_password') }}</h3>

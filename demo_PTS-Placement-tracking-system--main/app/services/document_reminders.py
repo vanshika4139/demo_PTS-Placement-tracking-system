@@ -33,7 +33,7 @@ def _missing_documents(c, s):
         missing.append("Offer letter / placement document")
     if s.doc_require_joining_letter and not c.joining_letter_path:
         missing.append("Joining letter")
-    if s.doc_require_salary_slip and not c.salary_slip_path:
+    if s.doc_require_salary_slip and not (c.salary_slip_path or c.salary_slips):
         missing.append("Salary slip")
     return missing
 

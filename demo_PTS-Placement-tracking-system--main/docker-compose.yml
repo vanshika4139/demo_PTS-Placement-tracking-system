@@ -10,6 +10,8 @@ services:
       FLASK_ENV: development
       DATABASE_URL: mysql+pymysql://root:${MYSQL_PASSWORD_URL}@mysql:3306/placement_tracking
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - private_uploads:/app/app/private_uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -54,3 +56,4 @@ services:
 
 volumes:
   mysql_data:
+  private_uploads:

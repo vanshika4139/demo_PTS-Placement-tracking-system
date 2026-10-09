@@ -141,16 +141,25 @@ def _previous_month():
 
 
 def _render(body, candidate):
-    """Fills {candidate_name}/{employer_name}/{joining_date} placeholders.
-    Missing values render as an empty string rather than raising, so a
-    template referencing {employer_name} still sends to a candidate who
-    has none yet."""
-    return body.format(
-        month=_previous_month()[1],
-        candidate_name=candidate.full_name or "",
-        employer_name=candidate.employer_name or "",
-        joining_date=candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "",
-    )
+    """Fills {candidate_name}/{employer_name}/{joining_date}/{month}
+    placeholders. Missing values render as an empty string. An unknown
+    placeholder (or a stray brace) no longer raises: the known ones are
+    still filled and the rest is left as written, so one typo in a
+    template cannot stop the whole schedule."""
+    values = {
+        "month": _previous_month()[1],
+        "candidate_name": candidate.full_name or "",
+        "employer_name": candidate.employer_name or "",
+        "joining_date": candidate.joining_date.strftime("%d-%m-%Y") if candidate.joining_date else "",
+    }
+    try:
+        return body.format(**values)
+    except (KeyError, IndexError, ValueError, AttributeError):
+        logger.warning("notification_scheduler: template has an invalid placeholder; sending with known ones only.")
+        out = body
+        for key, val in values.items():
+            out = out.replace("{" + key + "}", str(val))
+        return out
 
 
 def _whatsapp_params(body, candidate):
@@ -195,10 +204,14 @@ def run_notification_schedules(force=False):
                 for candidate in candidates:
                     if not candidate.email:
                         continue
-                    subject = _render(template.subject or template.template_type.replace("_", " ").title(), candidate)
-                    body = _render(template.body, candidate)
-                    if send_email(candidate.email, subject, body, organization_id=candidate.organization_id, candidate_id=candidate.id):
-                        emails_sent += 1
+                    try:
+                        subject = _render(template.subject or template.template_type.replace("_", " ").title(), candidate)
+                        body = _render(template.body, candidate)
+                        if send_email(candidate.email, subject, body, organization_id=candidate.organization_id, candidate_id=candidate.id):
+                            emails_sent += 1
+                    except Exception:
+                        db.session.rollback()
+                        logger.exception("notification_scheduler: email to candidate %s failed", candidate.id)
             elif template.channel == "WHATSAPP":
                 for candidate in candidates:
                     if not candidate.mobile:

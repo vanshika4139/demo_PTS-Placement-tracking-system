@@ -201,7 +201,6 @@ def create_payment_link(invoice: Invoice):
         try:
             checkout_session = stripe.checkout.Session.create(
                 mode="payment",
-                payment_method_types=["card"],
                 line_items=[{
                     "price_data": {
                         "currency": "inr",

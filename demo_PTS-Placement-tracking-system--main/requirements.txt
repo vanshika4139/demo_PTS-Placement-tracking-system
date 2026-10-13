@@ -20,4 +20,4 @@ cashfree-pg
 cashfree-pg
 croniter
 APScheduler==3.11.3
-stripe==12.3.0
+stripe==16.0.0

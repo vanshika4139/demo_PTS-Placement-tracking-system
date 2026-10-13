@@ -2505,7 +2505,6 @@ def super_admin_edit_organization(organization_id):
         organization.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
         organization.email_credits = _parse_int(request.form.get("email_credits")) or 0
         organization.webhook_url = request.form.get("webhook_url")
-        organization.kyc_status = request.form.get("kyc_status")
         organization.payment_status = request.form.get("payment_status")
         organization.status = 1 if request.form.get("status") == "active" else 0
         db.session.commit()

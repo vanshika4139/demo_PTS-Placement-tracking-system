@@ -46,11 +46,8 @@
       </label>
       {% if organization %}
       <label>KYC Status
-        <select name="kyc_status">
-          <option value="PENDING" {{ 'selected' if organization.kyc_status == 'PENDING' }}>Pending</option>
-          <option value="APPROVED" {{ 'selected' if organization.kyc_status == 'APPROVED' }}>Approved</option>
-          <option value="REJECTED" {{ 'selected' if organization.kyc_status == 'REJECTED' }}>Rejected</option>
-        </select>
+        <input type="text" value="{{ organization.kyc_status or 'PENDING' }}" disabled>
+        <small>Set automatically from the uploaded KYC documents.</small>
       </label>
       <label>Status
         <select name="status">

@@ -1,4 +1,4 @@
-from app.models.candidate import Candidate
+﻿from app.models.candidate import Candidate
 from app.models.follow_up_checkpoint import FollowUpCheckpoint
 from app.models.organization import Organization
 from app.models.permission import Permission
@@ -35,6 +35,10 @@ from app.models.email_log import EmailLog
 from app.models.support_ticket import SupportTicket
 from app.models.document_reminder_log import DocumentReminderLog
 from app.models.salary_slip import SalarySlip
+
+from app.models.call_disposition import CallDisposition  # noqa: F401
+from app.models.call_task import CallTask  # noqa: F401
+from app.models.call_log import CallLog  # noqa: F401
 
 __all__ = [
     "Candidate",
@@ -73,4 +77,7 @@ __all__ = [
     "EmailLog",
     "DocumentReminderLog",
     "SalarySlip",
+    "CallDisposition",
+    "CallTask",
+    "CallLog",
 ]

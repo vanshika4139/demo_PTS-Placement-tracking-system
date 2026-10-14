@@ -2070,6 +2070,13 @@ def organization_dashboard():
     created_by_filter = None
     if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
         created_by_filter = user.get("id")
+    # Call Center Executive has no candidate access: land on the call queue instead.
+    if (
+        not user.get("is_super_admin")
+        and not has_permission(user, "candidate.view")
+        and has_permission(user, "call_queue.view")
+    ):
+        return redirect(url_for("frontend.call_center_queue"))
     data = get_organization_dashboard_data(org_id, created_by_filter)
     data = dict(data)
     data["call_counts"] = _org_call_counts(org_id) if org_id else None

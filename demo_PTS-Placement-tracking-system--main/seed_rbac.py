@@ -82,9 +82,9 @@ ROLES = {
         "name": "Viewer",
         "permissions": [
             "dashboard.view",
-            "candidate.view", "batch.view", "scheme.view", "placement.view",
+            
             "call_queue.view", "call_log.create",
-            "tracking.view", "report.view", "notification.view", "settings.view",
+            "notification.view", "settings.view",
         ],
     },
     "candidate_manager": {

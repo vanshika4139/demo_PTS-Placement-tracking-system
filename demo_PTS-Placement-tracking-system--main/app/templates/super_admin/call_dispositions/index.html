@@ -1,0 +1,45 @@
+﻿{% extends 'base.html' %}
+{% block title %}Call Dispositions{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Call Dispositions</h2>
+    <p>Master list of call outcomes that Call Center Executives choose from after each call. "Placed" and "Left Job" also update the candidate's tracking record, so they cannot be deactivated.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.super_admin_call_disposition_create') }}">+ New Disposition</a>
+</div>
+
+<div class="panel-card">
+  {% if dispositions %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Order</th><th>Name</th><th>Code</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in dispositions %}
+      <tr>
+        <td>{{ d.display_order }}</td>
+        <td>{{ d.name }}</td>
+        <td>{{ d.code }}</td>
+        <td>
+          <span class="status-badge {{ 'status-active' if d.status == 1 else 'status-suspended' }}">{{ 'Active' if d.status == 1 else 'Inactive' }}</span>
+        </td>
+        <td>
+          <a class="ghost-btn" href="{{ url_for('frontend.super_admin_call_disposition_edit', disposition_id=d.id) }}">Edit</a>
+          {% if d.code not in protected_codes %}
+          <form method="post" action="{{ url_for('frontend.super_admin_call_disposition_toggle', disposition_id=d.id) }}" style="display:inline;" onsubmit="return confirm('Change status of this disposition?');">
+            <button type="submit" class="ghost-btn">{{ 'Deactivate' if d.status == 1 else 'Activate' }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No dispositions yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

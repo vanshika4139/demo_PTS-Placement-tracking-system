@@ -1,0 +1,31 @@
+﻿{% extends 'base.html' %}
+{% block title %}{{ 'Edit Disposition' if disposition else 'Create Disposition' }}{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>{{ 'Edit Disposition' if disposition else 'Create Disposition' }}</h2>
+    <p>{{ 'Update the name or display order. The code cannot be changed because call logs refer to it.' if disposition else 'Add a call outcome that Call Center Executives can choose after a call.' }}</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.super_admin_call_dispositions') }}">Back</a>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Name
+        <input type="text" name="name" value="{{ disposition.name if disposition else '' }}" required maxlength="80" placeholder="e.g. Not Interested">
+      </label>
+      <label>Code
+        <input type="text" name="code" value="{{ disposition.code if disposition else '' }}" required maxlength="50" pattern="[A-Z0-9_]+" placeholder="e.g. NOT_INTERESTED" {{ 'readonly' if disposition else '' }}>
+      </label>
+      <label>Display Order
+        <input type="number" name="display_order" value="{{ disposition.display_order if disposition else 0 }}">
+      </label>
+      <small class="span-2">Code: only capital letters, numbers and underscore. It is fixed after creation.</small>
+    </div>
+    <button type="submit" class="primary-btn" style="margin-top:16px;">{{ 'Save Changes' if disposition else 'Create Disposition' }}</button>
+  </form>
+</div>
+{% endblock %}
+

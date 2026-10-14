@@ -43,6 +43,7 @@ from app.models import (
     UserSettings,
 )
 from app.services.kyc import recompute_organization_kyc_status
+from app.models.call_disposition import CallDisposition
 from app.services.lifecycle import CandidateLifecycleService
 from app.services.billing import (
     calculate_prorated_amount,
@@ -1424,6 +1425,112 @@ def super_admin_message_template_delete(template_id):
     flash("Message template deleted.", "success")
     return redirect(url_for("frontend.super_admin_message_templates"))
 
+
+PROTECTED_DISPOSITION_CODES = {"PLACED", "LEFT_JOB"}  # drive FR-36 candidate updates, must stay active
+
+
+@frontend_bp.route("/super-admin/call-dispositions")
+@super_admin_required
+def super_admin_call_dispositions():
+    """Call Center spec 3.3: Super Admin maintains the disposition master data."""
+    dispositions = CallDisposition.query.order_by(CallDisposition.display_order, CallDisposition.name).all()
+    return render_template(
+        "super_admin/call_dispositions/index.html",
+        dispositions=dispositions,
+        protected_codes=PROTECTED_DISPOSITION_CODES,
+    )
+
+
+@frontend_bp.route("/super-admin/call-dispositions/create", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_call_disposition_create():
+    import re
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        code = request.form.get("code", "").strip().upper()
+        try:
+            display_order = int(request.form.get("display_order") or 0)
+        except ValueError:
+            display_order = 0
+
+        if not name or not code:
+            flash("Name and code are required.", "error")
+            return render_template("super_admin/call_dispositions/form.html", disposition=None)
+        if not re.fullmatch(r"[A-Z0-9_]{1,50}", code):
+            flash("Code can only contain capital letters, numbers and underscore.", "error")
+            return render_template("super_admin/call_dispositions/form.html", disposition=None)
+        if CallDisposition.query.filter(
+            (CallDisposition.code == code) | (db.func.lower(CallDisposition.name) == name.lower())
+        ).first():
+            flash("A disposition with this name or code already exists.", "error")
+            return render_template("super_admin/call_dispositions/form.html", disposition=None)
+
+        actor = session.get("user") or {}
+        disposition = CallDisposition(
+            name=name, code=code, display_order=display_order, status=1, created_by=actor.get("id")
+        )
+        db.session.add(disposition)
+        db.session.commit()
+        _log_activity("call_disposition.created", f"Created call disposition {code}")
+        flash("Call disposition created.", "success")
+        return redirect(url_for("frontend.super_admin_call_dispositions"))
+
+    return render_template("super_admin/call_dispositions/form.html", disposition=None)
+
+
+@frontend_bp.route("/super-admin/call-dispositions/<disposition_id>/edit", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_call_disposition_edit(disposition_id):
+    disposition = CallDisposition.query.get_or_404(disposition_id)
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        try:
+            display_order = int(request.form.get("display_order") or 0)
+        except ValueError:
+            display_order = disposition.display_order
+
+        if not name:
+            flash("Name is required.", "error")
+            return render_template("super_admin/call_dispositions/form.html", disposition=disposition)
+        clash = CallDisposition.query.filter(
+            db.func.lower(CallDisposition.name) == name.lower(), CallDisposition.id != disposition.id
+        ).first()
+        if clash:
+            flash("Another disposition already uses this name.", "error")
+            return render_template("super_admin/call_dispositions/form.html", disposition=disposition)
+
+        actor = session.get("user") or {}
+        # code is never changed after creation: call logs and FR-36 logic refer to it
+        disposition.name = name
+        disposition.display_order = display_order
+        disposition.modified_by = actor.get("id")
+        db.session.commit()
+        _log_activity("call_disposition.updated", f"Updated call disposition {disposition.code}")
+        flash("Call disposition updated.", "success")
+        return redirect(url_for("frontend.super_admin_call_dispositions"))
+
+    return render_template("super_admin/call_dispositions/form.html", disposition=disposition)
+
+
+@frontend_bp.route("/super-admin/call-dispositions/<disposition_id>/toggle", methods=["POST"])
+@super_admin_required
+def super_admin_call_disposition_toggle(disposition_id):
+    """Soft delete only (status 0/1). Rows are never physically deleted."""
+    disposition = CallDisposition.query.get_or_404(disposition_id)
+    if disposition.code in PROTECTED_DISPOSITION_CODES:
+        flash(f"{disposition.name} cannot be deactivated because it updates the candidate's tracking record.", "error")
+        return redirect(url_for("frontend.super_admin_call_dispositions"))
+
+    actor = session.get("user") or {}
+    disposition.status = 0 if disposition.status == 1 else 1
+    disposition.modified_by = actor.get("id")
+    db.session.commit()
+    state = "activated" if disposition.status == 1 else "deactivated"
+    _log_activity(f"call_disposition.{state}", f"{state.title()} call disposition {disposition.code}")
+    flash(f"Call disposition {state}.", "success")
+    return redirect(url_for("frontend.super_admin_call_dispositions"))
 
 @frontend_bp.route("/super-admin/announcements")
 @super_admin_required

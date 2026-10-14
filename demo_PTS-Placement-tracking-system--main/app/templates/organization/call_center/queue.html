@@ -1,0 +1,66 @@
+﻿{% extends 'base.html' %}
+{% block title %}My Call Queue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>My Call Queue</h2>
+  <p>Calls assigned to you. Open a call, speak to the candidate, then log the outcome.</p>
+</div>
+
+<div class="panel-card">
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+    {% for key, label in [('pending', 'Pending'), ('completed', 'Completed'), ('missed', 'Missed')] %}
+    <a class="{{ 'primary-btn' if section == key else 'ghost-btn' }}" href="{{ url_for('frontend.call_center_queue', section=key) }}">{{ label }} ({{ counts[key] }})</a>
+    {% endfor %}
+  </div>
+
+  {% if tasks %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Scheduled</th><th>Candidate</th><th>Mobile</th>
+        <th>{{ 'Outcome' if section == 'completed' else 'Status' }}</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      {% set c = candidates_by_id.get(t.candidate_id) %}
+      <tr>
+        <td>{{ t.scheduled_at.strftime('%d-%m-%Y %H:%M') if t.scheduled_at else '-' }}</td>
+        <td>{{ c.full_name if c else 'Candidate unavailable' }}</td>
+        <td>
+          {% if c and c.mobile %}<a href="tel:{{ c.mobile }}">{{ c.mobile }}</a>{% else %}-{% endif %}
+          {% if c and c.alternative_mobile %}<br><small><a href="tel:{{ c.alternative_mobile }}">{{ c.alternative_mobile }}</a></small>{% endif %}
+        </td>
+        <td>
+          {% if section == 'completed' %}
+            {% set entry = logs_by_task.get(t.id) %}
+            {{ entry[0].name if entry and entry[0] else 'Logged' }}
+          {% elif section == 'missed' %}
+            <span class="status-badge status-suspended">Missed</span>
+          {% else %}
+            <span class="status-badge status-active">Pending</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if section != 'completed' and c %}
+          <a class="primary-btn" href="{{ url_for('frontend.call_center_log_call', task_id=t.id) }}">Log Call</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pagination.pages > 1 %}
+  <div style="display:flex; gap:12px; align-items:center; margin-top:16px;">
+    {% if pagination.has_prev %}<a class="ghost-btn" href="{{ url_for('frontend.call_center_queue', section=section, page=pagination.prev_num) }}">Previous</a>{% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a class="ghost-btn" href="{{ url_for('frontend.call_center_queue', section=section, page=pagination.next_num) }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p>No {{ section }} calls.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+﻿{% extends 'base.html' %}
+{% block title %}Log Call{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Log Call</h2>
+    <p>Record what happened on this call. The outcome is saved against the call and cannot be left empty.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.call_center_queue') }}">Back to Queue</a>
+</div>
+
+<div class="panel-card" style="margin-bottom:16px;">
+  <h3 style="margin-top:0;">{{ candidate.full_name }}</h3>
+  <p style="margin:4px 0;">Mobile: {% if candidate.mobile %}<a href="tel:{{ candidate.mobile }}">{{ candidate.mobile }}</a>{% else %}-{% endif %}</p>
+  {% if candidate.alternative_mobile %}<p style="margin:4px 0;">Alternative: <a href="tel:{{ candidate.alternative_mobile }}">{{ candidate.alternative_mobile }}</a></p>{% endif %}
+  <p style="margin:4px 0;">Scheduled: {{ task.scheduled_at.strftime('%d-%m-%Y %H:%M') if task.scheduled_at else '-' }}</p>
+</div>
+
+<div class="panel-card form-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label class="span-2">Disposition
+        <select name="disposition_id" required>
+          <option value="">Select outcome</option>
+          {% for d in dispositions %}
+          <option value="{{ d.id }}" {{ 'selected' if selected_disposition == d.id }}>{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Duration (minutes)
+        <input type="number" name="duration_minutes" min="0" value="{{ duration_minutes or 0 }}">
+      </label>
+      <label>Duration (seconds)
+        <input type="number" name="duration_seconds" min="0" max="59" value="{{ duration_seconds or 0 }}">
+      </label>
+      <label class="span-2">Call Notes
+        <textarea name="call_notes" rows="5" maxlength="5000" placeholder="What did the candidate say?">{{ call_notes or '' }}</textarea>
+      </label>
+      <small class="span-2">Placed and Left Job will appear here once automatic candidate tracking updates are enabled.</small>
+    </div>
+    <button type="submit" class="primary-btn" style="margin-top:16px;">Save Call Log</button>
+  </form>
+</div>
+{% endblock %}

@@ -44,6 +44,9 @@ from app.models import (
 )
 from app.services.kyc import recompute_organization_kyc_status
 from app.models.call_disposition import CallDisposition
+from app.models.call_task import CallTask
+from app.models.call_log import CallLog
+from app.models.candidate import Candidate
 from app.services.lifecycle import CandidateLifecycleService
 from app.services.billing import (
     calculate_prorated_amount,
@@ -1531,6 +1534,182 @@ def super_admin_call_disposition_toggle(disposition_id):
     _log_activity(f"call_disposition.{state}", f"{state.title()} call disposition {disposition.code}")
     flash(f"Call disposition {state}.", "success")
     return redirect(url_for("frontend.super_admin_call_dispositions"))
+
+HOLD_DISPOSITION_CODES = {"PLACED", "LEFT_JOB"}  # FR-36 candidate update not built yet; remove from this set when it is
+CALL_QUEUE_PAGE_SIZE = 20
+
+
+def _call_center_scope():
+    """organization_id and user id always come from the logged-in session, never from the request."""
+    user = session.get("user") or {}
+    return user.get("organization_id"), user.get("id")
+
+
+@frontend_bp.route("/call-center/queue")
+@login_required
+@require_permission("call_queue.view")
+def call_center_queue():
+    """Call Center spec 3.1 (FR-33): the Executive's own daily queue, split into Pending / Completed / Missed."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import and_, or_
+
+    organization_id, user_id = _call_center_scope()
+    section = request.args.get("section", "pending")
+    if section not in ("pending", "completed", "missed"):
+        section = "pending"
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    today_start = datetime.combine(datetime.utcnow().date(), datetime.min.time())
+    tomorrow_start = today_start + timedelta(days=1)
+
+    base = CallTask.query.filter(
+        CallTask.organization_id == organization_id,
+        CallTask.assigned_user_id == user_id,
+        CallTask.status == 1,
+    )
+    queries = {
+        "pending": base.filter(
+            CallTask.task_status == "pending",
+            CallTask.scheduled_at >= today_start,
+            CallTask.scheduled_at < tomorrow_start,
+        ),
+        "completed": base.filter(
+            CallTask.task_status == "completed",
+            CallTask.updated_at >= today_start,
+            CallTask.updated_at < tomorrow_start,
+        ),
+        # Assumption: a pending call from an earlier day counts as Missed.
+        "missed": base.filter(
+            or_(
+                CallTask.task_status == "missed",
+                and_(CallTask.task_status == "pending", CallTask.scheduled_at < today_start),
+            )
+        ),
+    }
+    counts = {key: q.count() for key, q in queries.items()}
+
+    pagination = queries[section].order_by(CallTask.scheduled_at.asc()).paginate(
+        page=page, per_page=CALL_QUEUE_PAGE_SIZE, error_out=False
+    )
+    tasks = pagination.items
+
+    candidate_ids = {t.candidate_id for t in tasks}
+    candidates_by_id = {}
+    if candidate_ids:
+        candidates_by_id = {
+            c.id: c
+            for c in Candidate.query.filter(
+                Candidate.id.in_(candidate_ids), Candidate.organization_id == organization_id
+            ).all()
+        }
+
+    logs_by_task = {}
+    if section == "completed" and tasks:
+        dispositions = {d.id: d for d in CallDisposition.query.all()}
+        logs = (
+            CallLog.query.filter(CallLog.call_task_id.in_([t.id for t in tasks]), CallLog.status == 1)
+            .order_by(CallLog.created_at.asc())
+            .all()
+        )
+        for lg in logs:
+            logs_by_task[lg.call_task_id] = (dispositions.get(lg.disposition_id), lg)
+
+    return render_template(
+        "organization/call_center/queue.html",
+        section=section,
+        counts=counts,
+        tasks=tasks,
+        pagination=pagination,
+        candidates_by_id=candidates_by_id,
+        logs_by_task=logs_by_task,
+    )
+
+
+@frontend_bp.route("/call-center/tasks/<task_id>/log", methods=["GET", "POST"])
+@login_required
+@require_permission("call_log.create")
+def call_center_log_call(task_id):
+    """Call Center spec 3.2 / 3.3 (FR-34, FR-35): save the disposition, notes and duration for one call."""
+    organization_id, user_id = _call_center_scope()
+
+    # Scoped by organization AND assigned executive: someone else's task is a 404.
+    task = CallTask.query.filter_by(
+        id=task_id, organization_id=organization_id, assigned_user_id=user_id, status=1
+    ).first_or_404()
+    candidate = Candidate.query.filter_by(id=task.candidate_id, organization_id=organization_id).first_or_404()
+
+    if task.task_status == "completed":
+        flash("This call has already been logged.", "error")
+        return redirect(url_for("frontend.call_center_queue", section="completed"))
+
+    dispositions = (
+        CallDisposition.query.filter(CallDisposition.status == 1, ~CallDisposition.code.in_(HOLD_DISPOSITION_CODES))
+        .order_by(CallDisposition.display_order, CallDisposition.name)
+        .all()
+    )
+
+    def _render(**extra):
+        return render_template(
+            "organization/call_center/log_form.html",
+            task=task, candidate=candidate, dispositions=dispositions, **extra
+        )
+
+    if request.method == "POST":
+        disposition_id = request.form.get("disposition_id", "").strip()
+        notes = request.form.get("call_notes", "").strip()
+
+        def _to_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
+        minutes = _to_int(request.form.get("duration_minutes"))
+        seconds = _to_int(request.form.get("duration_seconds"))
+        form_state = dict(
+            selected_disposition=disposition_id, call_notes=notes,
+            duration_minutes=minutes, duration_seconds=seconds,
+        )
+
+        # Validated in the backend against the master data; the frontend alone is not trusted.
+        disposition = next((d for d in dispositions if d.id == disposition_id), None)
+        if not disposition:
+            flash("Please select a valid disposition.", "error")
+            return _render(**form_state)
+        if len(notes) > 5000:
+            flash("Call notes are too long (maximum 5000 characters).", "error")
+            return _render(**form_state)
+        if minutes < 0 or seconds < 0 or seconds > 59 or minutes > 600:
+            flash("Please enter a valid call duration.", "error")
+            return _render(**form_state)
+
+        try:
+            db.session.add(CallLog(
+                organization_id=organization_id,
+                candidate_id=candidate.id,
+                call_task_id=task.id,
+                disposition_id=disposition.id,
+                call_notes=notes or None,
+                duration_seconds=minutes * 60 + seconds,
+                created_by=user_id,
+            ))
+            task.task_status = "completed"
+            task.modified_by = user_id
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("call_center_log_call: failed to save call log for task %s", task_id)
+            flash("Could not save the call log. Please try again.", "error")
+            return _render(**form_state)
+
+        _log_activity("call_log.created", f"Logged {disposition.code} call for candidate {candidate.full_name}")
+        flash("Call logged.", "success")
+        return redirect(url_for("frontend.call_center_queue"))
+
+    return _render()
 
 @frontend_bp.route("/super-admin/announcements")
 @super_admin_required

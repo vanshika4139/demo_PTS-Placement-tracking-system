@@ -85,7 +85,7 @@
             {{ notif.type }}
           </span>
         </td>
-        <td>{{ notif.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+        <td>{{ notif.created_at|ist }}</td>
         <td>
           <span class="sa-pill {{ 'sa-pill-gray' if notif.is_read else 'sa-pill-blue' }}">{{ 'Read' if notif.is_read else 'Unread' }}</span>
         </td>

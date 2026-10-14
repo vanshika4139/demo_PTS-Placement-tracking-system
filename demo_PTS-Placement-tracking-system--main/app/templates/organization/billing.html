@@ -129,7 +129,7 @@
             <span class="bp-pill {{ 'bp-pill-green' if invoice.status == 'PAID' else ('bp-pill-red' if invoice.status == 'OVERDUE' else ('bp-pill-grey' if invoice.status == 'CANCELLED' else 'bp-pill-amber')) }}">{{ invoice.status|capitalize }}</span>
           </td>
           <td>{{ invoice.due_date.strftime('%d-%m-%Y') if invoice.due_date else '-' }}</td>
-          <td>{{ invoice.paid_at.strftime('%d-%m-%Y %H:%M') if invoice.paid_at else '-' }}</td>
+          <td>{{ invoice.paid_at|ist }}</td>
           <td>
             {% if invoice.status in ('PENDING', 'OVERDUE') and gateway_configured %}
             <form method="post" action="{{ url_for('frontend.organization_billing_pay_invoice', invoice_id=invoice.id) }}">

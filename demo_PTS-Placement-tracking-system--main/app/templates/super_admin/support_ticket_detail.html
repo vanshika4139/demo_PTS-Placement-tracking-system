@@ -23,7 +23,7 @@
       </tr>
       <tr>
         <td style="color:var(--muted); font-weight:600;">Date</td>
-        <td>{{ ticket.created_at.strftime('%d %B %Y, %I:%M %p') if ticket.created_at else '-' }}</td>
+        <td>{{ ticket.created_at|ist('%d %B %Y, %I:%M %p') }}</td>
       </tr>
       <tr>
         <td style="color:var(--muted); font-weight:600;">Status</td>
@@ -43,12 +43,12 @@
       </tr>
       <tr>
         <td style="color:var(--muted); font-weight:600;">Last Updated</td>
-        <td>{{ ticket.updated_at.strftime('%d %B %Y, %I:%M %p') if ticket.updated_at else '-' }}</td>
+        <td>{{ ticket.updated_at|ist('%d %B %Y, %I:%M %p') }}</td>
       </tr>
       {% if ticket.resolved_at and ticket.status == 'resolved' %}
       <tr>
         <td style="color:var(--muted); font-weight:600;">Resolved On</td>
-        <td>{{ ticket.resolved_at.strftime('%d %B %Y, %I:%M %p') }}</td>
+        <td>{{ ticket.resolved_at|ist('%d %B %Y, %I:%M %p') }}</td>
       </tr>
       {% endif %}
       <tr>

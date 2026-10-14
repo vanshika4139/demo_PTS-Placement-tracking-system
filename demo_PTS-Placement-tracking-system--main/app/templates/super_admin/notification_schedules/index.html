@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Notification Schedules{% endblock %}
 
 {% block content %}
@@ -28,7 +28,7 @@
           {% elif s.frequency == 'custom' %}{{ s.custom_cron_expression }}
           {% else %}-{% endif %}
         </td>
-        <td>{{ s.last_run_at.strftime('%d-%m-%Y %H:%M') if s.last_run_at else 'Never' }}</td>
+        <td>{{ s.last_run_at|ist if s.last_run_at else 'Never' }}</td>
         <td>
           <span class="status-badge {{ 'status-active' if s.is_active else 'status-suspended' }}">{{ 'Active' if s.is_active else 'Inactive' }}</span>
         </td>

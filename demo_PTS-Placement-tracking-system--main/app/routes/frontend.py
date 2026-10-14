@@ -1539,6 +1539,14 @@ HOLD_DISPOSITION_CODES = {"PLACED", "LEFT_JOB"}  # FR-36 candidate update not bu
 CALL_QUEUE_PAGE_SIZE = 20
 
 
+@frontend_bp.app_template_filter("ist")
+def ist_filter(value, fmt="%d-%m-%Y %H:%M"):
+    """DB stores UTC; show India time (UTC+5:30)."""
+    if not value:
+        return "-"
+    from datetime import timedelta as _td
+    return (value + _td(hours=5, minutes=30)).strftime(fmt)
+
 def _call_center_scope():
     """organization_id and user id always come from the logged-in session, never from the request."""
     user = session.get("user") or {}
@@ -1562,7 +1570,8 @@ def call_center_queue():
     except (TypeError, ValueError):
         page = 1
 
-    today_start = datetime.combine(datetime.utcnow().date(), datetime.min.time())
+    ist_offset = timedelta(hours=5, minutes=30)
+    today_start = datetime.combine((datetime.utcnow() + ist_offset).date(), datetime.min.time()) - ist_offset
     tomorrow_start = today_start + timedelta(days=1)
 
     base = CallTask.query.filter(
@@ -2031,6 +2040,24 @@ def no_access():
     return render_template("no_access.html")
 
 
+def _org_call_counts(organization_id):
+    """FR-19: follow-ups due today and upcoming scheduled calls for the org dashboard.
+    organization_id comes from the session. Day boundary is IST."""
+    from datetime import datetime, timedelta
+
+    ist_offset = timedelta(hours=5, minutes=30)
+    today_start = datetime.combine((datetime.utcnow() + ist_offset).date(), datetime.min.time()) - ist_offset
+    tomorrow_start = today_start + timedelta(days=1)
+    base = CallTask.query.filter(
+        CallTask.organization_id == organization_id,
+        CallTask.status == 1,
+        CallTask.task_status == "pending",
+    )
+    return {
+        "due_today": base.filter(CallTask.scheduled_at >= today_start, CallTask.scheduled_at < tomorrow_start).count(),
+        "scheduled": base.filter(CallTask.scheduled_at >= tomorrow_start).count(),
+    }
+
 @frontend_bp.route("/organization/dashboard")
 @login_required
 @require_permission("dashboard.view")
@@ -2044,6 +2071,8 @@ def organization_dashboard():
     if not user.get("is_super_admin") and not has_permission(user, "candidate.view_all"):
         created_by_filter = user.get("id")
     data = get_organization_dashboard_data(org_id, created_by_filter)
+    data = dict(data)
+    data["call_counts"] = _org_call_counts(org_id) if org_id else None
     return render_template("organization/dashboard.html", **data)
 
 

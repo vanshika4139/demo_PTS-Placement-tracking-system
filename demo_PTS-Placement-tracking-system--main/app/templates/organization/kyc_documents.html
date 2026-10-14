@@ -151,7 +151,7 @@
       </div>
 
       {% if doc %}
-        <div class="kd-meta">{{ doc.original_filename or 'file' }} &middot; uploaded {{ doc.uploaded_at.strftime('%d-%m-%Y %H:%M') if doc.uploaded_at else '-' }}</div>
+        <div class="kd-meta">{{ doc.original_filename or 'file' }} &middot; uploaded {{ doc.uploaded_at|ist }}</div>
         {% if doc.status == 'REJECTED' and doc.remarks %}
         <div class="kd-remarks">Rejected: {{ doc.remarks }}</div>
         {% endif %}

@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Announcements{% endblock %}
 
 {% block content %}
@@ -24,7 +24,7 @@
         <td>
           <span class="status-badge {{ 'status-active' if a.is_active else 'status-suspended' }}">{{ 'Active' if a.is_active else 'Inactive' }}</span>
         </td>
-        <td>{{ a.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+        <td>{{ a.created_at|ist }}</td>
         <td>
           {% if a.is_active %}
           <form method="post" action="{{ url_for('frontend.super_admin_announcement_deactivate', announcement_id=a.id) }}" style="display:inline;">

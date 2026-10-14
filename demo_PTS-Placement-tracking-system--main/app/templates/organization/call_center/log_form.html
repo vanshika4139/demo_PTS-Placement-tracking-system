@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Log Call{% endblock %}
 
 {% block content %}
@@ -14,7 +14,7 @@
   <h3 style="margin-top:0;">{{ candidate.full_name }}</h3>
   <p style="margin:4px 0;">Mobile: {% if candidate.mobile %}<a href="tel:{{ candidate.mobile }}">{{ candidate.mobile }}</a>{% else %}-{% endif %}</p>
   {% if candidate.alternative_mobile %}<p style="margin:4px 0;">Alternative: <a href="tel:{{ candidate.alternative_mobile }}">{{ candidate.alternative_mobile }}</a></p>{% endif %}
-  <p style="margin:4px 0;">Scheduled: {{ task.scheduled_at.strftime('%d-%m-%Y %H:%M') if task.scheduled_at else '-' }}</p>
+  <p style="margin:4px 0;">Scheduled: {{ task.scheduled_at|ist }}</p>
 </div>
 
 <div class="panel-card form-card">

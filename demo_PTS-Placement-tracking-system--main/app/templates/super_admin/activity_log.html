@@ -100,7 +100,7 @@
     <tbody>
       {% for log in logs %}
       <tr>
-        <td class="al-time">{{ log.created_at.strftime('%d-%m-%Y %H:%M') if log.created_at else '—' }}</td>
+        <td class="al-time">{{ log.created_at|ist }}</td>
         <td>{{ user_name_by_id.get(log.user_id, 'System') }}</td>
         <td class="al-action">{{ log.action }}</td>
         <td class="al-details">{{ log.details or '—' }}</td>

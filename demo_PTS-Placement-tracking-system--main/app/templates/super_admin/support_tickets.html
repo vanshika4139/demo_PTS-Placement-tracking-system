@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Support Tickets{% endblock %}
 
 {% block content %}
@@ -71,7 +71,7 @@
       <tbody>
         {% for ticket in tickets %}
         <tr class="clickable-row" data-href="{{ url_for('frontend.super_admin_support_ticket_detail', ticket_id=ticket.id) }}">
-          <td style="white-space:nowrap;">{{ ticket.created_at.strftime('%d-%m-%Y %H:%M') if ticket.created_at else '-' }}</td>
+          <td style="white-space:nowrap;">{{ ticket.created_at|ist }}</td>
           <td>{{ ticket.subject }}</td>
           <td>{{ ticket.reporter_name or ticket.reporter_email or '-' }}</td>
           <td>{{ org_names.get(ticket.organization_id|string) or '-' }}</td>

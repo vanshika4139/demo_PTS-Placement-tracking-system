@@ -16,6 +16,18 @@
   {% endfor %}
 </div>
 
+{% if call_counts %}
+<div class="stats-grid" style="margin-top:16px;">
+  <div class="stat-card">
+    <h3>Follow-ups Due Today</h3>
+    <p class="stat-value">{{ call_counts.due_today }}</p>
+  </div>
+  <div class="stat-card">
+    <h3>Scheduled Calls</h3>
+    <p class="stat-value">{{ call_counts.scheduled }}</p>
+  </div>
+</div>
+{% endif %}
 <div class="card-grid">
   <div class="panel-card">
     <h3>Monthly Placement Trend</h3>

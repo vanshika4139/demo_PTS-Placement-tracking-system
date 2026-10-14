@@ -149,7 +149,7 @@
           <span class="sa-pill {{ 'sa-pill-green' if db_user.is_active else 'sa-pill-red' }}">{{ 'Active' if db_user.is_active else 'Inactive' }}</span>
         </span>
       </label>
-      <label>Last Login<input type="text" value="{{ db_user.last_login_at.strftime('%d-%m-%Y %H:%M') if db_user.last_login_at else 'Never' }}" disabled></label>
+      <label>Last Login<input type="text" value="{{ db_user.last_login_at|ist if db_user.last_login_at else 'Never' }}" disabled></label>
     </div>
     <div class="form-actions">
       <button type="submit" class="primary-btn">Save Profile</button>
@@ -258,7 +258,7 @@
         </td>
         <td>{{ login.email }}</td>
         <td>{{ login.ip_address or '-' }}</td>
-        <td>{{ login.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+        <td>{{ login.created_at|ist }}</td>
         <td>
           <div class="row-menu">
             <button type="button" class="row-menu-trigger" aria-label="Actions for this login" aria-haspopup="true" aria-expanded="false" onclick="toggleRowMenu(this)">
@@ -270,7 +270,7 @@
                   {{ ('Success' if login.success else (login.failure_reason or 'Failed'))|tojson }},
                   {{ (login.email or '-')|tojson }},
                   {{ (login.ip_address or '-')|tojson }},
-                  {{ login.created_at.strftime('%d-%m-%Y %H:%M')|tojson }}
+                  {{ login.created_at|ist|tojson }}
                 )">View</button>
               <form method="post" action="{{ url_for('frontend.settings_login_history_delete', login_id=login.id) }}" onsubmit="return confirm('Delete this login record?');">
                 <button type="submit" class="action-danger">Delete</button>
@@ -299,7 +299,7 @@
       <tr>
         <td>{{ log.action }}</td>
         <td>{{ log.details or '-' }}</td>
-        <td>{{ log.created_at.strftime('%d-%m-%Y %H:%M') }}</td>
+        <td>{{ log.created_at|ist }}</td>
         <td>
           <div class="row-menu">
             <button type="button" class="row-menu-trigger" aria-label="Actions for this activity" aria-haspopup="true" aria-expanded="false" onclick="toggleRowMenu(this)">
@@ -310,7 +310,7 @@
                 onclick="showActivityModal(
                   {{ (log.action or '-')|tojson }},
                   {{ (log.details or '-')|tojson }},
-                  {{ log.created_at.strftime('%d-%m-%Y %H:%M')|tojson }}
+                  {{ log.created_at|ist|tojson }}
                 )">View</button>
               <form method="post" action="{{ url_for('frontend.settings_activity_log_delete', log_id=log.id) }}" onsubmit="return confirm('Delete this activity record?');">
                 <button type="submit" class="action-danger">Delete</button>

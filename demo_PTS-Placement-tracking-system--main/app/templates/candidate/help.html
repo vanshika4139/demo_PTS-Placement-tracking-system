@@ -80,7 +80,7 @@
         <div class="ch-ticket-head">
           <div>
             <div class="ch-ticket-subject">{{ t.subject }}</div>
-            <div class="ch-ticket-meta">Raised {{ t.created_at.strftime('%d-%m-%Y %H:%M') if t.created_at else '-' }}</div>
+            <div class="ch-ticket-meta">Raised {{ t.created_at|ist }}</div>
           </div>
           <span class="ch-pill {{ 'ch-resolved' if t.status == 'resolved' else ('ch-progress' if t.status == 'in_progress' else 'ch-open') }}">
             {{ 'Resolved' if t.status == 'resolved' else ('In progress' if t.status == 'in_progress' else 'Open') }}

@@ -133,7 +133,7 @@
       <div class="rp-timeline-meta">
         <span class="rp-timeline-actor">{{ entry.actor_name }}</span>
         {% if entry.details %} — {{ entry.details }}{% endif %}
-        &middot; {{ entry.created_at.strftime('%d-%m-%Y %H:%M') if entry.created_at else '—' }}
+        &middot; {{ entry.created_at|ist }}
       </div>
     </div>
   </div>

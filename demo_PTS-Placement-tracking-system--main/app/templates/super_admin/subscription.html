@@ -98,7 +98,7 @@
           </span>
         </td>
         <td>{{ invoice.due_date.strftime('%d-%m-%Y') }}</td>
-        <td>{{ invoice.paid_at.strftime('%d-%m-%Y %H:%M') if invoice.paid_at else '—' }}</td>
+        <td>{{ invoice.paid_at|ist }}</td>
         <td>
           {% if invoice.status in ('PENDING', 'OVERDUE') %}
           {% if gateway_configured %}

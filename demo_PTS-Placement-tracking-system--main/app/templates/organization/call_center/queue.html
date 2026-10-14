@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}My Call Queue{% endblock %}
 
 {% block content %}
@@ -26,7 +26,7 @@
       {% for t in tasks %}
       {% set c = candidates_by_id.get(t.candidate_id) %}
       <tr>
-        <td>{{ t.scheduled_at.strftime('%d-%m-%Y %H:%M') if t.scheduled_at else '-' }}</td>
+        <td>{{ t.scheduled_at|ist }}</td>
         <td>{{ c.full_name if c else 'Candidate unavailable' }}</td>
         <td>
           {% if c and c.mobile %}<a href="tel:{{ c.mobile }}">{{ c.mobile }}</a>{% else %}-{% endif %}

@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Email Log Detail{% endblock %}
 
 {% block content %}
@@ -15,7 +15,7 @@
     <tbody>
       <tr>
         <td style="width:200px; color:var(--muted); font-weight:600;">Date / Time</td>
-        <td>{{ log.created_at.strftime('%d %B %Y, %I:%M %p') if log.created_at else '-' }}</td>
+        <td>{{ log.created_at|ist('%d %B %Y, %I:%M %p') }}</td>
       </tr>
       <tr>
         <td style="color:var(--muted); font-weight:600;">Status</td>

@@ -43,6 +43,8 @@ PERMISSION_CODES = [
     ("user.update", "Edit users"),
     ("user.delete", "Delete users"),
     ("settings.view", "View/edit own settings"),
+    ("call_queue.view", "View own daily call queue"),
+    ("call_log.create", "Log call disposition and notes"),
 ]
 
 ROLES = {
@@ -81,6 +83,7 @@ ROLES = {
         "permissions": [
             "dashboard.view",
             "candidate.view", "batch.view", "scheme.view", "placement.view",
+            "call_queue.view", "call_log.create",
             "tracking.view", "report.view", "notification.view", "settings.view",
         ],
     },

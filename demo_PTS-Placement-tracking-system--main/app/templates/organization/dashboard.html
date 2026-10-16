@@ -47,6 +47,12 @@
   </div>
 </div>
 
+<div class="card-grid" style="margin-top:16px;">
+  <div class="panel-card">
+    <h3>Salary Trend (average)</h3>
+    <div style="position:relative; height:260px;"><canvas id="salaryTrendChart"></canvas></div>
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -124,6 +130,35 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  const salaryCtx = document.getElementById('salaryTrendChart');
+  if (salaryCtx) {
+    const salaryLabels = {{ (salary_labels or []) | tojson }};
+    const salaryData = {{ (salary_data or []) | tojson }};
+    if (salaryData.some(function (v) { return v > 0; })) {
+      new Chart(salaryCtx, {
+        type: 'line',
+        data: {
+          labels: salaryLabels,
+          datasets: [{
+            label: 'Average Salary',
+            data: salaryData,
+            borderColor: '#8b5cf6',
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            tension: 0.3,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    } else {
+      salaryCtx.parentElement.innerHTML = '<h3>Salary Trend (average)</h3><p>No salary data yet.</p>';
+    }
+  }
   const funnelCtx = document.getElementById('verificationFunnelChart');
   if (funnelCtx) {
     const funnelLabels = {{ verification_funnel_labels | tojson }};

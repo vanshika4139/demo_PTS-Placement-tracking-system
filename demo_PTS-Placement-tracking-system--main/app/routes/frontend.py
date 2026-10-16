@@ -2124,6 +2124,28 @@ def get_organization_dashboard_data(organization_id, created_by_filter=None):
         placement_labels.append(datetime(year, month, 1).strftime("%b %Y"))
         placement_data.append(count)
 
+    import re as _re
+
+    def _salary_number(raw):
+        """salary is free text; take the first number in it (commas removed)."""
+        if not raw:
+            return None
+        m = _re.search(r"\d+(?:\.\d+)?", str(raw).replace(",", ""))
+        return float(m.group()) if m else None
+
+    salary_labels = list(placement_labels)
+    salary_data = []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        values = [
+            v for v in (
+                _salary_number(c.salary)
+                for c in placed_candidates
+                if c.joining_date.year == year and c.joining_date.month == month
+            ) if v is not None
+        ]
+        salary_data.append(round(sum(values) / len(values)) if values else 0)
+
     employer_counts = {}
     for c in all_candidates:
         if c.employer_name:
@@ -2156,6 +2178,8 @@ def get_organization_dashboard_data(organization_id, created_by_filter=None):
         "sector_data": sector_data,
         "verification_funnel_labels": verification_funnel_labels,
         "verification_funnel_data": verification_funnel_data,
+        "salary_labels": salary_labels,
+        "salary_data": salary_data,
     }
 
 

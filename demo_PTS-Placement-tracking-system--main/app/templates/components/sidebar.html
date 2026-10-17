@@ -8,6 +8,9 @@
     {% endif %}
     {% if has_permission(session.user, 'organization.view') %}
     <li><a href="/super-admin/organizations">Organization</a></li>
+    {% if session.user.is_super_admin %}
+    <li><a href="/super-admin/reports">Reports</a></li>
+    {% endif %}
     {% endif %}
     {% if has_permission(session.user, 'candidate.view') %}
     <li><a href="/organization/candidates">Candidates</a></li>

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Organization Reports{% endblock %}
+{% block content %}
+<style>
+  .rp-title { margin: 0 0 4px; font-size: 1.5rem; }
+  .rp-sub { margin: 0 0 20px; color: #64748b; }
+  .rp-bar { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end;
+            background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .rp-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .rp-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 600; color: #64748b;
+              text-transform: uppercase; letter-spacing: .05em; }
+  .rp-field select, .rp-field input { height: 38px; min-width: 170px; padding: 0 10px; border: 1px solid #d1d5db;
+              border-radius: 8px; background: #fff; font-size: 14px; color: #1e293b; text-transform: none;
+              letter-spacing: 0; font-weight: 400; }
+  .rp-btn { height: 38px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px;
+            border: 1px solid #2563eb; background: #2563eb; color: #fff; font-size: 14px; font-weight: 600;
+            cursor: pointer; text-decoration: none; }
+  .rp-btn.ghost { background: #fff; color: #2563eb; }
+  .rp-btn.plain { background: #fff; border-color: #d1d5db; color: #475569; }
+  .rp-exports { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow-x: auto; }
+  .rp-table { width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b; }
+  .rp-table th { padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                 color: #64748b; background: #f8fafc; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+  .rp-table td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #1e293b; vertical-align: middle; }
+  .rp-table th.num, .rp-table td.num { text-align: right; white-space: nowrap; }
+  .rp-table td.name { font-weight: 600; min-width: 200px; }
+  .rp-table td.nowrap { white-space: nowrap; }
+  .rp-table tbody tr:hover { background: #f8fafc; }
+  .rp-table tfoot td { font-weight: 700; background: #f8fafc; border-top: 2px solid #e5e7eb; border-bottom: none; }
+  .rp-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .rp-pill.ok { background: #dcfce7; color: #15803d; }
+  .rp-pill.off { background: #fef3c7; color: #b45309; }
+  .rp-empty { padding: 24px; text-align: center; color: #64748b; }
+</style>
+
+<h2 class="rp-title">Organization Reports</h2>
+<p class="rp-sub">Platform-wide numbers for each organization. Candidate-level reports stay with each Organization Admin.</p>
+
+<div class="rp-bar">
+  <form method="get" class="rp-filters">
+    <label class="rp-field">State
+      <select name="state">
+        <option value="">All states</option>
+        {% for s in state_options %}<option value="{{ s }}" {{ 'selected' if f_state == s }}>{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="rp-field">District
+      <input type="text" name="district" value="{{ f_district }}" placeholder="Any district">
+    </label>
+    <label class="rp-field">Status
+      <select name="status">
+        <option value="">All</option>
+        <option value="active" {{ 'selected' if f_status == 'active' }}>Active</option>
+        <option value="suspended" {{ 'selected' if f_status == 'suspended' }}>Suspended</option>
+      </select>
+    </label>
+    <button type="submit" class="rp-btn">Filter</button>
+    <a href="/super-admin/reports" class="rp-btn plain">Reset</a>
+  </form>
+  <div class="rp-exports">
+    <a class="rp-btn ghost" href="{{ url_for('frontend.super_admin_reports_export', fmt='xlsx', **filters) }}">Excel</a>
+    <a class="rp-btn ghost" href="{{ url_for('frontend.super_admin_reports_export', fmt='csv', **filters) }}">CSV</a>
+    <a class="rp-btn ghost" href="{{ url_for('frontend.super_admin_reports_export', fmt='pdf', **filters) }}">PDF</a>
+  </div>
+</div>
+
+<div class="rp-card">
+  <table class="rp-table">
+    <thead>
+      <tr>
+        <th>Code</th><th>Organization</th><th>State</th><th>District</th><th>Status</th>
+        <th class="num">Candidates</th><th class="num">Training Completed</th><th class="num">Placed</th>
+        <th class="num">Verification Pending</th><th class="num">Placement Rate</th><th class="num">Avg Salary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="nowrap">{{ r.code }}</td>
+        <td class="name">{{ r.name }}</td>
+        <td class="nowrap">{{ r.state }}</td>
+        <td class="nowrap">{{ r.district }}</td>
+        <td><span class="rp-pill {{ 'ok' if r.status == 'Active' else 'off' }}">{{ r.status }}</span></td>
+        <td class="num">{{ r.total }}</td>
+        <td class="num">{{ r.completed }}</td>
+        <td class="num">{{ r.placed }}</td>
+        <td class="num">{{ r.pending }}</td>
+        <td class="num">{{ r.rate }}%</td>
+        <td class="num">{{ '{:,}'.format(r.avg_salary) if r.avg_salary is not none else '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="rp-empty">No organizations match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr>
+        <td></td><td>Total ({{ totals.count }})</td><td></td><td></td><td></td>
+        <td class="num">{{ totals.total }}</td>
+        <td class="num">{{ totals.completed }}</td>
+        <td class="num">{{ totals.placed }}</td>
+        <td class="num">{{ totals.pending }}</td>
+        <td class="num">{{ totals.rate }}%</td>
+        <td class="num">{{ '{:,}'.format(totals.avg_salary) if totals.avg_salary is not none else '-' }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}

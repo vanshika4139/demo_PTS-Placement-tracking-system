@@ -2284,6 +2284,191 @@ def super_admin_organizations_export():
     )
 
 
+_ORG_REPORT_HEADERS = [
+    "Code", "Organization", "State", "District", "Status", "Candidates",
+    "Training Completed", "Placed", "Verification Pending", "Placement Rate (%)", "Avg Salary",
+]
+
+
+def _org_report_rows(args):
+    """Super Admin, organization-level report (FR-17). Aggregated counts only, no candidate details."""
+    from sqlalchemy import func
+    import re as _re
+
+    f_state = (args.get("state") or "").strip()
+    f_district = (args.get("district") or "").strip()
+    f_status = (args.get("status") or "").strip()
+
+    orgs = Organization.query.filter_by(is_deleted=False).order_by(Organization.organization_name.asc()).all()
+    names = {o.id: (state_name(o.state_id) or "-") for o in orgs}
+    state_options = sorted({n for n in names.values() if n != "-"})
+
+    def _keep(o):
+        if f_state and names[o.id] != f_state:
+            return False
+        if f_district and f_district.lower() not in (o.district or "").lower():
+            return False
+        if f_status == "active" and o.status != 1:
+            return False
+        if f_status == "suspended" and o.status == 1:
+            return False
+        return True
+
+    orgs = [o for o in orgs if _keep(o)]
+    ids = [o.id for o in orgs]
+
+    counts = {}
+    salaries = {}
+    if ids:
+        has_employer = Candidate.employer_name.isnot(None) & (Candidate.employer_name != "")
+        for org_id, total, placed, pending, completed in (
+            db.session.query(
+                Candidate.organization_id,
+                func.count(Candidate.id),
+                func.sum(func.if_(has_employer, 1, 0)),
+                func.sum(func.if_(Candidate.verification_status == "pending", 1, 0)),
+                func.sum(func.if_(Candidate.training_status == "training_completed", 1, 0)),
+            )
+            .filter(Candidate.is_deleted == False, Candidate.organization_id.in_(ids))
+            .group_by(Candidate.organization_id)
+            .all()
+        ):
+            counts[org_id] = (int(total or 0), int(placed or 0), int(pending or 0), int(completed or 0))
+        for org_id, raw in (
+            db.session.query(Candidate.organization_id, Candidate.salary)
+            .filter(
+                Candidate.is_deleted == False,
+                Candidate.organization_id.in_(ids),
+                (has_employer | Candidate.joining_date.isnot(None)),
+                Candidate.salary.isnot(None),
+            )
+            .all()
+        ):
+            found = _re.search(r"\d+(?:\.\d+)?", str(raw).replace(",", ""))
+            if found:
+                salaries.setdefault(org_id, []).append(float(found.group()))
+
+    rows = []
+    for o in orgs:
+        total, placed, pending, completed = counts.get(o.id, (0, 0, 0, 0))
+        vals = salaries.get(o.id) or []
+        rows.append({
+            "code": o.organization_code or "-",
+            "name": o.organization_name or "-",
+            "state": names[o.id],
+            "district": o.district or "-",
+            "status": "Active" if o.status == 1 else "Suspended",
+            "total": total,
+            "completed": completed,
+            "placed": placed,
+            "pending": pending,
+            "rate": round(placed * 100.0 / total, 1) if total else 0,
+            "avg_salary": round(sum(vals) / len(vals)) if vals else None,
+        })
+
+    all_vals = [v for o in orgs for v in (salaries.get(o.id) or [])]
+    t_total = sum(r["total"] for r in rows)
+    t_placed = sum(r["placed"] for r in rows)
+    totals = {
+        "count": len(rows),
+        "total": t_total,
+        "completed": sum(r["completed"] for r in rows),
+        "placed": t_placed,
+        "pending": sum(r["pending"] for r in rows),
+        "rate": round(t_placed * 100.0 / t_total, 1) if t_total else 0,
+        "avg_salary": round(sum(all_vals) / len(all_vals)) if all_vals else None,
+    }
+    return rows, totals, state_options
+
+
+def _org_report_table(rows, totals):
+    data = [
+        [r["code"], r["name"], r["state"], r["district"], r["status"], r["total"], r["completed"],
+         r["placed"], r["pending"], r["rate"], r["avg_salary"] if r["avg_salary"] is not None else "-"]
+        for r in rows
+    ]
+    data.append([
+        "", "Total", "", "", "", totals["total"], totals["completed"], totals["placed"],
+        totals["pending"], totals["rate"], totals["avg_salary"] if totals["avg_salary"] is not None else "-",
+    ])
+    return data
+
+
+@frontend_bp.route("/super-admin/reports")
+@super_admin_required
+def super_admin_reports():
+    rows, totals, state_options = _org_report_rows(request.args)
+    f_state = (request.args.get("state") or "").strip()
+    f_district = (request.args.get("district") or "").strip()
+    f_status = (request.args.get("status") or "").strip()
+    filters = {k: v for k, v in (("state", f_state), ("district", f_district), ("status", f_status)) if v}
+    return render_template(
+        "super_admin/reports.html",
+        rows=rows, totals=totals, state_options=state_options,
+        f_state=f_state, f_district=f_district, f_status=f_status, filters=filters,
+    )
+
+
+@frontend_bp.route("/super-admin/reports/export/<fmt>")
+@super_admin_required
+def super_admin_reports_export(fmt):
+    from io import BytesIO, StringIO
+    from flask import send_file, abort
+    import csv
+
+    if fmt not in ("xlsx", "csv", "pdf"):
+        abort(404)
+    rows, totals, _ = _org_report_rows(request.args)
+    data = _org_report_table(rows, totals)
+    buffer = BytesIO()
+
+    if fmt == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Organization Report"
+        ws.append(_ORG_REPORT_HEADERS)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        for line in data:
+            ws.append(line)
+        for col_cells in ws.columns:
+            width = max(len(str(c.value)) if c.value is not None else 0 for c in col_cells)
+            ws.column_dimensions[col_cells[0].column_letter].width = min(width + 2, 40)
+        wb.save(buffer)
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif fmt == "csv":
+        out = StringIO()
+        writer = csv.writer(out)
+        writer.writerow(_ORG_REPORT_HEADERS)
+        writer.writerows(data)
+        buffer.write(out.getvalue().encode("utf-8-sig"))
+        mimetype = "text/csv"
+    else:
+        from reportlab.lib.pagesizes import landscape, A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm,
+                                topMargin=10 * mm, bottomMargin=10 * mm)
+        styles = getSampleStyleSheet()
+        table = Table([_ORG_REPORT_HEADERS] + [[str(x) for x in line] for line in data], repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ]))
+        doc.build([Paragraph("Organization Report", styles["Title"]), Spacer(1, 6), table])
+        mimetype = "application/pdf"
+
+    buffer.seek(0)
+    _log_activity("Exported organization report", f"{fmt.upper()}, {len(rows)} organization(s)")
+    return send_file(buffer, as_attachment=True, download_name=f"organization_report.{fmt}", mimetype=mimetype)
+
 @frontend_bp.route("/super-admin/organizations/bulk-topup", methods=["POST"])
 @super_admin_required
 def super_admin_organizations_bulk_topup():

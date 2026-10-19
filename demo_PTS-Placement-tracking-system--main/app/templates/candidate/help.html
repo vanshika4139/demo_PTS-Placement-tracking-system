@@ -31,10 +31,20 @@
     .ch-progress { background: #dbeafe; color: #2563eb; }
     .ch-resolved { background: #dcfce7; color: #16a34a; }
     .ch-rejected { background: #fee2e2; color: #dc2626; }
+    .ch-filter { display: flex; align-items: center; gap: 10px; margin: -6px 0 16px; }
+    .ch-filter label { font-size: 0.85rem; font-weight: 600; margin: 0; }
+    .ch-filter select { height: 38px; min-width: 190px; padding: 0 10px; border: 1px solid #d1d5db; border-radius: 8px;
+                        background: #fff; font-size: 14px; color: #1e293b; }
+    .ch-wrap { max-width: 1180px !important; width: 100%; box-sizing: border-box; margin: 0 auto; padding: 24px 16px 40px;
+               display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 0 24px; align-items: start; }
+    .ch-wrap > .ch-head, .ch-wrap > .alert { grid-column: 1 / -1; }
+    .ch-wrap > .ch-card { margin-bottom: 24px; }
+    .ch-data-btn { margin-top: 12px; }
+    @media (max-width: 900px) { .ch-wrap { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <div class="page-content" style="max-width:760px; margin:0 auto; padding-top:24px; padding-bottom:40px;">
+  <div class="page-content ch-wrap">
 
     <div class="ch-head">
       <div>
@@ -53,8 +63,12 @@
     {% endwith %}
 
     <div class="panel-card ch-card">
-      <h3>Need help?</h3>
+      <h3>Help and your data</h3>
       <p class="ch-note">Use the <strong>Help</strong> button at the bottom right of any page to raise a new request. Your tickets and our replies are listed below.</p>
+      <form method="post" action="{{ url_for('frontend.candidate_download_data') }}" class="ch-data-btn">
+        <button type="submit" class="ghost-btn">Download my data (PDF)</button>
+        <p class="ch-note" style="margin-top:6px;">A copy of the data we hold about you. ID and bank numbers show only the last four characters.</p>
+      </form>
       <form method="post" action="{{ url_for('frontend.candidate_withdraw_consent') }}" style="margin-top:12px;"
             onsubmit="return confirm('Withdraw your consent? You will be logged out and your organization will be informed. You will need to agree again to use the portal.');">
         <button type="submit" class="ghost-btn">Withdraw my consent</button>
@@ -63,8 +77,19 @@
 
     <div class="panel-card ch-card">
       <h3>My Tickets</h3>
+      <div class="ch-filter">
+        <label for="chStatus">Status</label>
+        <select id="chStatus">
+          <option value="">All</option>
+          <option value="open">Open</option>
+          <option value="in_progress">In progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <p id="chNone" style="display:none; color:var(--muted); margin:0;">No tickets with this status.</p>
       {% for t in tickets %}
-      <div class="ch-ticket">
+      <div class="ch-ticket" data-status="{{ t.status }}">
         <div class="ch-ticket-head">
           <div>
             <div class="ch-ticket-subject">{{ t.subject }}</div>
@@ -86,5 +111,22 @@
 
   </div>
 {% include "candidate/_help_widget.html" %}
+<script>
+(function () {
+  var sel = document.getElementById('chStatus');
+  if (!sel) return;
+  var items = document.querySelectorAll('.ch-ticket');
+  var none = document.getElementById('chNone');
+  sel.addEventListener('change', function () {
+    var v = sel.value, shown = 0;
+    items.forEach(function (el) {
+      var ok = !v || el.getAttribute('data-status') === v;
+      el.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+    });
+    if (none) none.style.display = (shown === 0 && items.length > 0) ? '' : 'none';
+  });
+})();
+</script>
 </body>
 </html>

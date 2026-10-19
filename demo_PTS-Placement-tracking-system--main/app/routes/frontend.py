@@ -6202,6 +6202,149 @@ def candidate_consent():
     )
 
 
+def _mask_tail(value, keep=4):
+    """Show only the last `keep` characters, e.g. XXXXXXXX1234."""
+    if not value:
+        return "-"
+    s = str(value)
+    if len(s) <= keep:
+        return "X" * len(s)
+    return "X" * (len(s) - keep) + s[-keep:]
+
+
+@frontend_bp.route("/candidate/my-data/download", methods=["POST"])
+@candidate_login_required
+@rate_limit("candidate_data_download", max_attempts=5, window_seconds=3600)
+def candidate_download_data():
+    """DPDP right to access: the logged-in candidate downloads a PDF of their own data.
+    The candidate id comes from the session only. ID and bank numbers are masked."""
+    from io import BytesIO
+    from xml.sax.saxutils import escape as _xml
+    from flask import send_file
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from app.models.candidate_consent import CandidateConsent
+    from app.models.support_ticket import SupportTicket
+
+    candidate = Candidate.query.get_or_404(session.get("candidate", {}).get("id"))
+
+    def _t(v):
+        return _xml(str(v)) if v not in (None, "") else "-"
+
+    def _d(v):
+        return v.strftime("%d-%m-%Y") if v else "-"
+
+    sections = [
+        ("Personal details", [
+            ("Name", _t(candidate.full_name)), ("Registration number", _t(candidate.registration_number)),
+            ("Father's name", _t(candidate.father_name)), ("Mother's name", _t(candidate.mother_name)),
+            ("Gender", _t(candidate.gender)), ("Date of birth", _d(candidate.date_of_birth)),
+            ("Mobile", _t(candidate.mobile)), ("Alternative mobile", _t(candidate.alternative_mobile)),
+            ("Email", _t(candidate.email)), ("Current address", _t(candidate.current_address)),
+            ("Permanent address", _t(candidate.permanent_address)), ("Village", _t(candidate.village)),
+            ("Block", _t(candidate.block)), ("District", _t(candidate.district)),
+            ("State", _t(candidate.state)), ("PIN", _t(candidate.pin)),
+            ("Category", _t(candidate.category)), ("Religion", _t(candidate.religion)),
+            ("Disability status", _t(candidate.disability_status)), ("Marital status", _t(candidate.marital_status)),
+            ("Blood group", _t(candidate.blood_group)), ("Nationality", _t(candidate.nationality)),
+        ]),
+        ("Identity and bank details (masked)", [
+            ("Aadhaar", _xml(_mask_tail(candidate.aadhaar))), ("PAN", _xml(_mask_tail(candidate.pan))),
+            ("Bank name", _t(candidate.bank_name)), ("Account number", _xml(_mask_tail(candidate.account_number))),
+            ("IFSC", _t(candidate.ifsc)), ("UPI ID", _xml(_mask_tail(candidate.upi_id))),
+        ]),
+        ("Education", [
+            ("Qualification", _t(candidate.qualification)), ("Board", _t(candidate.board)),
+            ("Passing year", _t(candidate.passing_year)), ("Percentage", _t(candidate.percentage)),
+            ("University", _t(candidate.university)),
+        ]),
+        ("Training", [
+            ("Training center", _t(candidate.training_center)), ("Batch", _t(candidate.training_batch)),
+            ("Start date", _d(candidate.training_start_date)), ("End date", _d(candidate.training_end_date)),
+            ("Trainer", _t(candidate.trainer)), ("Sector", _t(candidate.sector)), ("Trade", _t(candidate.trade)),
+            ("NSQF level", _t(candidate.nsqf_level)), ("Course", _t(candidate.course)),
+            ("Course duration", _t(candidate.course_duration)), ("Training status", _t(candidate.training_status)),
+        ]),
+        ("Placement", [
+            ("Employer", _t(candidate.employer_name)), ("Job role", _t(candidate.job_role)),
+            ("Salary", _t(candidate.salary)), ("Joining date", _d(candidate.joining_date)),
+            ("Working status", _t(candidate.working_status)), ("Location", _t(candidate.location)),
+            ("Department", _t(candidate.department)), ("Manager", _t(candidate.manager)),
+            ("HR contact", _t(candidate.hr_contact)), ("Verification status", _t(candidate.verification_status)),
+            ("Exit date", _d(candidate.exit_date)), ("Exit reason", _t(candidate.exit_reason)),
+        ]),
+        ("Account", [
+            ("Account status", _t(candidate.account_status)),
+            ("Last login", _xml(ist_filter(candidate.last_login_at))),
+            ("Created on", _xml(ist_filter(candidate.created_at))),
+        ]),
+    ]
+
+    styles = getSampleStyleSheet()
+    cell = styles["BodyText"]
+    cell.fontSize = 8.5
+    cell.leading = 11
+    label_style = styles["BodyText"].clone("lbl", fontName="Helvetica-Bold", fontSize=8.5, leading=11)
+
+    def _table(rows):
+        t = Table([[Paragraph(_xml(k), label_style), Paragraph(v, cell)] for k, v in rows],
+                  colWidths=[52 * mm, 123 * mm])
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        return t
+
+    story = [
+        Paragraph("My Data", styles["Title"]),
+        Paragraph(f"Prepared for {_t(candidate.full_name)} on {_xml(ist_filter(datetime.utcnow()))} (IST).", styles["Normal"]),
+        Paragraph("This is a copy of the personal data held about you. Aadhaar, PAN, account and UPI numbers show only "
+                  "the last four characters.", styles["Italic"]),
+        Spacer(1, 8),
+    ]
+    for title, rows in sections:
+        story += [Paragraph(title, styles["Heading3"]), _table(rows), Spacer(1, 6)]
+
+    _labels = {"open": "Open", "in_progress": "In progress", "resolved": "Resolved", "rejected": "Rejected"}
+    _types = {"correct_data": "Correct my data", "delete_data": "Delete my data",
+              "withdraw_consent": "Withdrew consent"}
+    story.append(Paragraph("Your support tickets", styles["Heading3"]))
+    tickets = SupportTicket.query.filter_by(candidate_id=candidate.id).order_by(SupportTicket.created_at.desc()).all()
+    if not tickets:
+        story.append(Paragraph("You have not raised any tickets.", styles["Normal"]))
+    for tk in tickets:
+        story += [_table([
+            ("Subject", _t(tk.subject)), ("Type", _t(_types.get(tk.request_type, "General"))),
+            ("Status", _t(_labels.get(tk.status, tk.status))), ("Raised", _xml(ist_filter(tk.created_at))),
+            ("Your message", _t(tk.message)), ("Reply", _t(tk.admin_reply)),
+        ]), Spacer(1, 6)]
+
+    story.append(Paragraph("Your consent record", styles["Heading3"]))
+    consents = CandidateConsent.query.filter_by(candidate_id=candidate.id).order_by(CandidateConsent.consented_at.desc()).all()
+    if not consents:
+        story.append(Paragraph("No consent recorded.", styles["Normal"]))
+    for cs in consents:
+        story += [_table([
+            ("Notice version", _t(cs.notice_version)), ("Agreed on", _xml(ist_filter(cs.consented_at))),
+            ("Withdrawn on", _xml(ist_filter(cs.withdrawn_at)) if cs.withdrawn_at else "-"),
+        ]), Spacer(1, 6)]
+
+    buffer = BytesIO()
+    SimpleDocTemplate(buffer, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
+                      topMargin=15 * mm, bottomMargin=15 * mm, title="My Data").build(story)
+    buffer.seek(0)
+
+    try:
+        _log_activity("candidate.data_downloaded", f"{candidate.registration_number or candidate.id} downloaded their data")
+    except Exception:
+        logging.exception("Could not log candidate data download")
+
+    return send_file(buffer, as_attachment=True, download_name="my_data.pdf", mimetype="application/pdf")
+
 @frontend_bp.route("/candidate/consent/withdraw", methods=["POST"])
 @candidate_login_required
 def candidate_withdraw_consent():

@@ -30,6 +30,7 @@
     .ch-open { background: #fef3c7; color: #d97706; }
     .ch-progress { background: #dbeafe; color: #2563eb; }
     .ch-resolved { background: #dcfce7; color: #16a34a; }
+    .ch-rejected { background: #fee2e2; color: #dc2626; }
   </style>
 </head>
 <body>
@@ -52,24 +53,11 @@
     {% endwith %}
 
     <div class="panel-card ch-card">
-      <h3>Raise a Support Ticket</h3>
-      <form method="post" class="ch-form">
-        <label>Subject
-          <input type="text" name="subject" maxlength="200" required placeholder="e.g. Cannot update my bank details">
-        </label>
-        <label>Describe your problem
-          <textarea name="message" maxlength="3000" required placeholder="Please explain what happened and what you need help with."></textarea>
-        </label>
-        <p class="ch-note">
-          {% if candidate.email %}
-          Our reply will also be emailed to <strong>{{ candidate.email }}</strong>.
-          {% else %}
-          You have no email saved, so our reply will only show on this page.
-          {% endif %}
-        </p>
-        <div class="ch-actions">
-          <button type="submit" class="primary-btn">Submit Ticket</button>
-        </div>
+      <h3>Need help?</h3>
+      <p class="ch-note">Use the <strong>Help</strong> button at the bottom right of any page to raise a new request. Your tickets and our replies are listed below.</p>
+      <form method="post" action="{{ url_for('frontend.candidate_withdraw_consent') }}" style="margin-top:12px;"
+            onsubmit="return confirm('Withdraw your consent? You will be logged out and your organization will be informed. You will need to agree again to use the portal.');">
+        <button type="submit" class="ghost-btn">Withdraw my consent</button>
       </form>
     </div>
 
@@ -82,8 +70,8 @@
             <div class="ch-ticket-subject">{{ t.subject }}</div>
             <div class="ch-ticket-meta">Raised {{ t.created_at|ist }}</div>
           </div>
-          <span class="ch-pill {{ 'ch-resolved' if t.status == 'resolved' else ('ch-progress' if t.status == 'in_progress' else 'ch-open') }}">
-            {{ 'Resolved' if t.status == 'resolved' else ('In progress' if t.status == 'in_progress' else 'Open') }}
+          <span class="ch-pill {{ 'ch-resolved' if t.status == 'resolved' else ('ch-progress' if t.status == 'in_progress' else ('ch-rejected' if t.status == 'rejected' else 'ch-open')) }}">
+            {{ 'Resolved' if t.status == 'resolved' else ('In progress' if t.status == 'in_progress' else ('Rejected' if t.status == 'rejected' else 'Open')) }}
           </span>
         </div>
         <div class="ch-ticket-message">{{ t.message }}</div>
@@ -97,5 +85,6 @@
     </div>
 
   </div>
+{% include "candidate/_help_widget.html" %}
 </body>
 </html>

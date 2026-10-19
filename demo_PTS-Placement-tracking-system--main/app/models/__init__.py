@@ -1,4 +1,4 @@
-﻿from app.models.candidate import Candidate
+from app.models.candidate import Candidate
 from app.models.follow_up_checkpoint import FollowUpCheckpoint
 from app.models.organization import Organization
 from app.models.permission import Permission
@@ -33,6 +33,8 @@ from app.models.user_session import UserSession
 from app.models.attendance import Attendance
 from app.models.email_log import EmailLog
 from app.models.support_ticket import SupportTicket
+from app.models.candidate_consent import CandidateConsent
+from app.models.data_breach import DataBreach
 from app.models.document_reminder_log import DocumentReminderLog
 from app.models.salary_slip import SalarySlip
 
@@ -74,7 +76,7 @@ __all__ = [
     "FeatureFlagDefault",
     "UserSession",
     "Attendance",
-    "EmailLog",
+    "EmailLog", "CandidateConsent", "DataBreach",
     "DocumentReminderLog",
     "SalarySlip",
     "CallDisposition",

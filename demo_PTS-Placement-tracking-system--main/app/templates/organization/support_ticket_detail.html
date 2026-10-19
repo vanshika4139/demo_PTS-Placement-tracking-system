@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Support Ticket{% endblock %}
+{% block content %}
+<style>
+  .sd-back { display: inline-block; margin-bottom: 12px; color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+  .sd-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 16px; color: #1e293b; }
+  .sd-card h3 { margin: 0 0 12px; font-size: 1.05rem; }
+  .sd-meta { color: #64748b; font-size: 13px; margin-bottom: 12px; }
+  .sd-msg { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+  .sd-form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+  .sd-form textarea, .sd-form select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d1d5db;
+            border-radius: 8px; font-size: 14px; font-weight: 400; font-family: inherit; }
+  .sd-form textarea { min-height: 130px; resize: vertical; }
+  .sd-btn { padding: 10px 20px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
+</style>
+<a class="sd-back" href="{{ url_for('frontend.organization_support_tickets') }}">&larr; Back to tickets</a>
+
+<div class="sd-card">
+  <h3>{{ ticket.subject }}</h3>
+  <div class="sd-meta">Type: <strong>{{ {'correct_data': 'Correct my data', 'delete_data': 'Delete my data', 'withdraw_consent': 'Withdrew consent'}.get(ticket.request_type, 'General') }}</strong></div>
+  <div class="sd-meta">
+    {{ ticket.reporter_name }}{% if ticket.reporter_email %} &middot; {{ ticket.reporter_email }}{% endif %}
+    &middot; Raised {{ ticket.created_at|ist }}
+  </div>
+  <div class="sd-msg">{{ ticket.message }}</div>
+</div>
+
+<div class="sd-card">
+  <h3>Reply and update status</h3>
+  <form method="post" action="{{ url_for('frontend.organization_respond_support_ticket', ticket_id=ticket.id) }}" class="sd-form">
+    <label>Status
+      <select name="status">
+        {% for key, label in [('open', 'Open'), ('in_progress', 'In progress'), ('resolved', 'Resolved'), ('rejected', 'Rejected')] %}
+        <option value="{{ key }}" {{ 'selected' if ticket.status == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Reply to the candidate
+      <textarea name="admin_reply" maxlength="3000" placeholder="Write your reply. A reason is required to reject a ticket.">{{ ticket.admin_reply or '' }}</textarea>
+    </label>
+    <button type="submit" class="sd-btn">Save and notify candidate</button>
+  </form>
+</div>
+{% endblock %}

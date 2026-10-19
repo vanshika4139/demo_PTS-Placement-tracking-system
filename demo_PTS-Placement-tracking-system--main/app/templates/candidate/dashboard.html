@@ -5,9 +5,24 @@
   <title>{{ _('my_details_readonly') }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}">
+  <style>
+    /* Desktop layout: wide container, cards in two columns. Phones stay single-column. */
+    .cd-wrap { max-width: 1180px !important; width: 100%; box-sizing: border-box; margin: 0 auto;
+               column-count: 2; column-gap: 24px; }
+    .cd-wrap > * { break-inside: avoid; }
+    .cd-wrap > div:not(.panel-card) { column-span: all; }
+    .cd-wrap .panel-card { margin-bottom: 20px; }
+    .cd-wrap .form-grid label { display: flex; flex-direction: column; gap: 6px; }
+    .cd-wrap .form-grid label input { width: 100%; box-sizing: border-box; }
+    .cd-wrap .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 900px) {
+      .cd-wrap { column-count: 1; }
+      .cd-wrap .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
-  <div class="page-content" style="max-width:900px; margin:0 auto;">
+  <div class="page-content cd-wrap">
 
     <div style="text-align:right; font-size:0.82rem; margin-bottom:8px;">
       <a href="{{ url_for('frontend.set_language', lang_code='en') }}"
@@ -296,5 +311,6 @@
     </div>
 
   </div>
+{% include "candidate/_help_widget.html" %}
 </body>
 </html>

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Support Tickets{% endblock %}
+{% block content %}
+<style>
+  .st-title { margin: 0 0 4px; font-size: 1.5rem; }
+  .st-sub { margin: 0 0 16px; color: #64748b; }
+  .st-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .st-tabs a { padding: 7px 14px; border: 1px solid #d1d5db; border-radius: 999px; background: #fff; color: #475569;
+               font-size: 13px; font-weight: 600; text-decoration: none; }
+  .st-tabs a.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .st-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow-x: auto; }
+  .st-table { width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b; }
+  .st-table th { padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                 color: #64748b; background: #f8fafc; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+  .st-table td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
+  .st-table tbody tr:hover { background: #f8fafc; }
+  .st-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .st-open { background: #fef3c7; color: #b45309; }
+  .st-in_progress { background: #dbeafe; color: #1d4ed8; }
+  .st-resolved { background: #dcfce7; color: #15803d; }
+  .st-rejected { background: #fee2e2; color: #b91c1c; }
+  .st-empty { padding: 24px; text-align: center; color: #64748b; }
+  .st-pages { display: flex; gap: 12px; align-items: center; padding: 12px 14px; font-size: 13px; }
+  .st-pages a { color: #2563eb; text-decoration: none; font-weight: 600; }
+</style>
+<h2 class="st-title">Support Tickets</h2>
+<p class="st-sub">Requests raised by your organization's candidates. Reply and update the status, and the candidate is notified.</p>
+
+<div class="st-tabs">
+  <a class="{{ 'on' if not status }}" href="{{ url_for('frontend.organization_support_tickets') }}">All ({{ counts.values()|sum }})</a>
+  {% for key, label in [('open', 'Open'), ('in_progress', 'In progress'), ('resolved', 'Resolved'), ('rejected', 'Rejected')] %}
+  <a class="{{ 'on' if status == key }}" href="{{ url_for('frontend.organization_support_tickets', status=key) }}">{{ label }} ({{ counts.get(key, 0) }})</a>
+  {% endfor %}
+</div>
+
+<div class="st-card">
+  <table class="st-table">
+    <thead><tr><th>Raised</th><th>Candidate</th><th>Type</th><th>Subject</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for t in tickets %}
+      <tr>
+        <td style="white-space:nowrap;">{{ t.created_at|ist }}</td>
+        <td>{{ t.reporter_name }}</td>
+        <td>{{ {'correct_data': 'Correct my data', 'delete_data': 'Delete my data', 'withdraw_consent': 'Withdrew consent'}.get(t.request_type, 'General') }}</td>
+        <td>{{ t.subject }}</td>
+        <td><span class="st-pill st-{{ t.status }}">{{ {'open': 'Open', 'in_progress': 'In progress', 'resolved': 'Resolved', 'rejected': 'Rejected'}.get(t.status, t.status) }}</span></td>
+        <td><a href="{{ url_for('frontend.organization_support_ticket_detail', ticket_id=t.id) }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="st-empty">No tickets here.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if pagination.pages > 1 %}
+  <div class="st-pages">
+    {% if pagination.has_prev %}<a href="{{ url_for('frontend.organization_support_tickets', status=status, page=pagination.prev_num) }}">&larr; Previous</a>{% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a href="{{ url_for('frontend.organization_support_tickets', status=status, page=pagination.next_num) }}">Next &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

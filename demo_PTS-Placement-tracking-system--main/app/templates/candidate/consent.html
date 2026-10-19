@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="{{ current_language() }}">
+<head>
+  <meta charset="utf-8">
+  <title>Privacy Notice and Consent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    .cn-card { max-width: 680px !important; width: 100%; }
+    .cn-card h3 { margin: 18px 0 6px; font-size: 1rem; }
+    .cn-card p, .cn-card li { font-size: 0.9rem; line-height: 1.55; color: #334155; }
+    .cn-card ul { margin: 4px 0 0; padding-left: 20px; }
+    .cn-agree { display: flex; gap: 10px; align-items: flex-start; margin: 20px 0 14px; font-size: 0.92rem; font-weight: 600; }
+    .cn-agree input { margin-top: 3px; }
+    .cn-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .cn-ver { color: #94a3b8; font-size: 0.78rem; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-card cn-card">
+      <div class="brand-block" style="margin-bottom:8px;">
+        <div class="brand-mark large">C</div>
+        <div>
+          <h2 style="margin:0;">Privacy Notice and Consent</h2>
+          <p style="margin:0; color:var(--muted);">Hello {{ candidate.full_name }}, please read this before you continue.</p>
+        </div>
+      </div>
+
+      {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+
+      <h3>Who is collecting your data</h3>
+      <p><strong>{{ org_name }}</strong> (your training organization) decides why and how your personal data is used.
+         It uses the Codevocado Placement Tracking System to store and manage that data.</p>
+
+      <h3>What we collect</h3>
+      <ul>
+        <li>Your name, parents' names, date of birth, address, mobile number and email.</li>
+        <li>Identity details such as Aadhaar and PAN, and your bank details.</li>
+        <li>Your training, placement, employer and salary details, and the documents you upload.</li>
+      </ul>
+
+      <h3>Why we collect it</h3>
+      <p>To manage your training and placement, verify your placement, follow up with you after placement,
+         issue your certificate, and contact you about all of these.</p>
+
+      <h3>Who can see it</h3>
+      <p>Authorised staff of {{ org_name }}, and the platform team for support and security. Service providers that send
+         emails, SMS or WhatsApp messages, or process payments, only receive what they need to do that work.</p>
+
+      <h3>How long we keep it</h3>
+      <p>Only for as long as it is needed for the purposes above, or as the law requires.</p>
+
+      <h3>Your rights</h3>
+      <ul>
+        <li>Ask to see, correct or delete your data, using the <strong>Help</strong> button after you log in.</li>
+        <li>Withdraw this consent at any time from the Help &amp; Support page.</li>
+        <li>Raise a complaint through the same Help button. Your organization will reply.</li>
+      </ul>
+
+      <form method="post">
+        <label class="cn-agree">
+          <input type="checkbox" name="agree">
+          <span>I have read this notice and I agree to {{ org_name }} processing my personal data for these purposes.</span>
+        </label>
+        <div class="cn-actions">
+          <button type="submit" class="primary-btn">I Agree and Continue</button>
+          <a href="{{ url_for('frontend.candidate_logout') }}">I do not agree, log out</a>
+        </div>
+      </form>
+      <p class="cn-ver">Notice version {{ version }}</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<style>
+  .hw-fab { position: fixed; right: 20px; bottom: 20px; z-index: 9990; display: flex; align-items: center; gap: 8px;
+            padding: 12px 18px; border: none; border-radius: 999px; background: #2563eb; color: #fff; font-size: 14px;
+            font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(37, 99, 235, .35); }
+  .hw-fab:hover { background: #1d4ed8; }
+  .hw-overlay { display: none; position: fixed; inset: 0; z-index: 9991; background: rgba(15, 23, 42, .45); align-items: center; justify-content: center; padding: 16px; }
+  .hw-overlay.open { display: flex; }
+  .hw-box { position: relative; width: 420px; max-height: calc(100vh - 32px); overflow-y: auto; max-width: calc(100vw - 32px); background: #fff;
+            border-radius: 14px; padding: 18px; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); color: #1e293b; }
+  .hw-head { display: flex; justify-content: space-between; align-items: center; }
+  .hw-head h3 { margin: 0; font-size: 1.05rem; }
+  .hw-x { border: none; background: none; font-size: 24px; line-height: 1; cursor: pointer; color: #64748b; }
+  .hw-sub { margin: 6px 0 12px; font-size: 13px; color: #64748b; }
+  .hw-box label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
+  .hw-box input, .hw-box textarea { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #d1d5db;
+            border-radius: 8px; font-size: 14px; font-weight: 400; font-family: inherit; }
+  .hw-box textarea { min-height: 110px; resize: vertical; }
+  .hw-actions { display: flex; justify-content: space-between; align-items: center; }
+  .hw-actions a { font-size: 13px; color: #2563eb; text-decoration: none; }
+  .hw-actions button { padding: 9px 18px; border: none; border-radius: 8px; background: #2563eb; color: #fff;
+            font-weight: 600; cursor: pointer; }
+</style>
+<button type="button" class="hw-fab" id="hwOpen" aria-haspopup="dialog">? Help</button>
+<div class="hw-overlay" id="hwOverlay">
+  <div class="hw-box" role="dialog" aria-modal="true" aria-labelledby="hwTitle">
+    <div class="hw-head">
+      <h3 id="hwTitle">Help &amp; Support</h3>
+      <button type="button" class="hw-x" id="hwClose" aria-label="Close">&times;</button>
+    </div>
+    <p class="hw-sub">Tell us what you need. Your organization will reply here and by email.</p>
+    <form method="post" action="{{ url_for('frontend.candidate_help') }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <label>What do you need?
+        <select name="request_type" style="width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; font-weight:400;">
+          <option value="general">General help</option>
+          <option value="correct_data">Correct my data</option>
+          <option value="delete_data">Delete my data</option>
+        </select>
+      </label>
+      <label>Subject
+        <input type="text" name="subject" maxlength="200" required placeholder="e.g. Please correct my mobile number">
+      </label>
+      <label>Details
+        <textarea name="message" maxlength="3000" required placeholder="Describe the issue or request."></textarea>
+      </label>
+      <div class="hw-actions">
+        <a href="{{ url_for('frontend.candidate_help') }}">My tickets</a>
+        <button type="submit">Submit</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var o = document.getElementById('hwOverlay');
+  function show(v) {
+    o.classList.toggle('open', v);
+    if (v) { var i = o.querySelector('input[name=subject]'); if (i) i.focus(); }
+  }
+  document.getElementById('hwOpen').addEventListener('click', function () { show(true); });
+  document.getElementById('hwClose').addEventListener('click', function () { show(false); });
+  o.addEventListener('click', function (e) { if (e.target === o) show(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') show(false); });
+})();
+</script>

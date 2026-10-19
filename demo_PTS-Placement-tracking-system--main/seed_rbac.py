@@ -45,6 +45,7 @@ PERMISSION_CODES = [
     ("settings.view", "View/edit own settings"),
     ("call_queue.view", "View own daily call queue"),
     ("call_log.create", "Log call disposition and notes"),
+    ("support_ticket.manage", "Manage support tickets raised by own candidates"),
 ]
 
 ROLES = {
@@ -56,6 +57,7 @@ ROLES = {
             "candidate.import", "candidate.export", "candidate.view_deleted",
             "batch.view", "batch.create", "batch.update", "batch.delete",
             "scheme.view", "scheme.create", "scheme.update", "scheme.delete",
+            "support_ticket.manage",
             "placement.view", "placement.update",
             "tracking.view", "report.view", "notification.view", "settings.view",
         ],

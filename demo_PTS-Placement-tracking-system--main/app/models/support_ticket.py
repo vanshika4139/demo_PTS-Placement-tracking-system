@@ -35,6 +35,9 @@ class SupportTicket(db.Model):
     user_id = db.Column(db.String(32), nullable=True)
     candidate_id = db.Column(db.String(32), nullable=True, index=True)  # set when raised from the candidate portal
 
+    # general | correct_data | delete_data | withdraw_consent (DPDP requests)
+    request_type = db.Column(db.String(30), nullable=True, default="general")
+
     # Filled in by the super admin when they respond
     admin_reply = db.Column(db.Text, nullable=True)
     resolved_at = db.Column(db.DateTime, nullable=True)

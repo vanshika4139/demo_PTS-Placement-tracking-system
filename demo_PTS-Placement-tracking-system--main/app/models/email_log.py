@@ -18,6 +18,7 @@ EMAIL_TYPES = [
     ("verification", "Verification Request"),
     ("certificate", "Certificate"),
     ("security", "Security Alert"),
+    ("data_breach", "Data Breach Notice"),
     ("subscription", "Subscription / Billing"),
     ("other", "Other"),
 ]
@@ -27,6 +28,8 @@ EMAIL_TYPE_LABELS = dict(EMAIL_TYPES)
 def classify_email_type(subject):
     """Works out the email type from the subject line."""
     s = (subject or "").strip().lower()
+    if s.startswith("important notice about your personal data"):
+        return "data_breach"
     if s.startswith("new candidate added"):
         return "candidate_added"
     if s.startswith("new support ticket"):

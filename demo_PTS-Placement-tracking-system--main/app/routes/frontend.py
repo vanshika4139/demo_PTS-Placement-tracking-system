@@ -55,6 +55,7 @@ from app.services.billing import (
     run_billing_cycle,
 )
 from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
+from app.utils.crypto import aadhaar_hash as _aadhaar_hash
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
 from app.utils.permissions import has_permission, invalidate_role_permission_cache, invalidate_user_permission_cache, require_permission
@@ -166,6 +167,12 @@ def candidate_login_required(view_func):
             session.pop("candidate", None)
             flash("Your account has been blocked. Please contact your training center.", "error")
             return redirect(url_for("frontend.candidate_login"))
+
+        # DPDP: the candidate must have accepted the current privacy notice.
+        if session.get("candidate_consent_ok") != candidate.id:
+            if not _has_current_consent(candidate.id):
+                return redirect(url_for("frontend.candidate_consent"))
+            session["candidate_consent_ok"] = candidate.id
 
         # Force a password change while the password is still the default
         # (the candidate's mobile number). The check runs once per login and
@@ -2393,6 +2400,139 @@ def _org_report_table(rows, totals):
     ])
     return data
 
+
+_BREACH_MAX_RECIPIENTS = 1000
+_BREACH_FIELDS = ("organization_id", "title", "occurred", "what_happened", "data_involved",
+                  "consequences", "measures", "advice", "contact")
+
+
+def _breach_recipients(organization_id=None):
+    """Candidates with an email address, optionally for one organization."""
+    q = Candidate.query.filter(
+        Candidate.is_deleted == False,
+        Candidate.email.isnot(None),
+        Candidate.email != "",
+    )
+    if organization_id:
+        q = q.filter(Candidate.organization_id == organization_id)
+    return q
+
+
+@frontend_bp.route("/super-admin/data-breaches", methods=["GET", "POST"])
+@super_admin_required
+def super_admin_data_breaches():
+    """DPDP: record a personal data breach and tell the affected candidates by email."""
+    from app.models.data_breach import DataBreach
+    from app.utils.email import send_notification_email
+
+    orgs = Organization.query.filter_by(is_deleted=False).order_by(Organization.organization_name.asc()).all()
+    counts = {o.id: _breach_recipients(o.id).count() for o in orgs}
+    org_names = {o.id: o.organization_name for o in orgs}
+    form = {}
+    error = None
+
+    if request.method == "POST":
+        form = {k: (request.form.get(k) or "").strip() for k in _BREACH_FIELDS}
+        form["board_reported"] = request.form.get("board_reported") == "on"
+
+        org_id = None
+        if form["organization_id"] not in ("", "all"):
+            try:
+                org_id = int(form["organization_id"])
+            except ValueError:
+                org_id = -1
+            if org_id not in counts:
+                error = "Please choose a valid organization."
+
+        missing = [k for k in ("title", "what_happened", "data_involved", "measures", "advice", "contact") if not form[k]]
+        if not error and missing:
+            error = "Please fill in every field marked with *."
+        if not error and (len(form["title"]) > 200 or len(form["contact"]) > 255 or len(form["occurred"]) > 120):
+            error = "One of the short fields is too long."
+
+        recipients = []
+        if not error:
+            recipients = _breach_recipients(org_id).all()
+            if not recipients:
+                error = "No candidates with an email address in this selection."
+            elif len(recipients) > _BREACH_MAX_RECIPIENTS:
+                error = f"This selection has {len(recipients)} candidates. Send to one organization at a time (max {_BREACH_MAX_RECIPIENTS})."
+
+        if not error:
+            record = DataBreach(
+                organization_id=org_id,
+                title=form["title"], occurred=form["occurred"] or None,
+                data_involved=form["data_involved"], what_happened=form["what_happened"],
+                consequences=form["consequences"] or None, measures=form["measures"],
+                advice=form["advice"], contact=form["contact"],
+                board_reported=form["board_reported"],
+                created_by=(session.get("user") or {}).get("id"),
+            )
+            db.session.add(record)
+            db.session.commit()
+
+            def _html(text):
+                return _esc(text).replace("\n", "<br>")
+
+            subject = "Important notice about your personal data"
+            sent, failed = 0, 0
+            for cand in recipients:
+                first = (cand.full_name or "").split(" ")[0] or "there"
+                plain = (
+                    f"Hello {first},\n\n"
+                    "We are writing to tell you about an incident that affected personal data on the Placement Tracking System.\n\n"
+                    f"What happened:\n{form['what_happened']}\n\n"
+                    + (f"When: {form['occurred']}\n\n" if form["occurred"] else "")
+                    + f"What data was involved:\n{form['data_involved']}\n\n"
+                    + (f"What this may mean for you:\n{form['consequences']}\n\n" if form["consequences"] else "")
+                    + f"What we have done:\n{form['measures']}\n\n"
+                    f"What you can do:\n{form['advice']}\n\n"
+                    f"If you have questions, contact: {form['contact']}\n"
+                )
+                html = None
+                try:
+                    html = _email_shell(subject, (
+                        f'<h2 style="margin:0 0 16px 0;font-size:20px;color:#111827;">Important notice about your personal data</h2>'
+                        f'<p style="margin:0 0 12px 0;">Hello {_esc(first)},</p>'
+                        f'<p style="margin:0 0 12px 0;">We are writing to tell you about an incident that affected personal data on the Placement Tracking System.</p>'
+                        f'<p style="margin:0 0 4px 0;"><strong>What happened</strong></p><p style="margin:0 0 12px 0;">{_html(form["what_happened"])}</p>'
+                        + (f'<p style="margin:0 0 12px 0;"><strong>When:</strong> {_esc(form["occurred"])}</p>' if form["occurred"] else "")
+                        + f'<p style="margin:0 0 4px 0;"><strong>What data was involved</strong></p><p style="margin:0 0 12px 0;">{_html(form["data_involved"])}</p>'
+                        + (f'<p style="margin:0 0 4px 0;"><strong>What this may mean for you</strong></p><p style="margin:0 0 12px 0;">{_html(form["consequences"])}</p>' if form["consequences"] else "")
+                        + f'<p style="margin:0 0 4px 0;"><strong>What we have done</strong></p><p style="margin:0 0 12px 0;">{_html(form["measures"])}</p>'
+                        f'<p style="margin:0 0 4px 0;"><strong>What you can do</strong></p><p style="margin:0 0 12px 0;">{_html(form["advice"])}</p>'
+                        f'<p style="margin:0;">If you have questions, contact: {_esc(form["contact"])}</p>'
+                    ))
+                except Exception:
+                    html = None
+                try:
+                    kwargs = {"html_body": html} if html else {}
+                    result = send_notification_email(
+                        to_email=cand.email, subject=subject, body=plain, candidate_id=cand.id, **kwargs
+                    )
+                    if result is False:
+                        failed += 1
+                    else:
+                        sent += 1
+                except Exception:
+                    logging.exception("Failed to send data breach notice")
+                    failed += 1
+
+            record.recipients_total = sent
+            record.recipients_failed = failed
+            record.notified_at = datetime.utcnow()
+            db.session.commit()
+            _log_activity("data_breach.notified", f"{form['title']}: {sent} sent, {failed} failed")
+            flash(f"Breach notice recorded. Sent to {sent} candidate(s), {failed} failed.", "success" if not failed else "error")
+            return redirect(url_for("frontend.super_admin_data_breaches"))
+
+    from app.models.data_breach import DataBreach as _DB
+    breaches = _DB.query.order_by(_DB.created_at.desc()).limit(50).all()
+    return render_template(
+        "super_admin/data_breaches.html",
+        orgs=orgs, counts=counts, org_names=org_names, breaches=breaches, form=form, error=error,
+        max_recipients=_BREACH_MAX_RECIPIENTS,
+    )
 
 @frontend_bp.route("/super-admin/reports")
 @super_admin_required
@@ -5093,7 +5233,7 @@ def organization_candidate_edit(candidate_id):
 
         if new_aadhaar and new_aadhaar != candidate.aadhaar:
             dup_aadhaar = Candidate.query.filter(
-                Candidate.aadhaar == new_aadhaar, Candidate.id != candidate.id, Candidate.is_deleted == False
+                Candidate.aadhaar_hash == _aadhaar_hash(new_aadhaar), Candidate.id != candidate.id, Candidate.is_deleted == False
             ).first()
             if dup_aadhaar:
                 flash(f"A candidate with this Aadhaar number already exists: {dup_aadhaar.full_name} (Reg. No. {dup_aadhaar.registration_number or '-'})", "error")
@@ -6000,10 +6140,105 @@ def candidate_set_password(token):
     return render_template("candidate/set_password.html", error=error, invalid=False)
 
 
+CONSENT_NOTICE_VERSION = "1.0"
+_REQUEST_TYPES = ("general", "correct_data", "delete_data")
+
+
+def _has_current_consent(candidate_id):
+    from app.models.candidate_consent import CandidateConsent
+
+    return (
+        CandidateConsent.query.filter_by(candidate_id=candidate_id, notice_version=CONSENT_NOTICE_VERSION)
+        .filter(CandidateConsent.withdrawn_at.is_(None))
+        .first()
+        is not None
+    )
+
+
+@frontend_bp.route("/candidate/consent", methods=["GET", "POST"])
+def candidate_consent():
+    """DPDP privacy notice and consent. Deliberately not behind candidate_login_required
+    (that decorator redirects here), so it checks the session itself."""
+    from app.models.candidate_consent import CandidateConsent
+
+    session_candidate = session.get("candidate")
+    if not session_candidate:
+        flash("Please login first", "error")
+        return redirect(url_for("frontend.candidate_login"))
+    candidate = Candidate.query.filter_by(id=session_candidate.get("id"), is_deleted=False).first()
+    if not candidate:
+        session.pop("candidate", None)
+        return redirect(url_for("frontend.candidate_login"))
+    if _has_current_consent(candidate.id):
+        session["candidate_consent_ok"] = candidate.id
+        return redirect(url_for("frontend.candidate_dashboard"))
+
+    org = Organization.query.get(candidate.organization_id)
+    org_name = org.organization_name if org else "your training organization"
+    error = None
+
+    if request.method == "POST":
+        if request.form.get("agree") != "on":
+            error = "Please tick the box to continue, or log out if you do not agree."
+        else:
+            _ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()[:64]
+            db.session.add(
+                CandidateConsent(
+                    candidate_id=candidate.id,
+                    organization_id=candidate.organization_id,
+                    notice_version=CONSENT_NOTICE_VERSION,
+                    consented_at=datetime.utcnow(),
+                    ip_address=_ip or None,
+                )
+            )
+            db.session.commit()
+            session["candidate_consent_ok"] = candidate.id
+            flash("Thank you. Your consent has been recorded.", "success")
+            return redirect(url_for("frontend.candidate_dashboard"))
+
+    return render_template(
+        "candidate/consent.html", candidate=candidate, org_name=org_name,
+        version=CONSENT_NOTICE_VERSION, error=error,
+    )
+
+
+@frontend_bp.route("/candidate/consent/withdraw", methods=["POST"])
+@candidate_login_required
+def candidate_withdraw_consent():
+    """Withdrawing consent is as easy as giving it. The organization admin is told
+    through a ticket so they can decide what happens to the data."""
+    from app.models.candidate_consent import CandidateConsent
+    from app.models.support_ticket import SupportTicket
+
+    candidate = Candidate.query.get_or_404(session.get("candidate", {}).get("id"))
+    now = datetime.utcnow()
+    CandidateConsent.query.filter(
+        CandidateConsent.candidate_id == candidate.id, CandidateConsent.withdrawn_at.is_(None)
+    ).update({"withdrawn_at": now}, synchronize_session=False)
+    reg_no = f" - {candidate.registration_number}" if candidate.registration_number else ""
+    db.session.add(
+        SupportTicket(
+            subject="Consent withdrawn",
+            message=f"The candidate withdrew consent for processing their personal data on {now.strftime('%d-%m-%Y %H:%M')} (UTC).",
+            reporter_name=f"{candidate.full_name} (Candidate{reg_no})",
+            reporter_email=candidate.email,
+            organization_id=str(candidate.organization_id) if candidate.organization_id else None,
+            candidate_id=candidate.id,
+            request_type="withdraw_consent",
+        )
+    )
+    db.session.commit()
+    session.pop("candidate", None)
+    session.pop("candidate_pw_ok", None)
+    session.pop("candidate_consent_ok", None)
+    flash("Your consent has been withdrawn and your organization has been informed.", "success")
+    return redirect(url_for("frontend.candidate_login"))
+
 @frontend_bp.route("/candidate/logout")
 def candidate_logout():
     session.pop("candidate", None)
     session.pop("candidate_pw_ok", None)
+    session.pop("candidate_consent_ok", None)
     flash("You have been logged out", "success")
     return redirect(url_for("frontend.candidate_login"))
 
@@ -6203,6 +6438,125 @@ def candidate_feedback_submit():
     return redirect(url_for("frontend.candidate_dashboard"))
 
 
+_TICKET_STATUSES = ("open", "in_progress", "resolved", "rejected")
+
+
+def _org_ticket_scope():
+    """Tickets raised by THIS organization's own candidates only.
+    organization_id comes from the logged-in session, never from the request."""
+    from app.models.support_ticket import SupportTicket
+
+    org_id = (session.get("user") or {}).get("organization_id")
+    if not org_id:
+        return None
+    return SupportTicket.query.filter(
+        SupportTicket.organization_id == str(org_id),
+        SupportTicket.candidate_id.isnot(None),
+    )
+
+
+@frontend_bp.route("/organization/support-tickets")
+@login_required
+@require_permission("support_ticket.manage")
+def organization_support_tickets():
+    from app.models.support_ticket import SupportTicket
+
+    scope = _org_ticket_scope()
+    if scope is None:
+        return redirect(url_for("frontend.no_access"))
+    status = (request.args.get("status") or "").strip()
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    counts = {
+        s: c
+        for s, c in scope.with_entities(SupportTicket.status, db.func.count(SupportTicket.id))
+        .group_by(SupportTicket.status)
+        .all()
+    }
+    query = scope
+    if status in _TICKET_STATUSES:
+        query = query.filter(SupportTicket.status == status)
+    pagination = query.order_by(SupportTicket.created_at.desc()).paginate(page=page, per_page=15, error_out=False)
+    return render_template(
+        "organization/support_tickets.html",
+        tickets=pagination.items, pagination=pagination, status=status, counts=counts,
+    )
+
+
+@frontend_bp.route("/organization/support-tickets/<ticket_id>")
+@login_required
+@require_permission("support_ticket.manage")
+def organization_support_ticket_detail(ticket_id):
+    from app.models.support_ticket import SupportTicket
+
+    scope = _org_ticket_scope()
+    if scope is None:
+        return redirect(url_for("frontend.no_access"))
+    ticket = scope.filter(SupportTicket.id == ticket_id).first_or_404()
+    return render_template("organization/support_ticket_detail.html", ticket=ticket)
+
+
+@frontend_bp.route("/organization/support-tickets/<ticket_id>/respond", methods=["POST"])
+@login_required
+@require_permission("support_ticket.manage")
+def organization_respond_support_ticket(ticket_id):
+    from app.models.support_ticket import SupportTicket
+    from app.utils.email import send_notification_email
+
+    scope = _org_ticket_scope()
+    if scope is None:
+        return redirect(url_for("frontend.no_access"))
+    ticket = scope.filter(SupportTicket.id == ticket_id).first_or_404()
+    back = redirect(url_for("frontend.organization_support_ticket_detail", ticket_id=ticket.id))
+
+    reply = (request.form.get("admin_reply") or "").strip()
+    new_status = (request.form.get("status") or "").strip()
+    if new_status not in _TICKET_STATUSES:
+        flash("Please choose a valid status.", "error")
+        return back
+    if len(reply) > 3000:
+        flash("Your reply is too long. Please shorten it.", "error")
+        return back
+    if new_status == "rejected" and not (reply or ticket.admin_reply):
+        flash("Please write a reason before rejecting a ticket.", "error")
+        return back
+
+    old_status = ticket.status
+    reply_changed = bool(reply) and reply != (ticket.admin_reply or "")
+    if reply:
+        ticket.admin_reply = reply
+    ticket.status = new_status
+    ticket.resolved_at = datetime.utcnow() if new_status in ("resolved", "rejected") else None
+    db.session.commit()
+    _log_activity("support_ticket.updated", f"Support ticket {ticket.id[:8]} set to {new_status}")
+
+    if ticket.reporter_email and (reply_changed or old_status != new_status):
+        try:
+            _who = (ticket.reporter_name or "").split(" (")[0].strip() or "there"
+            _labels = {"open": "Open", "in_progress": "In progress", "resolved": "Resolved", "rejected": "Rejected"}
+            send_notification_email(
+                to_email=ticket.reporter_email,
+                subject=f"Re: {ticket.subject}",
+                body=(
+                    f"Hello {_who},\n\n"
+                    "There is an update on your support ticket.\n\n"
+                    f"Ticket subject: {ticket.subject}\n"
+                    f"Status: {_labels[new_status]}\n\n"
+                    f"Your message:\n{ticket.message}\n\n"
+                    + (f"Reply:\n{ticket.admin_reply}\n\n" if ticket.admin_reply else "")
+                    + f"You can see all your tickets here: {url_for('frontend.candidate_help', _external=True)}"
+                ),
+                candidate_id=ticket.candidate_id,
+            )
+        except Exception:
+            logging.exception("Failed to email support ticket update to candidate")
+
+    flash("Ticket updated.", "success")
+    return back
+
 @frontend_bp.route("/candidate/help", methods=["GET", "POST"])
 @candidate_login_required
 @rate_limit("candidate_support_ticket", max_attempts=5, window_seconds=3600)
@@ -6225,10 +6579,14 @@ def candidate_help():
             flash("Your subject or message is too long. Please shorten it.", "error")
             return redirect(url_for("frontend.candidate_help"))
 
+        _rt = (request.form.get("request_type") or "general").strip()
+        if _rt not in _REQUEST_TYPES:
+            _rt = "general"
         reg_no = f" - {candidate.registration_number}" if candidate.registration_number else ""
         ticket = SupportTicket(
             subject=subject,
             message=message,
+            request_type=_rt,
             reporter_name=f"{candidate.full_name} (Candidate{reg_no})",
             reporter_email=candidate.email,
             organization_id=str(candidate.organization_id) if candidate.organization_id else None,
@@ -6237,10 +6595,33 @@ def candidate_help():
         db.session.add(ticket)
         db.session.commit()
 
-        # Same notification staff tickets send: every super admin is emailed.
-        # A failed email must never block the ticket, and one bad address
-        # must not stop the others.
-        for admin in User.query.filter_by(is_super_admin=True, is_deleted=False, is_active=True).all():
+        # DPDP: a candidate's ticket goes to their own organization's admins, not to
+        # the platform Super Admin. Falls back to Super Admins only if the
+        # organization has no admin user, so a ticket is never left unseen.
+        from app.models import Role, UserRole
+
+        _org_admins = []
+        if candidate.organization_id:
+            _org_admins = (
+                User.query.join(UserRole, UserRole.user_id == User.id)
+                .join(Role, Role.id == UserRole.role_id)
+                .filter(
+                    User.organization_id == candidate.organization_id,
+                    User.is_deleted == False,
+                    User.is_active == True,
+                    UserRole.is_deleted == False,
+                    Role.code == "organization_admin",
+                )
+                .all()
+            )
+        _to_org = bool(_org_admins)
+        if not _org_admins:
+            _org_admins = User.query.filter_by(is_super_admin=True, is_deleted=False, is_active=True).all()
+        _ticket_link = url_for(
+            "frontend.organization_support_ticket_detail" if _to_org else "frontend.super_admin_support_ticket_detail",
+            ticket_id=ticket.id, _external=True,
+        )
+        for admin in _org_admins:
             try:
                 send_notification_email(
                     to_email=admin.email,
@@ -6252,13 +6633,16 @@ def candidate_help():
                         f"Email: {ticket.reporter_email or '-'}\n"
                         f"Subject: {subject}\n\n"
                         f"Message:\n{message}\n\n"
-                        f"View it at {url_for('frontend.super_admin_support_ticket_detail', ticket_id=ticket.id, _external=True)}"
+                        f"View it at {_ticket_link}"
                     ),
                 )
             except Exception:
                 logging.exception("Failed to email candidate support ticket notification")
 
         flash("Your issue has been submitted. Our team will get back to you.", "success")
+        _next = request.form.get("next") or ""
+        if _next.startswith("/candidate/") and "//" not in _next:
+            return redirect(_next)
         return redirect(url_for("frontend.candidate_help"))
 
     tickets = (

@@ -3,7 +3,10 @@ import uuid
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.mysql import CHAR as MySQLCHAR
 
+from sqlalchemy.orm import validates
+
 from app.extensions import db
+from app.utils.crypto import EncryptedString, aadhaar_hash
 
 
 class Candidate(db.Model):
@@ -19,8 +22,9 @@ class Candidate(db.Model):
     gender = Column(String(50), nullable=True)
     date_of_birth = Column(DateTime, nullable=True)
     age = Column(String(20), nullable=True)
-    aadhaar = Column(String(40), nullable=True)
-    pan = Column(String(20), nullable=True)
+    aadhaar = Column(EncryptedString(), nullable=True)
+    aadhaar_hash = Column(String(64), nullable=True, index=True)  # one-way fingerprint for duplicate checks
+    pan = Column(EncryptedString(), nullable=True)
     mobile = Column(String(20), nullable=True)
     alternative_mobile = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)
@@ -60,9 +64,9 @@ class Candidate(db.Model):
     certificate_original_filename = Column(String(255), nullable=True)
     certificate_uploaded_at = Column(DateTime, nullable=True)
     bank_name = Column(String(255), nullable=True)
-    account_number = Column(String(100), nullable=True)
-    ifsc = Column(String(30), nullable=True)
-    upi_id = Column(String(120), nullable=True)
+    account_number = Column(EncryptedString(), nullable=True)
+    ifsc = Column(EncryptedString(), nullable=True)
+    upi_id = Column(EncryptedString(), nullable=True)
     employer_name = Column(String(255), nullable=True)
     job_role = Column(String(255), nullable=True)
     salary = Column(String(40), nullable=True)
@@ -92,3 +96,8 @@ class Candidate(db.Model):
     is_deleted = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    @validates("aadhaar")
+    def _set_aadhaar_hash(self, key, value):
+        self.aadhaar_hash = aadhaar_hash(value)
+        return value

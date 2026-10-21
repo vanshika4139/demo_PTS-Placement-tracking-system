@@ -69,6 +69,7 @@
         <button type="submit" class="ghost-btn">Download my data (PDF)</button>
         <p class="ch-note" style="margin-top:6px;">A copy of the data we hold about you. ID and bank numbers show only the last four characters.</p>
       </form>
+      <p class="ch-note" style="margin-top:12px;"><a href="{{ url_for('frontend.candidate_privacy_notice') }}">Read the privacy notice</a></p>
       <form method="post" action="{{ url_for('frontend.candidate_withdraw_consent') }}" style="margin-top:12px;"
             onsubmit="return confirm('Withdraw your consent? You will be logged out and your organization will be informed. You will need to agree again to use the portal.');">
         <button type="submit" class="ghost-btn">Withdraw my consent</button>

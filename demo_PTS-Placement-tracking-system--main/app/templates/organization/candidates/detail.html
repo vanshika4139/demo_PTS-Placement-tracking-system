@@ -42,6 +42,11 @@
     display: inline-block;
     white-space: nowrap;
   }
+  .td-pill { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 13px; font-weight: 600; }
+  /* Address and Training: two equal columns; Placement spans both */
+  .detail-card-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 16px; }
+  .detail-card-row > .panel-card { min-width: 0; }
+  .detail-card-row .ghost-btn { white-space: nowrap; display: inline-block; }
 </style>
 
 <div class="page-header page-header-inline">
@@ -108,8 +113,8 @@
           <tr><th>Mother's Name</th><td>{{ candidate.mother_name or '-' }}</td></tr>
           <tr><th>Gender</th><td>{{ candidate.gender or '-' }}</td></tr>
           <tr><th>Date of Birth</th><td>{{ candidate.date_of_birth.strftime('%d-%m-%Y') if candidate.date_of_birth else '-' }}</td></tr>
-          <tr><th>Aadhaar</th><td>{{ candidate.aadhaar or '-' }}</td></tr>
-          <tr><th>PAN</th><td>{{ candidate.pan or '-' }}</td></tr>
+          <tr><th>Aadhaar</th><td>{{ candidate.aadhaar|mask_tail }}</td></tr>
+          <tr><th>PAN</th><td>{{ candidate.pan|mask_tail }}</td></tr>
           <tr><th>Email</th><td>{{ candidate.email or '-' }}</td></tr>
           <tr><th>Mobile</th><td>{{ candidate.mobile or '-' }}</td></tr>
         </tbody>
@@ -141,7 +146,7 @@
             <tr><th>Course</th><td>{{ candidate.course or '-' }}</td></tr>
             <tr><th>Sector</th><td>{{ candidate.sector or '-' }}</td></tr>
             <tr><th>Trainer</th><td>{{ candidate.trainer or '-' }}</td></tr>
-            <tr><th>Status</th><td><span class="status-badge">{{ candidate.training_status }}</span></td></tr>
+            <tr><th>Status</th><td><span class="td-pill">{{ (candidate.training_status or '-')|replace('_', ' ')|title }}</span></td></tr>
           </tbody>
         </table>
           {% if has_permission(session.user, 'attendance.view') %}

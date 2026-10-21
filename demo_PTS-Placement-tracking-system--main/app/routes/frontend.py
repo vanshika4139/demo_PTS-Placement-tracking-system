@@ -6345,6 +6345,24 @@ def candidate_download_data():
 
     return send_file(buffer, as_attachment=True, download_name="my_data.pdf", mimetype="application/pdf")
 
+@frontend_bp.app_template_filter("mask_tail")
+def mask_tail_filter(value):
+    """Show only the last four characters of an ID or bank number (data minimisation)."""
+    return _mask_tail(value)
+
+
+@frontend_bp.route("/candidate/privacy-notice")
+@candidate_login_required
+def candidate_privacy_notice():
+    """The candidate can re-read the privacy notice at any time (DPDP right to information)."""
+    candidate = Candidate.query.get_or_404(session.get("candidate", {}).get("id"))
+    org = Organization.query.get(candidate.organization_id)
+    org_name = org.organization_name if org else "your training organization"
+    return render_template(
+        "candidate/consent.html", candidate=candidate, org_name=org_name,
+        version=CONSENT_NOTICE_VERSION, error=None, readonly=True,
+    )
+
 @frontend_bp.route("/candidate/consent/withdraw", methods=["POST"])
 @candidate_login_required
 def candidate_withdraw_consent():

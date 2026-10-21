@@ -57,7 +57,7 @@
         <li>Raise a complaint through the same Help button. Your organization will reply.</li>
       </ul>
 
-      <form method="post">
+      {% if readonly %}<p style="margin-top:18px;"><a href="{{ url_for('frontend.candidate_help') }}">&larr; Back to Help &amp; Support</a></p>{% else %}<form method="post">
         <label class="cn-agree">
           <input type="checkbox" name="agree">
           <span>I have read this notice and I agree to {{ org_name }} processing my personal data for these purposes.</span>
@@ -66,7 +66,7 @@
           <button type="submit" class="primary-btn">I Agree and Continue</button>
           <a href="{{ url_for('frontend.candidate_logout') }}">I do not agree, log out</a>
         </div>
-      </form>
+      </form>{% endif %}
       <p class="cn-ver">Notice version {{ version }}</p>
     </div>
   </div>

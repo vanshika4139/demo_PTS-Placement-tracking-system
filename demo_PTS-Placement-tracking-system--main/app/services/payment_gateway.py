@@ -281,7 +281,7 @@ def activate_self_serve_purchase(invoice, org):
       new      plan set, expiry = end of the new period, plan credits ADDED,
                candidate limit + AI allowance set to the plan's
       renew    same as new (period starts at the old expiry)
-      upgrade  plan set, expiry unchanged, only the extra credits over the
+      upgrade  plan set, expiry = full new cycle from today, only the extra credits over the
                old plan are added
     """
     import re
@@ -327,6 +327,14 @@ def activate_self_serve_purchase(invoice, org):
         org.sms_credits = (org.sms_credits or 0) + _extra(plan.sms_credits, old_plan.sms_credits if old_plan else 0)
         org.email_credits = (org.email_credits or 0) + _extra(plan.email_credits, old_plan.email_credits if old_plan else 0)
         org.ai_call_allowance = max(org.ai_call_allowance or 0, plan.ai_call_allowance or 0)
+        # Upgrade: the new plan runs a full cycle from today (charge = new price - unused credit of old plan).
+        from datetime import timedelta
+        from app.services.billing import _CYCLE_DAYS
+        _new_end = invoice.period_end
+        _today = datetime.utcnow()
+        if not _new_end or (_new_end.date() if isinstance(_new_end, datetime) else _new_end) <= _today.date():
+            _new_end = _today + timedelta(days=_CYCLE_DAYS.get(org.billing_cycle or "monthly", 30))
+        org.subscription_expiry_date = _new_end.date() if isinstance(_new_end, datetime) else _new_end
 
     logger.info("payment_gateway: activated %s purchase of plan %s for organization %s", kind, plan.id, org.id)
 

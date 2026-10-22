@@ -92,6 +92,7 @@
 {% endif %}
 {% if not session.user.is_super_admin and has_permission(session.user, 'billing.manage') %}
     <li><a href="/organization/billing">Plan &amp; Billing</a></li>
+        <li><a href="/organization/kyc-documents">KYC Documents</a></li>
     {% endif %}
     {% if has_permission(session.user, 'settings.view') %}
     <li><a href="/settings/profile">Settings</a></li>

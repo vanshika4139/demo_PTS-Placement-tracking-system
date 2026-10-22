@@ -4875,6 +4875,14 @@ def organization_candidates():
     )
 
 
+def _candidate_limit_status(org_id):
+    """Returns (limit, current). A limit of 0 or empty means no limit is set."""
+    org = Organization.query.get(org_id)
+    limit = int(getattr(org, "candidate_limit", 0) or 0)
+    current = Candidate.query.filter_by(organization_id=org_id, is_deleted=False).count()
+    return limit, current
+
+
 @frontend_bp.route("/organization/candidates/create", methods=["GET", "POST"])
 @login_required
 @require_permission("candidate.create")
@@ -4891,6 +4899,11 @@ def organization_candidate_create():
         org_id = user.get("organization_id")
         if not org_id:
             flash("Please select an organization", "error")
+            return render_template("organization/candidates/form.html", candidate=None, organizations=organizations, batches=batches, schemes=schemes)
+
+        _lim, _cur = _candidate_limit_status(org_id)
+        if _lim > 0 and _cur >= _lim:
+            flash(f"Plan limit reached ({_cur} of {_lim} candidates). Upgrade your plan to add more candidates.", "error")
             return render_template("organization/candidates/form.html", candidate=None, organizations=organizations, batches=batches, schemes=schemes)
 
         full_name_value = (request.form.get("full_name") or "").strip()
@@ -6010,6 +6023,9 @@ def candidate_import():
             flash("Could not read the file. Please upload a valid CSV.", "error")
             return render_template("organization/candidates/import.html", organizations=organizations, summary=None)
 
+        _lim, _cur = _candidate_limit_status(org_id)
+        _room = max(0, _lim - _cur) if _lim > 0 else None
+        _limit_flashed = False
         total = 0
         valid = 0
         duplicate = 0
@@ -6030,6 +6046,12 @@ def candidate_import():
                     continue
 
             mobile_value = (row.get("mobile") or "").strip() or None
+
+            if _room is not None and valid >= _room:
+                if not _limit_flashed:
+                    flash(f"Plan limit of {_lim} candidates reached. The remaining rows were not imported. Upgrade your plan to add more.", "error")
+                    _limit_flashed = True
+                continue
 
             candidate = Candidate(
                 organization_id=org_id,

@@ -5613,6 +5613,19 @@ def organization_candidates_bulk_action():
     return redirect(url_for("frontend.organization_candidates"))
 
 
+def _export_blocked_by_plan(user):
+    """Returns a redirect when the organization's plan has basic report access
+    (no Excel/PDF/CSV export), otherwise None. No plan set means no restriction."""
+    if user.get("is_super_admin"):
+        return None
+    org = Organization.query.get(user.get("organization_id")) if user.get("organization_id") else None
+    plan = Plan.query.get(org.subscription_plan_id) if org and org.subscription_plan_id else None
+    if plan and (plan.report_access_level or "basic") == "basic":
+        flash("Export is not included in your plan. Upgrade to Professional or Enterprise to export reports.", "error")
+        return redirect(url_for("frontend.organization_candidates"))
+    return None
+
+
 @frontend_bp.route("/organization/candidates/export.xlsx")
 @login_required
 @require_permission("candidate.export")
@@ -5623,6 +5636,9 @@ def organization_candidates_export():
     from flask import send_file
 
     user = session.get("user")
+    _blocked = _export_blocked_by_plan(user)
+    if _blocked:
+        return _blocked
     query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
 
@@ -5708,6 +5724,9 @@ def organization_candidates_export_pdf():
     from flask import send_file
 
     user = session.get("user")
+    _blocked = _export_blocked_by_plan(user)
+    if _blocked:
+        return _blocked
     query = Candidate.query.filter_by(is_deleted=False, organization_id=user.get("organization_id"))
     query = _scope_candidates_to_creator(query, user)
 
@@ -7997,6 +8016,9 @@ def reports_export():
     user = session.get("user")
     if user.get("is_super_admin"):
         return redirect("/super-admin/support-tickets")
+    _blocked = _export_blocked_by_plan(user)
+    if _blocked:
+        return _blocked
     query = Candidate.query.filter_by(is_deleted=False)
     if not user.get("is_super_admin"):
         query = query.filter_by(organization_id=user.get("organization_id"))

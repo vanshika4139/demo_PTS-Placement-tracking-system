@@ -86,7 +86,7 @@
             &mdash; pay &#8377;{{ '{:,.2f}'.format(action.amount) }}
           </button>
         </form>
-        {% if action.kind == 'upgrade' %}<p class="bp-note" style="margin:8px 0 0;">Only the days left in your current period are charged.</p>{% endif %}
+        {% if action.kind == 'upgrade' %}<p class="bp-note" style="margin:8px 0 0;">New plan price minus credit for the unused part of your current plan. The new plan runs a full cycle from today.</p>{% endif %}
         {% else %}
         <p class="bp-note" style="margin:0;">Online payment is not available yet.</p>
         {% endif %}

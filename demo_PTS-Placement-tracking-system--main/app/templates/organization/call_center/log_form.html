@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header page-header-inline">
   <div>
-    <h2>Log Call</h2>
+    <h2>{{ 'Edit Call Log' if editing else 'Log Call' }}</h2>
     <p>Record what happened on this call. The outcome is saved against the call and cannot be left empty.</p>
   </div>
   <a class="ghost-btn" href="{{ url_for('frontend.call_center_queue') }}">Back to Queue</a>
@@ -39,7 +39,7 @@
       </label>
       <small class="span-2">Placed and Left Job will appear here once automatic candidate tracking updates are enabled.</small>
     </div>
-    <button type="submit" class="primary-btn" style="margin-top:16px;">Save Call Log</button>
+    <button type="submit" class="primary-btn" style="margin-top:16px;">{{ 'Update Call Log' if editing else 'Save Call Log' }}</button>
   </form>
 </div>
 {% endblock %}

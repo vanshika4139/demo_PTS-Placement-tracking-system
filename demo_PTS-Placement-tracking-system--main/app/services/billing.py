@@ -116,7 +116,7 @@ def calculate_prorated_amount(old_plan, new_plan, subscription_expiry_date, bill
     new_daily_rate = float(new_plan.price) / cycle_days
 
     credit = old_daily_rate * days_remaining
-    charge = new_daily_rate * days_remaining
+    charge = float(new_plan.price)  # new plan full price; the unused part of the old plan is credited below
     amount = max(0.0, round(charge - credit, 2))
 
     note = (

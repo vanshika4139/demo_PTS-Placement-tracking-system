@@ -12,6 +12,7 @@
             border-radius: 8px; font-size: 14px; font-weight: 400; font-family: inherit; }
   .sd-form textarea { min-height: 130px; resize: vertical; }
   .sd-btn { padding: 10px 20px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
+  .sd-danger { padding: 10px 20px; border: none; border-radius: 8px; background: #dc2626; color: #fff; font-weight: 600; cursor: pointer; }
 </style>
 <a class="sd-back" href="{{ url_for('frontend.organization_support_tickets') }}">&larr; Back to tickets</a>
 
@@ -24,6 +25,17 @@
   </div>
   <div class="sd-msg">{{ ticket.message }}</div>
 </div>
+
+{% if ticket.request_type == 'delete_data' and ticket.status not in ('resolved', 'rejected') %}
+<div class="sd-card">
+  <h3>Delete request</h3>
+  <p class="sd-meta">The candidate asked for their data to be deleted. Records are not erased: the candidate is made inactive and the record is kept for legal and audit purposes. To refuse, set the status to Rejected below and give a reason.</p>
+  <form method="post" action="{{ url_for('frontend.organization_deactivate_candidate_for_request', ticket_id=ticket.id) }}"
+        onsubmit="return confirm('Make this candidate inactive? They will not be able to log in. The record is kept.');">
+    <button type="submit" class="sd-danger">Make candidate inactive</button>
+  </form>
+</div>
+{% endif %}
 
 <div class="sd-card">
   <h3>Reply and update status</h3>

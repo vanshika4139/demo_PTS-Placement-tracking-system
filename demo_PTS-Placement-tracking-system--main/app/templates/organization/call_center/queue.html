@@ -46,6 +46,9 @@
           {% if section != 'completed' and c %}
           <a class="primary-btn" href="{{ url_for('frontend.call_center_log_call', task_id=t.id) }}">Log Call</a>
           {% endif %}
+          {% if section == 'completed' and c %}
+          <a class="ghost-btn" href="{{ url_for('frontend.call_center_edit_call_log', task_id=t.id) }}">Edit</a>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

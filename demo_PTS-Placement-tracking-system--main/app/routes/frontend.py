@@ -56,6 +56,7 @@ from app.services.billing import (
 )
 from app.services.payment_gateway import is_gateway_configured, mark_invoice_paid
 from app.utils.crypto import aadhaar_hash as _aadhaar_hash
+from sqlalchemy import or_ as _sa_or
 from app.utils.email import send_otp_email
 from app.utils.i18n import translate, get_current_language, SUPPORTED_LANGUAGES
 from app.utils.permissions import has_permission, invalidate_role_permission_cache, invalidate_user_permission_cache, require_permission
@@ -134,12 +135,33 @@ def super_admin_required(view_func):
     return wrapped
 
 
+# Organizations whose KYC is not approved can only reach these pages.
+_KYC_OPEN_ENDPOINTS = {
+    "frontend.organization_kyc_documents",
+    "frontend.organization_kyc_document_upload",
+    "frontend.organization_kyc_document_download",
+    "frontend.logout",
+    "frontend.no_access",
+}
+
+
 def login_required(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
         if not session.get("user"):
             flash("Please login first", "error")
             return redirect(url_for("frontend.login"))
+
+        _gate_user = session.get("user") or {}
+        if not _gate_user.get("is_super_admin") and _gate_user.get("organization_id"):
+            _gate_org = Organization.query.get(_gate_user["organization_id"])
+            if (
+                _gate_org
+                and (_gate_org.kyc_status or "").upper() != "APPROVED"
+                and request.endpoint not in _KYC_OPEN_ENDPOINTS
+            ):
+                flash("Please complete your KYC. Other features open after the Super Admin approves it.", "error")
+                return redirect(url_for("frontend.organization_kyc_documents"))
 
         session_token = session.get("session_token")
         if session_token:
@@ -540,8 +562,7 @@ def login():
                 if organization:
                     if organization.status == 0:
                         org_block_reason = "Your organization's access has been suspended. Contact your account manager."
-                    elif (organization.kyc_status or "").upper() != "APPROVED":
-                        org_block_reason = "Your organization's KYC verification is not yet approved. Contact your account manager."
+                    # KYC pending or rejected: login is allowed; login_required keeps only the KYC pages open.
 
             if org_block_reason:
                 error = org_block_reason
@@ -840,10 +861,10 @@ def get_super_admin_dashboard_data():
     ).count()
 
     from app.models.support_ticket import SupportTicket
-    _st_total = SupportTicket.query.count()
-    _st_open = SupportTicket.query.filter_by(status="open").count()
-    _st_progress = SupportTicket.query.filter_by(status="in_progress").count()
-    _st_resolved = SupportTicket.query.filter_by(status="resolved").count()
+    _st_total = SupportTicket.query.filter(_super_admin_ticket_filter()).count()
+    _st_open = SupportTicket.query.filter(_super_admin_ticket_filter()).filter_by(status="open").count()
+    _st_progress = SupportTicket.query.filter(_super_admin_ticket_filter()).filter_by(status="in_progress").count()
+    _st_resolved = SupportTicket.query.filter(_super_admin_ticket_filter()).filter_by(status="resolved").count()
 
     stat_sections = [
         {
@@ -991,7 +1012,7 @@ def get_super_admin_dashboard_data():
     from app.models.support_ticket import SupportTicket
     _org_names = {str(o.id): o.organization_name for o in all_orgs}
     recent_support_tickets = []
-    for _t in SupportTicket.query.order_by(SupportTicket.created_at.desc()).limit(5).all():
+    for _t in SupportTicket.query.filter(_super_admin_ticket_filter()).order_by(SupportTicket.created_at.desc()).limit(5).all():
         recent_support_tickets.append({
             "subject": _t.subject,
             "reporter": _t.reporter_name or "-",
@@ -1727,6 +1748,105 @@ def call_center_log_call(task_id):
 
     return _render()
 
+@frontend_bp.route("/call-center/tasks/<task_id>/log/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("call_log.create")
+def call_center_edit_call_log(task_id):
+    """Executive corrects a call they already logged. The previous values are written
+    to the activity (audit) log, so the full history of changes is kept."""
+    organization_id, user_id = _call_center_scope()
+
+    task = CallTask.query.filter_by(
+        id=task_id, organization_id=organization_id, assigned_user_id=user_id, status=1
+    ).first_or_404()
+    candidate = Candidate.query.filter_by(id=task.candidate_id, organization_id=organization_id).first_or_404()
+    call_log = CallLog.query.filter_by(call_task_id=task.id, organization_id=organization_id).first()
+    if task.task_status != "completed" or call_log is None:
+        flash("Only a call that is already logged can be edited.", "error")
+        return redirect(url_for("frontend.call_center_queue"))
+
+    dispositions = (
+        CallDisposition.query.filter(CallDisposition.status == 1, ~CallDisposition.code.in_(HOLD_DISPOSITION_CODES))
+        .order_by(CallDisposition.display_order, CallDisposition.name)
+        .all()
+    )
+
+    def _render(**extra):
+        return render_template(
+            "organization/call_center/log_form.html",
+            task=task, candidate=candidate, dispositions=dispositions, editing=True, **extra
+        )
+
+    if request.method == "POST":
+        disposition_id = request.form.get("disposition_id", "").strip()
+        notes = request.form.get("call_notes", "").strip()
+
+        def _to_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
+        minutes = _to_int(request.form.get("duration_minutes"))
+        seconds = _to_int(request.form.get("duration_seconds"))
+        form_state = dict(
+            selected_disposition=disposition_id, call_notes=notes,
+            duration_minutes=minutes, duration_seconds=seconds,
+        )
+
+        disposition = next((d for d in dispositions if d.id == disposition_id), None)
+        if not disposition:
+            flash("Please select a valid disposition.", "error")
+            return _render(**form_state)
+        if len(notes) > 5000:
+            flash("Call notes are too long (maximum 5000 characters).", "error")
+            return _render(**form_state)
+        if minutes < 0 or seconds < 0 or seconds > 59 or minutes > 600:
+            flash("Please enter a valid call duration.", "error")
+            return _render(**form_state)
+
+        old_disposition = CallDisposition.query.get(call_log.disposition_id)
+        old_notes = call_log.call_notes or ""
+        old_seconds = call_log.duration_seconds or 0
+        new_seconds = minutes * 60 + seconds
+
+        if disposition.id == call_log.disposition_id and notes == old_notes and new_seconds == old_seconds:
+            flash("No changes to save.", "error")
+            return redirect(url_for("frontend.call_center_queue", section="completed"))
+
+        try:
+            call_log.disposition_id = disposition.id
+            call_log.call_notes = notes or None
+            call_log.duration_seconds = new_seconds
+            if hasattr(call_log, "modified_by"):
+                call_log.modified_by = user_id
+            task.modified_by = user_id
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("call_center_edit_call_log: failed to update call log for task %s", task_id)
+            flash("Could not save the changes. Please try again.", "error")
+            return _render(**form_state)
+
+        _log_activity(
+            "call_log.edited",
+            (
+                f"Candidate {candidate.full_name}: "
+                f"disposition {old_disposition.code if old_disposition else '-'} -> {disposition.code}; "
+                f"duration {old_seconds}s -> {new_seconds}s; "
+                f"old notes: {old_notes[:200]}"
+            )[:500],
+        )
+        flash("Call log updated.", "success")
+        return redirect(url_for("frontend.call_center_queue", section="completed"))
+
+    return _render(
+        selected_disposition=call_log.disposition_id,
+        call_notes=call_log.call_notes or "",
+        duration_minutes=(call_log.duration_seconds or 0) // 60,
+        duration_seconds=(call_log.duration_seconds or 0) % 60,
+    )
+
 @frontend_bp.route("/super-admin/announcements")
 @super_admin_required
 def super_admin_announcements():
@@ -2104,15 +2224,17 @@ def get_organization_dashboard_data(organization_id, created_by_filter=None):
     all_candidates = base_query.all()
     total_candidates = len(all_candidates)
     placed = sum(1 for c in all_candidates if c.employer_name)
-    pending = sum(1 for c in all_candidates if c.training_status == "training_started")
+    pending = total_candidates - placed  # FR-19: Pending Placement = not yet placed
+    not_verified = sum(1 for c in all_candidates if (c.verification_status or "pending") == "pending")
     verified = sum(1 for c in all_candidates if c.verification_status == "verified")
     placement_proof_uploaded = sum(1 for c in all_candidates if c.placement_proof_uploaded)
 
     stats = [
         {"title": "Total Candidates", "value": str(total_candidates), "link": url_for("frontend.organization_candidates")},
         {"title": "Placed", "value": str(placed), "link": url_for("frontend.organization_candidates", placed="yes")},
-        {"title": "Pending Placement", "value": str(pending), "link": url_for("frontend.organization_candidates", training_status="training_started")},
+        {"title": "Pending Placement", "value": str(pending), "link": url_for("frontend.organization_candidates", placed="no")},
         {"title": "Verified", "value": str(verified), "link": url_for("frontend.organization_candidates", verification_status="verified")},
+        {"title": "Not Verified", "value": str(not_verified), "link": url_for("frontend.organization_candidates", verification_status="pending")},
         {"title": "Placement Proof Uploaded", "value": str(placement_proof_uploaded), "link": url_for("frontend.organization_candidates", placement_proof="yes")},
     ]
 
@@ -3035,7 +3157,6 @@ def super_admin_kyc_document_download(organization_id, document_id):
 
 @frontend_bp.route("/organization/kyc-documents")
 @login_required
-@require_permission("kyc.view")
 def organization_kyc_documents():
     """Self-serve KYC page for an organization's own users: they can see
     each document's status/rejection remarks and upload/replace files.
@@ -3061,7 +3182,6 @@ def organization_kyc_documents():
 
 @frontend_bp.route("/organization/kyc-documents/upload", methods=["POST"])
 @login_required
-@require_permission("kyc.upload")
 def organization_kyc_document_upload():
     user = session.get("user") or {}
     organization_id = user.get("organization_id")
@@ -3086,7 +3206,6 @@ def organization_kyc_document_upload():
 
 @frontend_bp.route("/organization/kyc-documents/<document_id>/download")
 @login_required
-@require_permission("kyc.view")
 def organization_kyc_document_download(document_id):
     from flask import send_file
 
@@ -6141,7 +6260,7 @@ def candidate_set_password(token):
 
 
 CONSENT_NOTICE_VERSION = "1.0"
-_REQUEST_TYPES = ("general", "correct_data", "delete_data")
+_REQUEST_TYPES = ("general", "correct_data", "delete_data", "technical")
 
 
 def _has_current_consent(candidate_id):
@@ -6311,7 +6430,7 @@ def candidate_download_data():
 
     _labels = {"open": "Open", "in_progress": "In progress", "resolved": "Resolved", "rejected": "Rejected"}
     _types = {"correct_data": "Correct my data", "delete_data": "Delete my data",
-              "withdraw_consent": "Withdrew consent"}
+              "withdraw_consent": "Withdrew consent", "technical": "Technical problem"}
     story.append(Paragraph("Your support tickets", styles["Heading3"]))
     tickets = SupportTicket.query.filter_by(candidate_id=candidate.id).order_by(SupportTicket.created_at.desc()).all()
     if not tickets:
@@ -6602,6 +6721,14 @@ def candidate_feedback_submit():
 _TICKET_STATUSES = ("open", "in_progress", "resolved", "rejected")
 
 
+def _super_admin_ticket_filter():
+    """Super Admin sees tickets from organization staff and technical problems only.
+    Functional and data-request tickets from candidates belong to their Organization Admin."""
+    from app.models.support_ticket import SupportTicket
+
+    return _sa_or(SupportTicket.candidate_id.is_(None), SupportTicket.request_type == "technical")
+
+
 def _org_ticket_scope():
     """Tickets raised by THIS organization's own candidates only.
     organization_id comes from the logged-in session, never from the request."""
@@ -6613,6 +6740,7 @@ def _org_ticket_scope():
     return SupportTicket.query.filter(
         SupportTicket.organization_id == str(org_id),
         SupportTicket.candidate_id.isnot(None),
+        _sa_or(SupportTicket.request_type.is_(None), SupportTicket.request_type != "technical"),
     )
 
 
@@ -6659,6 +6787,60 @@ def organization_support_ticket_detail(ticket_id):
     ticket = scope.filter(SupportTicket.id == ticket_id).first_or_404()
     return render_template("organization/support_ticket_detail.html", ticket=ticket)
 
+
+@frontend_bp.route("/organization/support-tickets/<ticket_id>/deactivate-candidate", methods=["POST"])
+@login_required
+@require_permission("support_ticket.manage")
+@require_permission("candidate.delete")
+def organization_deactivate_candidate_for_request(ticket_id):
+    """DPDP 'Delete my data' request: the record is made inactive (soft delete), not erased.
+    Same soft delete the candidate list uses, so it can be viewed or restored later."""
+    from app.models.support_ticket import SupportTicket
+    from app.utils.email import send_notification_email
+
+    scope = _org_ticket_scope()
+    if scope is None:
+        return redirect(url_for("frontend.no_access"))
+    ticket = scope.filter(SupportTicket.id == ticket_id).first_or_404()
+    back = redirect(url_for("frontend.organization_support_ticket_detail", ticket_id=ticket.id))
+    org_id = (session.get("user") or {}).get("organization_id")
+
+    if ticket.request_type != "delete_data":
+        flash("This action is only for 'Delete my data' requests.", "error")
+        return back
+    candidate = Candidate.query.filter_by(id=ticket.candidate_id, is_deleted=False).first()
+    if not candidate or str(candidate.organization_id) != str(org_id):
+        flash("This candidate is not active in your organization.", "error")
+        return back
+
+    candidate.is_deleted = True
+    ticket.status = "resolved"
+    ticket.resolved_at = datetime.utcnow()
+    if not ticket.admin_reply:
+        ticket.admin_reply = (
+            "Your record has been made inactive as you asked. "
+            "It is kept in inactive form for legal and audit purposes."
+        )
+    db.session.commit()
+    _log_activity("candidate.deactivated_on_request", f"{candidate.registration_number or candidate.id}: delete-my-data request")
+
+    if candidate.email:
+        try:
+            send_notification_email(
+                to_email=candidate.email,
+                subject=f"Re: {ticket.subject}",
+                body=(
+                    f"Hello {(candidate.full_name or '').split(' ')[0] or 'there'},\n\n"
+                    "We have processed your request to delete your data.\n\n"
+                    f"{ticket.admin_reply}\n"
+                ),
+                candidate_id=candidate.id,
+            )
+        except Exception:
+            logging.exception("Failed to email delete-request confirmation")
+
+    flash("The candidate is now inactive and the ticket is resolved.", "success")
+    return back
 
 @frontend_bp.route("/organization/support-tickets/<ticket_id>/respond", methods=["POST"])
 @login_required
@@ -6775,6 +6957,8 @@ def candidate_help():
                 )
                 .all()
             )
+        if _rt == "technical":
+            _org_admins = []
         _to_org = bool(_org_admins)
         if not _org_admins:
             _org_admins = User.query.filter_by(is_super_admin=True, is_deleted=False, is_active=True).all()
@@ -9035,9 +9219,10 @@ def _org_plan_change(organization, current_plan, plan):
         amount, _note = calculate_prorated_amount(current_plan, plan, expiry_dt, cycle)
         if amount <= 0:
             return {"kind": "contact", "message": "Contact us to switch to this plan"}
+        new_cycle = plan.default_billing_cycle or "monthly"
         return {
-            "kind": "upgrade", "amount": float(amount), "cycle": cycle,
-            "period_start": now, "period_end": expiry_dt,
+            "kind": "upgrade", "amount": float(amount), "cycle": new_cycle,
+            "period_start": now, "period_end": now + timedelta(days=_CYCLE_DAYS.get(new_cycle, 30)),
         }
 
     return {"kind": "contact", "message": "Lower plans start at your next renewal - contact us"}
@@ -9599,7 +9784,7 @@ def super_admin_support_tickets():
     date_to = (request.args.get("date_to") or "").strip()
     page = request.args.get("page", 1, type=int)
 
-    query = SupportTicket.query
+    query = SupportTicket.query.filter(_super_admin_ticket_filter())
     if status_filter in ("open", "in_progress", "resolved"):
         query = query.filter(SupportTicket.status == status_filter)
     if q:
@@ -9625,7 +9810,7 @@ def super_admin_support_tickets():
 
     # Status counts in one query
     counts = dict(
-        db.session.query(SupportTicket.status, db.func.count(SupportTicket.id))
+        db.session.query(SupportTicket.status, db.func.count(SupportTicket.id)).filter(_super_admin_ticket_filter())
         .group_by(SupportTicket.status)
         .all()
     )

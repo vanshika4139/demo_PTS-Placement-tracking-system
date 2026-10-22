@@ -33,7 +33,7 @@
           {% elif ticket.status == "in_progress" %}
             <span class="status-badge status-verified">In Progress</span>
           {% else %}
-            <span class="status-badge status-active">Resolved</span>
+            {% if ticket.status == "rejected" %}<span class="status-badge status-suspended">Rejected</span>{% else %}<span class="status-badge status-active">Resolved</span>{% endif %}
           {% endif %}
         </td>
       </tr>
@@ -80,6 +80,7 @@
           <option value="open" {% if ticket.status == "open" %}selected{% endif %}>Open</option>
           <option value="in_progress" {% if ticket.status == "in_progress" %}selected{% endif %}>In Progress</option>
           <option value="resolved" {% if ticket.status == "resolved" %}selected{% endif %}>Resolved</option>
+          <option value="rejected" {% if ticket.status == "rejected" %}selected{% endif %}>Rejected</option>
         </select>
       </label>
       <button type="submit" class="primary-btn">Save</button>

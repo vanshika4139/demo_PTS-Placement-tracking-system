@@ -9285,6 +9285,39 @@ def _org_plan_change(organization, current_plan, plan):
     return {"kind": "contact", "message": "Lower plans start at your next renewal - contact us"}
 
 
+def _org_storage_used_mb(org):
+    """Disk space used by one organization's uploaded files, in MB."""
+    import os
+
+    def _size(path):
+        try:
+            return os.path.getsize(path) if path and os.path.isfile(path) else 0
+        except OSError:
+            return 0
+
+    def _dir_size(path):
+        total = 0
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                total += _size(os.path.join(root, name))
+        return total
+
+    total = 0
+    for sub in ("kyc_documents", "candidate_certificates", "candidate_documents"):
+        total += _dir_size(os.path.join("app", "private_uploads", sub, str(org.id)))
+
+    urls = [org.logo]
+    urls += [
+        u for (u,) in db.session.query(Candidate.offer_letter_url)
+        .filter(Candidate.organization_id == org.id, Candidate.offer_letter_url.isnot(None))
+        .all()
+    ]
+    for url in urls:
+        if url and url.startswith("/static/"):
+            total += _size(os.path.join("app", url.lstrip("/")))
+    return round(total / (1024 * 1024), 2)
+
+
 def _org_invoice_kind_label(note):
     text = note or ""
     if not text.startswith(SELF_SERVE_MARKER):
@@ -9345,6 +9378,8 @@ def organization_billing():
         plan_name_by_id=plan_name_by_id,
         invoice_labels=invoice_labels,
         days_left=days_left,
+        storage_used_mb=_org_storage_used_mb(organization),
+        storage_limit_mb=(current_plan.storage_limit_mb if current_plan else None),
         gateway_configured=is_gateway_configured(),
     )
 

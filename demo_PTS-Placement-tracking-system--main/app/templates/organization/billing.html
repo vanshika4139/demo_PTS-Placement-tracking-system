@@ -47,6 +47,7 @@
       {% endif %}
     </div>
     <div class="bp-box"><div class="bp-label">Candidate limit</div><div class="bp-value">{{ organization.candidate_limit or 0 }}</div></div>
+    <div class="bp-box"><div class="bp-label">Storage used</div><div class="bp-value">{{ storage_used_mb }} MB{% if storage_limit_mb %} / {{ storage_limit_mb }} MB{% endif %}</div>{% if storage_limit_mb and storage_used_mb > storage_limit_mb %}<div class="bp-note" style="color:#dc2626;">Storage limit exceeded. Upgrade your plan.</div>{% endif %}</div>
     <div class="bp-box"><div class="bp-label">Email / WhatsApp / SMS credits</div><div class="bp-value">{{ organization.email_credits or 0 }} / {{ organization.whatsapp_credits or 0 }} / {{ organization.sms_credits or 0 }}</div></div>
   </div>
 </div>

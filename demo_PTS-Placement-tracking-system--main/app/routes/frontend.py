@@ -3472,7 +3472,17 @@ def super_admin_plan_edit(plan_id):
     if request.method == "POST":
         actor = session.get("user") or {}
         plan.name = request.form.get("name", "").strip() or plan.name
-        plan.price = _parse_int(request.form.get("price")) or 0
+        _raw_price = (request.form.get("price") or "").strip()
+        if _raw_price != "":
+            try:
+                _new_price = round(float(_raw_price), 2)
+            except ValueError:
+                _new_price = -1
+            if _new_price < 0:
+                db.session.rollback()
+                flash("Please enter a valid price (0 or more).", "error")
+                return redirect(url_for("frontend.super_admin_plan_edit", plan_id=plan_id))
+            plan.price = _new_price
         plan.default_billing_cycle = request.form.get("default_billing_cycle", plan.default_billing_cycle)
         plan.candidate_limit = _parse_int(request.form.get("candidate_limit")) or 0
         plan.whatsapp_credits = _parse_int(request.form.get("whatsapp_credits")) or 0

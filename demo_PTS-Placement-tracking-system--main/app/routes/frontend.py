@@ -2415,7 +2415,7 @@ def super_admin_organizations_export():
 
 _ORG_REPORT_HEADERS = [
     "Code", "Organization", "State", "District", "Status", "Candidates",
-    "Training Completed", "Placed", "Verification Pending", "Placement Rate (%)", "Avg Salary",
+    "Training Completed", "Placed", "Verification Pending", "Placement Rate (%)", "Avg Salary", "Revenue Paid (Rs.)",
 ]
 
 
@@ -2477,6 +2477,17 @@ def _org_report_rows(args):
             if found:
                 salaries.setdefault(org_id, []).append(float(found.group()))
 
+    revenue = {}
+    if ids:
+        from app.models.invoice import Invoice
+        for org_id, amt in (
+            db.session.query(Invoice.organization_id, func.sum(Invoice.amount))
+            .filter(Invoice.status == "PAID", Invoice.organization_id.in_(ids))
+            .group_by(Invoice.organization_id)
+            .all()
+        ):
+            revenue[org_id] = round(float(amt or 0), 2)
+
     rows = []
     for o in orgs:
         total, placed, pending, completed = counts.get(o.id, (0, 0, 0, 0))
@@ -2491,6 +2502,7 @@ def _org_report_rows(args):
             "completed": completed,
             "placed": placed,
             "pending": pending,
+            "revenue": revenue.get(o.id, 0.0),
             "rate": round(placed * 100.0 / total, 1) if total else 0,
             "avg_salary": round(sum(vals) / len(vals)) if vals else None,
         })
@@ -2506,6 +2518,7 @@ def _org_report_rows(args):
         "pending": sum(r["pending"] for r in rows),
         "rate": round(t_placed * 100.0 / t_total, 1) if t_total else 0,
         "avg_salary": round(sum(all_vals) / len(all_vals)) if all_vals else None,
+        "revenue": round(sum(r["revenue"] for r in rows), 2),
     }
     return rows, totals, state_options
 
@@ -2513,12 +2526,12 @@ def _org_report_rows(args):
 def _org_report_table(rows, totals):
     data = [
         [r["code"], r["name"], r["state"], r["district"], r["status"], r["total"], r["completed"],
-         r["placed"], r["pending"], r["rate"], r["avg_salary"] if r["avg_salary"] is not None else "-"]
+         r["placed"], r["pending"], r["rate"], r["avg_salary"] if r["avg_salary"] is not None else "-", r["revenue"]]
         for r in rows
     ]
     data.append([
         "", "Total", "", "", "", totals["total"], totals["completed"], totals["placed"],
-        totals["pending"], totals["rate"], totals["avg_salary"] if totals["avg_salary"] is not None else "-",
+        totals["pending"], totals["rate"], totals["avg_salary"] if totals["avg_salary"] is not None else "-", totals["revenue"],
     ])
     return data
 

@@ -71,7 +71,7 @@
       <tr>
         <th>Code</th><th>Organization</th><th>State</th><th>District</th><th>Status</th>
         <th class="num">Candidates</th><th class="num">Training Completed</th><th class="num">Placed</th>
-        <th class="num">Verification Pending</th><th class="num">Placement Rate</th><th class="num">Avg Salary</th>
+        <th class="num">Verification Pending</th><th class="num">Placement Rate</th><th class="num">Avg Salary</th><th class="num">Revenue Paid (Rs.)</th>
       </tr>
     </thead>
     <tbody>
@@ -88,6 +88,7 @@
         <td class="num">{{ r.pending }}</td>
         <td class="num">{{ r.rate }}%</td>
         <td class="num">{{ '{:,}'.format(r.avg_salary) if r.avg_salary is not none else '-' }}</td>
+        <td class="num">{{ '{:,.2f}'.format(r.revenue or 0) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="11" class="rp-empty">No organizations match these filters.</td></tr>
@@ -103,6 +104,7 @@
         <td class="num">{{ totals.pending }}</td>
         <td class="num">{{ totals.rate }}%</td>
         <td class="num">{{ '{:,}'.format(totals.avg_salary) if totals.avg_salary is not none else '-' }}</td>
+      <td class="num">{{ '{:,.2f}'.format(totals.revenue or 0) }}</td>
       </tr>
     </tfoot>
     {% endif %}

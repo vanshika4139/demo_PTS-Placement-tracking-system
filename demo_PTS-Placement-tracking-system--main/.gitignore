@@ -38,3 +38,7 @@ backup_pg/
 app/static/uploads/
 
 app/private_uploads/
+
+*.bak*
+scan*.txt
+next_scan.txt

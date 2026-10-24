@@ -42,4 +42,28 @@
     <button type="submit" class="primary-btn" style="margin-top:16px;">{{ 'Update Call Log' if editing else 'Save Call Log' }}</button>
   </form>
 </div>
+
+{% if editing %}
+<div class="panel-card" style="margin-top:16px;">
+  <h3 style="margin-top:0;">Edit history</h3>
+  {% if edits %}
+  <table class="data-table">
+    <thead><tr><th>When</th><th>By</th><th>Disposition</th><th>Duration</th><th>Notes</th></tr></thead>
+    <tbody>
+      {% for e in edits %}
+      <tr>
+        <td>{{ e.when|ist }}</td>
+        <td>{{ e.by }}</td>
+        <td>{{ e.old_disposition }} &rarr; {{ e.new_disposition }}</td>
+        <td>{{ e.old_seconds // 60 }}m {{ e.old_seconds % 60 }}s &rarr; {{ e.new_seconds // 60 }}m {{ e.new_seconds % 60 }}s</td>
+        <td>{% if e.old_notes != e.new_notes %}<div><small>Old:</small> {{ e.old_notes or '-' }}</div><div><small>New:</small> {{ e.new_notes or '-' }}</div>{% else %}No change{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No edits yet.</p>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

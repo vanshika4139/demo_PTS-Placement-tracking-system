@@ -1748,6 +1748,29 @@ def call_center_log_call(task_id):
 
     return _render()
 
+def _call_log_edit_history(call_log_id):
+    """Edits of one call log, newest first, with names instead of ids."""
+    from app.models.call_log_edit import CallLogEdit
+
+    rows = CallLogEdit.query.filter_by(call_log_id=call_log_id).order_by(CallLogEdit.edited_at.desc()).all()
+    names = {d.id: d.name for d in CallDisposition.query.all()}
+    user_ids = {r.edited_by for r in rows if r.edited_by}
+    users = {u.id: (u.full_name or u.email) for u in User.query.filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    return [
+        {
+            "when": r.edited_at,
+            "by": users.get(r.edited_by, "-"),
+            "old_disposition": names.get(r.old_disposition_id, "-"),
+            "new_disposition": names.get(r.new_disposition_id, "-"),
+            "old_notes": r.old_notes or "",
+            "new_notes": r.new_notes or "",
+            "old_seconds": int(r.old_duration_seconds or 0),
+            "new_seconds": int(r.new_duration_seconds or 0),
+        }
+        for r in rows
+    ]
+
+
 @frontend_bp.route("/call-center/tasks/<task_id>/log/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("call_log.create")
@@ -1774,7 +1797,7 @@ def call_center_edit_call_log(task_id):
     def _render(**extra):
         return render_template(
             "organization/call_center/log_form.html",
-            task=task, candidate=candidate, dispositions=dispositions, editing=True, **extra
+            task=task, candidate=candidate, dispositions=dispositions, editing=True, edits=_call_log_edit_history(call_log.id), **extra
         )
 
     if request.method == "POST":
@@ -1817,6 +1840,19 @@ def call_center_edit_call_log(task_id):
         try:
             call_log.disposition_id = disposition.id
             call_log.call_notes = notes or None
+            from app.models.call_log_edit import CallLogEdit
+            db.session.add(CallLogEdit(
+                organization_id=organization_id,
+                call_log_id=call_log.id,
+                candidate_id=candidate.id,
+                old_disposition_id=old_disposition.id if old_disposition else None,
+                new_disposition_id=disposition.id,
+                old_notes=old_notes or None,
+                new_notes=notes or None,
+                old_duration_seconds=old_seconds,
+                new_duration_seconds=new_seconds,
+                edited_by=user_id,
+            ))
             call_log.duration_seconds = new_seconds
             if hasattr(call_log, "modified_by"):
                 call_log.modified_by = user_id

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Branding{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Organization Branding</h2>
+  <p>Upload your organization logo.</p>
+</div>
+
+<div class="panel-card form-card">
+  <h3 style="margin-top:0;">Current logo</h3>
+  {% if organization.logo %}
+  <img src="{{ organization.logo }}" alt="Organization logo" style="max-height:80px; max-width:240px;">
+  {% else %}
+  <p>No logo uploaded yet.</p>
+  {% endif %}
+
+  {% if allowed %}
+  <form method="post" enctype="multipart/form-data" class="full-form" style="margin-top:16px;">
+    <label>New logo (PNG, JPG or WEBP, maximum 2 MB)
+      <input type="file" name="logo_file" accept=".png,.jpg,.jpeg,.webp" required>
+    </label>
+    <button type="submit" class="primary-btn" style="margin-top:16px;">Upload Logo</button>
+  </form>
+  {% else %}
+  <p style="margin-top:16px;">Custom branding is not included in your {{ plan.name if plan else 'current' }} plan. Upgrade to Professional or Enterprise to upload your own logo.</p>
+  <a class="primary-btn" href="{{ url_for('frontend.organization_billing') }}">View plans</a>
+  {% endif %}
+</div>
+{% endblock %}

@@ -8315,6 +8315,53 @@ def _get_or_create_settings(user_id):
     return settings
 
 
+@frontend_bp.route("/organization/settings/branding", methods=["GET", "POST"])
+@login_required
+@require_permission("settings.view")
+def organization_branding():
+    """Organization logo upload. Allowed only when the organization's plan has custom branding."""
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    if not org_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.settings_profile"))
+
+    organization = Organization.query.get_or_404(org_id)
+    plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
+    allowed = bool(plan and plan.custom_branding)
+    back = redirect(url_for("frontend.organization_branding"))
+
+    if request.method == "POST":
+        if not allowed:
+            flash("Custom branding is not included in your plan. Upgrade to upload your logo.", "error")
+            return back
+        logo_file = request.files.get("logo_file")
+        if not logo_file or not logo_file.filename:
+            flash("Please choose a logo file.", "error")
+            return back
+        if os.path.splitext(logo_file.filename)[1].lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            flash("Logo must be a PNG, JPG or WEBP image.", "error")
+            return back
+        logo_file.seek(0, os.SEEK_END)
+        size = logo_file.tell()
+        logo_file.seek(0)
+        if size > 2 * 1024 * 1024:
+            flash("Logo is too large (maximum 2 MB).", "error")
+            return back
+
+        unique_name = f"{uuid.uuid4().hex}_{secure_filename(logo_file.filename)}"
+        upload_dir = os.path.join("app", "static", "uploads", "org_logos")
+        os.makedirs(upload_dir, exist_ok=True)
+        logo_file.save(os.path.join(upload_dir, unique_name))
+        organization.logo = f"/static/uploads/org_logos/{unique_name}"
+        db.session.commit()
+        _log_activity("organization.logo_updated", f"{organization.organization_name}: logo updated")
+        flash("Logo updated.", "success")
+        return back
+
+    return render_template("organization/settings/branding.html", organization=organization, plan=plan, allowed=allowed)
+
+
 @frontend_bp.route("/settings/profile", methods=["GET", "POST"])
 @login_required
 @require_permission("settings.view")

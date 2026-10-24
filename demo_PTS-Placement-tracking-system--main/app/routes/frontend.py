@@ -5027,6 +5027,10 @@ def organization_candidate_create():
 
         offer_file = request.files.get("offer_letter")
         if offer_file and offer_file.filename:
+            _blocked_msg = _storage_block_message(org_id)
+            if _blocked_msg:
+                flash(_blocked_msg, "error")
+                return render_template("organization/candidates/form.html", candidate=None, organizations=organizations, batches=batches, schemes=schemes)
             filename = secure_filename(offer_file.filename)
             unique_name = f"{uuid.uuid4().hex}_{filename}"
             upload_dir = os.path.join("app", "static", "uploads", "offer_letters")
@@ -5257,6 +5261,11 @@ def organization_candidate_certificate_upload(candidate_id):
     upload.stream.seek(0)
     if size > 5 * 1024 * 1024:
         flash("File is too large (maximum 5 MB).", "error")
+        return back
+
+    _blocked_msg = _storage_block_message(candidate.organization_id)
+    if _blocked_msg:
+        flash(_blocked_msg, "error")
         return back
 
     upload_dir = os.path.join("app", "private_uploads", "candidate_certificates", str(candidate.organization_id))
@@ -5501,6 +5510,11 @@ def organization_candidate_edit(candidate_id):
 
         offer_file = request.files.get("offer_letter")
         if offer_file and offer_file.filename:
+            _blocked_msg = _storage_block_message(candidate.organization_id)
+            if _blocked_msg:
+                db.session.rollback()
+                flash(_blocked_msg + " Your other changes were not saved.", "error")
+                return redirect(url_for("frontend.organization_candidate_edit", candidate_id=candidate.id))
             filename = secure_filename(offer_file.filename)
             unique_name = f"{uuid.uuid4().hex}_{filename}"
             upload_dir = os.path.join("app", "static", "uploads", "offer_letters")
@@ -7125,6 +7139,11 @@ def candidate_upload_proof():
         flash(translate("proof_upload_invalid_type"), "error")
         return redirect(url_for("frontend.candidate_dashboard"))
 
+    _blocked_msg = _storage_block_message(candidate.organization_id, for_candidate=True)
+    if _blocked_msg:
+        flash(_blocked_msg, "error")
+        return redirect(url_for("frontend.candidate_dashboard"))
+
     filename = secure_filename(proof_file.filename)
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     upload_dir = os.path.join("app", "static", "uploads", "placement_proofs")
@@ -7172,6 +7191,9 @@ def _save_candidate_document(candidate, doc_type, upload):
     upload.stream.seek(0)
     if size > MAX_DOCUMENT_BYTES:
         return False, "File is too large (maximum 5 MB)."
+    _blocked_msg = _storage_block_message(candidate.organization_id, for_candidate=True)
+    if _blocked_msg:
+        return False, _blocked_msg
 
     upload_dir = os.path.join("app", "private_uploads", "candidate_documents", str(candidate.organization_id))
     os.makedirs(upload_dir, exist_ok=True)
@@ -7278,6 +7300,9 @@ def _save_salary_slip(candidate, month, upload):
         return False, "The file is empty."
     if size > 5 * 1024 * 1024:
         return False, "File is too large (max 5 MB)."
+    _blocked_msg = _storage_block_message(candidate.organization_id, for_candidate=True)
+    if _blocked_msg:
+        return False, _blocked_msg
 
     folder = os.path.join("app", "private_uploads", "salary_slips", str(candidate.organization_id), str(candidate.id))
     os.makedirs(folder, exist_ok=True)
@@ -9396,7 +9421,7 @@ def _org_storage_used_mb(org):
         return total
 
     total = 0
-    for sub in ("kyc_documents", "candidate_certificates", "candidate_documents"):
+    for sub in ("kyc_documents", "candidate_certificates", "candidate_documents", "salary_slips"):
         total += _dir_size(os.path.join("app", "private_uploads", sub, str(org.id)))
 
     urls = [org.logo]
@@ -9409,6 +9434,27 @@ def _org_storage_used_mb(org):
         if url and url.startswith("/static/"):
             total += _size(os.path.join("app", url.lstrip("/")))
     return round(total / (1024 * 1024), 2)
+
+
+def _storage_block_message(org_id, for_candidate=False):
+    """Returns an error message when the organization's plan storage is full, else None.
+    No plan or no storage limit means no restriction."""
+    if not org_id:
+        return None
+    org = Organization.query.get(org_id)
+    plan = Plan.query.get(org.subscription_plan_id) if org and org.subscription_plan_id else None
+    limit = plan.storage_limit_mb if plan else None
+    if not limit:
+        return None
+    used = _org_storage_used_mb(org)
+    if used < limit:
+        return None
+    if for_candidate:
+        return "Uploads are unavailable right now. Please contact your training center."
+    return (
+        f"Storage limit reached ({used} MB of {limit} MB). New uploads are blocked and existing files stay available. "
+        "Upgrade your plan to upload more."
+    )
 
 
 def _org_invoice_kind_label(note):

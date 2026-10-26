@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Vacancy' if vacancy else 'Add Vacancy' }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ 'Edit Vacancy' if vacancy else 'Add Vacancy' }}</h2>
+  <p>{{ employer.company_name }} ({{ employer.employer_code }})</p>
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Job title *
+        <input type="text" name="job_title" maxlength="200" required value="{{ form.get('job_title', '') }}">
+      </label>
+      <label>Number of positions *
+        <input type="number" name="positions" min="1" required value="{{ form.get('positions', 1) }}">
+      </label>
+      <label>Salary minimum
+        <input type="number" name="salary_min" min="0" step="0.01" value="{{ form.get('salary_min', '') }}">
+      </label>
+      <label>Salary maximum
+        <input type="number" name="salary_max" min="0" step="0.01" value="{{ form.get('salary_max', '') }}">
+      </label>
+      <label>Location
+        <input type="text" name="location" maxlength="255" value="{{ form.get('location', '') }}">
+      </label>
+      <label>Status
+        <select name="vacancy_status">
+          {% for s in ['OPEN', 'FILLED', 'CLOSED'] %}
+          <option value="{{ s }}" {{ 'selected' if (form.get('vacancy_status') or 'OPEN') == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.organization_vacancies', employer_id=employer.id) }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

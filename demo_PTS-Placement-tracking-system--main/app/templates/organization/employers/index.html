@@ -30,6 +30,7 @@
         <td>{{ e.contact_person or '-' }}</td>
         <td>{{ e.mobile or '-' }}</td>
         <td style="text-align:right; white-space:nowrap;">
+          <a class="ghost-btn" href="{{ url_for('frontend.organization_vacancies', employer_id=e.id) }}">Vacancies</a>
           <a class="ghost-btn" href="{{ url_for('frontend.organization_employer_edit', employer_id=e.id) }}">Edit</a>
           <form method="post" action="{{ url_for('frontend.organization_employer_delete', employer_id=e.id) }}" style="display:inline;" onsubmit="return confirm('Deactivate this employer? Existing records linked to it are kept.');">
             <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>

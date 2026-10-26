@@ -4888,6 +4888,146 @@ def organization_employer_delete(employer_id):
     return redirect(url_for("frontend.organization_employers"))
 
 
+def _vacancy_form_values():
+    """Reads and validates the vacancy form. Returns (values, error)."""
+    from app.models.employer_vacancy import EmployerVacancy
+
+    raw = {k: (request.form.get(k) or "").strip() for k in
+           ("job_title", "positions", "salary_min", "salary_max", "location", "vacancy_status")}
+    values = {
+        "job_title": raw["job_title"],
+        "positions": raw["positions"] or "1",
+        "salary_min": raw["salary_min"],
+        "salary_max": raw["salary_max"],
+        "location": raw["location"],
+        "vacancy_status": (raw["vacancy_status"] or "OPEN").upper(),
+    }
+    if not values["job_title"]:
+        return values, "Job title is required."
+    if len(values["job_title"]) > 200 or len(values["location"]) > 255:
+        return values, "Job title or location is too long."
+    try:
+        positions = int(values["positions"])
+    except ValueError:
+        return values, "Number of positions must be a whole number."
+    if positions < 1 or positions > 100000:
+        return values, "Number of positions must be at least 1."
+    salaries = {}
+    for key in ("salary_min", "salary_max"):
+        if values[key] == "":
+            salaries[key] = None
+            continue
+        try:
+            number = round(float(values[key].replace(",", "")), 2)
+        except ValueError:
+            return values, "Salary must be a number."
+        if number < 0:
+            return values, "Salary cannot be negative."
+        salaries[key] = number
+    if salaries["salary_min"] is not None and salaries["salary_max"] is not None and salaries["salary_max"] < salaries["salary_min"]:
+        return values, "Maximum salary cannot be less than minimum salary."
+    if values["vacancy_status"] not in EmployerVacancy.STATUSES:
+        return values, "Please choose a valid status."
+    return {
+        "job_title": values["job_title"],
+        "positions": positions,
+        "salary_min": salaries["salary_min"],
+        "salary_max": salaries["salary_max"],
+        "location": values["location"] or None,
+        "vacancy_status": values["vacancy_status"],
+    }, None
+
+
+def _vacancy_employer_or_404(employer_id):
+    from app.models.employer import Employer
+
+    org_id = (session.get("user") or {}).get("organization_id")
+    return Employer.query.filter_by(id=employer_id, organization_id=org_id, status=1).first_or_404()
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/vacancies")
+@login_required
+@require_permission("vacancy.view")
+def organization_vacancies(employer_id):
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _vacancy_employer_or_404(employer_id)
+    view = request.args.get("view", "open")
+    page = request.args.get("page", 1, type=int)
+    query = EmployerVacancy.query.filter_by(employer_id=employer.id, organization_id=employer.organization_id, status=1)
+    if view == "history":
+        query = query.filter(EmployerVacancy.vacancy_status != "OPEN")
+    else:
+        view = "open"
+        query = query.filter(EmployerVacancy.vacancy_status == "OPEN")
+    pagination = query.order_by(EmployerVacancy.created_at.desc()).paginate(page=page, per_page=20, error_out=False)
+    return render_template(
+        "organization/employers/vacancies.html",
+        employer=employer, vacancies=pagination.items, pagination=pagination, view=view,
+    )
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/vacancies/create", methods=["GET", "POST"])
+@login_required
+@require_permission("vacancy.create")
+def organization_vacancy_create(employer_id):
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _vacancy_employer_or_404(employer_id)
+    user = session.get("user") or {}
+    if request.method == "POST":
+        values, error = _vacancy_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("organization/employers/vacancy_form.html", employer=employer, vacancy=None, form=request.form)
+        vacancy = EmployerVacancy(
+            organization_id=employer.organization_id, employer_id=employer.id,
+            status=1, created_by=user.get("id"), **values,
+        )
+        db.session.add(vacancy)
+        db.session.commit()
+        _log_activity("vacancy.created", f"{employer.employer_code}: {vacancy.job_title} ({vacancy.positions})")
+        flash("Vacancy added.", "success")
+        return redirect(url_for("frontend.organization_vacancies", employer_id=employer.id))
+    return render_template("organization/employers/vacancy_form.html", employer=employer, vacancy=None, form={})
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/vacancies/<vacancy_id>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("vacancy.update")
+def organization_vacancy_edit(employer_id, vacancy_id):
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _vacancy_employer_or_404(employer_id)
+    user = session.get("user") or {}
+    vacancy = EmployerVacancy.query.filter_by(
+        id=vacancy_id, employer_id=employer.id, organization_id=employer.organization_id, status=1
+    ).first_or_404()
+    if request.method == "POST":
+        values, error = _vacancy_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("organization/employers/vacancy_form.html", employer=employer, vacancy=vacancy, form=request.form)
+        old_status = vacancy.vacancy_status
+        for key, value in values.items():
+            setattr(vacancy, key, value)
+        vacancy.modified_by = user.get("id")
+        db.session.commit()
+        _log_activity(
+            "vacancy.updated",
+            f"{employer.employer_code}: {vacancy.job_title}, status {old_status} -> {vacancy.vacancy_status}",
+        )
+        flash("Vacancy updated.", "success")
+        return redirect(url_for("frontend.organization_vacancies", employer_id=employer.id))
+    form = {
+        "job_title": vacancy.job_title, "positions": vacancy.positions,
+        "salary_min": vacancy.salary_min if vacancy.salary_min is not None else "",
+        "salary_max": vacancy.salary_max if vacancy.salary_max is not None else "",
+        "location": vacancy.location or "", "vacancy_status": vacancy.vacancy_status,
+    }
+    return render_template("organization/employers/vacancy_form.html", employer=employer, vacancy=vacancy, form=form)
+
+
 @frontend_bp.route("/organization/schemes")
 @login_required
 @require_permission("scheme.view")

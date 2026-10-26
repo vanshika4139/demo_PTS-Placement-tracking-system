@@ -2261,8 +2261,23 @@ def get_organization_dashboard_data(organization_id, created_by_filter=None):
     total_candidates = len(all_candidates)
     placed = sum(1 for c in all_candidates if c.employer_name)
     pending = total_candidates - placed  # FR-19: Pending Placement = not yet placed
-    not_verified = sum(1 for c in all_candidates if (c.verification_status or "pending") == "pending")
-    verified = sum(1 for c in all_candidates if c.verification_status == "verified")
+    _ids = [c.id for c in all_candidates]
+    verified = not_verified = 0
+    if _ids:
+        from app.models.verification import Verification
+        from app.models.candidate_placement import CandidatePlacement
+        for _vs, _n in (
+            db.session.query(Verification.verification_status, db.func.count(Verification.id))
+            .join(CandidatePlacement, CandidatePlacement.id == Verification.placement_id)
+            .filter(CandidatePlacement.working_status == "WORKING", CandidatePlacement.status == 1,
+                    Verification.candidate_id.in_(_ids))
+            .group_by(Verification.verification_status)
+            .all()
+        ):
+            if _vs == "verified":
+                verified += int(_n)
+            else:
+                not_verified += int(_n)
     placement_proof_uploaded = sum(1 for c in all_candidates if c.placement_proof_uploaded)
 
     stats = [
@@ -5070,7 +5085,11 @@ def _sync_candidate_placement(candidate):
         current.modified_by = user_id
         verification = Verification.query.filter_by(placement_id=current.id).first()
         if verification:
-            verification.verification_status = candidate.verification_status or "pending"
+            new_vs = candidate.verification_status or "pending"
+            if new_vs == "verified" and verification.verification_status != "verified":
+                verification.verified_by = user_id
+                verification.verified_at = now
+            verification.verification_status = new_vs
         return current
 
     if current:
@@ -5429,6 +5448,8 @@ def organization_candidate_create():
             created_by=user.get("id"),
         )
         db.session.add(candidate)
+        db.session.flush()
+        _sync_candidate_placement(candidate)
         db.session.commit()
 
         # Password-setup token - generated right after creation so new
@@ -5983,6 +6004,8 @@ def organization_candidates_bulk_action():
     if action == "verify":
         for c in candidates:
             c.verification_status = "verified"
+            if c.employer_name:
+                _sync_candidate_placement(c)
             count += 1
         _log_activity("Bulk verified candidates", f"{count} candidate(s)")
         flash(f"{count} candidate(s) marked as verified", "success")
@@ -6491,6 +6514,9 @@ def candidate_import():
                 password_hash=generate_password_hash(mobile_value) if mobile_value else None,
             )
             db.session.add(candidate)
+            if candidate.employer_name:
+                db.session.flush()
+                _sync_candidate_placement(candidate)
             valid += 1
 
         db.session.commit()

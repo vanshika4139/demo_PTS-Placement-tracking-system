@@ -5071,6 +5071,15 @@ def _sync_candidate_placement(candidate):
             current.modified_by = user_id
         return None
 
+    _left = candidate.exit_date is not None or (candidate.working_status or "").strip().lower() == "left"
+    if _left:
+        if current:
+            current.working_status = "LEFT"
+            current.exit_date = candidate.exit_date or now
+            current.exit_reason = candidate.exit_reason or "Left employer"
+            current.modified_by = user_id
+        return None
+
     employer = Employer.query.filter(
         Employer.organization_id == org_id, Employer.status == 1,
         db.func.lower(Employer.company_name) == name.lower(),

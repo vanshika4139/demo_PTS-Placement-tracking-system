@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Employer' if employer else 'Add Employer' }}{% endblock %}
+
+{% block content %}
+{% set v = form if form else {} %}
+<div class="page-header">
+  <h2>{{ 'Edit Employer' if employer else 'Add Employer' }}</h2>
+  {% if employer %}<p>Code: {{ employer.employer_code }}</p>{% endif %}
+</div>
+
+<div class="panel-card">
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Company Name *
+        <input type="text" name="company_name" maxlength="255" required value="{{ v.get('company_name') if v else (employer.company_name if employer else '') }}">
+      </label>
+      <label>Industry
+        <input type="text" name="industry" maxlength="120" value="{{ v.get('industry') or (employer.industry if employer and not v else '') or '' }}">
+      </label>
+      <label>Location
+        <input type="text" name="location" maxlength="255" value="{{ v.get('location') or (employer.location if employer and not v else '') or '' }}">
+      </label>
+      <label>Contact Person
+        <input type="text" name="contact_person" maxlength="150" value="{{ v.get('contact_person') or (employer.contact_person if employer and not v else '') or '' }}">
+      </label>
+      <label>Mobile (10 digits)
+        <input type="text" name="mobile" maxlength="10" pattern="[0-9]{10}" value="{{ v.get('mobile') or (employer.mobile if employer and not v else '') or '' }}">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+      <a href="{{ url_for('frontend.organization_employers') }}" class="ghost-btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

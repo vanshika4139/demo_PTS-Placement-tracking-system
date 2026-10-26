@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Employers{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Employers</h2>
+    <p>Companies where your candidates are placed.</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.organization_employer_create') }}">Add Employer</a>
+</div>
+
+<div class="panel-card">
+  <form method="get" style="display:flex; gap:8px; margin-bottom:16px;">
+    <input type="text" name="q" value="{{ search }}" placeholder="Search by company, code or contact" style="flex:1;">
+    <button type="submit" class="ghost-btn">Search</button>
+  </form>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>Code</th><th>Company</th><th>Industry</th><th>Location</th><th>Contact</th><th>Mobile</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for e in employers %}
+      <tr>
+        <td>{{ e.employer_code }}</td>
+        <td><strong>{{ e.company_name }}</strong></td>
+        <td>{{ e.industry or '-' }}</td>
+        <td>{{ e.location or '-' }}</td>
+        <td>{{ e.contact_person or '-' }}</td>
+        <td>{{ e.mobile or '-' }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          <a class="ghost-btn" href="{{ url_for('frontend.organization_employer_edit', employer_id=e.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('frontend.organization_employer_delete', employer_id=e.id) }}" style="display:inline;" onsubmit="return confirm('Deactivate this employer? Existing records linked to it are kept.');">
+            <button type="submit" class="ghost-btn" style="color:#dc2626;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No employers yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pagination.pages > 1 %}
+  <div style="display:flex; gap:12px; align-items:center; margin-top:16px;">
+    {% if pagination.has_prev %}<a class="ghost-btn" href="{{ url_for('frontend.organization_employers', q=search, page=pagination.prev_num) }}">Previous</a>{% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a class="ghost-btn" href="{{ url_for('frontend.organization_employers', q=search, page=pagination.next_num) }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

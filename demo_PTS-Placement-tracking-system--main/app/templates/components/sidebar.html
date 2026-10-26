@@ -80,6 +80,9 @@
     {% if not session.user.is_super_admin and has_permission(session.user, 'org_user.manage') %}
     <li><a href="/organization/users">Team</a></li>
     {% endif %}
+    {% if not session.user.is_super_admin and has_permission(session.user, 'employer.view') %}
+    <li><a href="/organization/employers">Employers</a></li>
+    {% endif %}
     {% if not session.user.is_super_admin and has_permission(session.user, 'org_role.manage') %}
     <li><a href="/organization/roles">Roles</a></li>
     {% endif %}

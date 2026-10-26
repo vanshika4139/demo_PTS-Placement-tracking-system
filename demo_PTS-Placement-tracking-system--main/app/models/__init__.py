@@ -41,6 +41,7 @@ from app.models.salary_slip import SalarySlip
 from app.models.call_disposition import CallDisposition  # noqa: F401
 from app.models.call_task import CallTask  # noqa: F401
 from app.models.call_log import CallLog  # noqa: F401
+from app.models.employer import Employer  # noqa: F401
 
 __all__ = [
     "Candidate",

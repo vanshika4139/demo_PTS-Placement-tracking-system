@@ -4765,6 +4765,129 @@ def organization_batch_delete(batch_id):
     return redirect(url_for("frontend.organization_batches"))
 
 
+def _next_employer_code(org_id):
+    from app.models.employer import Employer
+
+    highest = 0
+    for (code,) in db.session.query(Employer.employer_code).filter(Employer.organization_id == org_id).all():
+        digits = "".join(ch for ch in (code or "") if ch.isdigit())
+        if digits:
+            highest = max(highest, int(digits))
+    return f"EMP{highest + 1:05d}"
+
+
+def _employer_form_values():
+    """Reads and validates the employer form. Returns (values, error)."""
+    values = {
+        "company_name": (request.form.get("company_name") or "").strip(),
+        "industry": (request.form.get("industry") or "").strip() or None,
+        "location": (request.form.get("location") or "").strip() or None,
+        "contact_person": (request.form.get("contact_person") or "").strip() or None,
+        "mobile": (request.form.get("mobile") or "").strip() or None,
+    }
+    if not values["company_name"]:
+        return values, "Company name is required."
+    if len(values["company_name"]) > 255 or (values["location"] and len(values["location"]) > 255):
+        return values, "Company name or location is too long."
+    if values["mobile"] and not (values["mobile"].isdigit() and len(values["mobile"]) == 10):
+        return values, "Mobile number must be 10 digits."
+    return values, None
+
+
+@frontend_bp.route("/organization/employers")
+@login_required
+@require_permission("employer.view")
+def organization_employers():
+    from app.models.employer import Employer
+
+    org_id = (session.get("user") or {}).get("organization_id")
+    if not org_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.organization_dashboard"))
+    search = (request.args.get("q") or "").strip()
+    page = request.args.get("page", 1, type=int)
+    query = Employer.query.filter_by(organization_id=org_id, status=1)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            Employer.company_name.ilike(like) | Employer.employer_code.ilike(like) | Employer.contact_person.ilike(like)
+        )
+    pagination = query.order_by(Employer.created_at.desc()).paginate(page=page, per_page=20, error_out=False)
+    return render_template("organization/employers/index.html", employers=pagination.items, pagination=pagination, search=search)
+
+
+@frontend_bp.route("/organization/employers/create", methods=["GET", "POST"])
+@login_required
+@require_permission("employer.create")
+def organization_employer_create():
+    from app.models.employer import Employer
+
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    if not org_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.organization_dashboard"))
+    if request.method == "POST":
+        values, error = _employer_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("organization/employers/form.html", employer=None, form=values)
+        employer = Employer(
+            organization_id=org_id,
+            employer_code=_next_employer_code(org_id),
+            status=1,
+            created_by=user.get("id"),
+            **values,
+        )
+        db.session.add(employer)
+        db.session.commit()
+        _log_activity("employer.created", f"{employer.employer_code}: {employer.company_name}")
+        flash(f"Employer {employer.employer_code} created.", "success")
+        return redirect(url_for("frontend.organization_employers"))
+    return render_template("organization/employers/form.html", employer=None, form={})
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("employer.update")
+def organization_employer_edit(employer_id):
+    from app.models.employer import Employer
+
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    employer = Employer.query.filter_by(id=employer_id, organization_id=org_id, status=1).first_or_404()
+    if request.method == "POST":
+        values, error = _employer_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("organization/employers/form.html", employer=employer, form=values)
+        for key, value in values.items():
+            setattr(employer, key, value)
+        employer.modified_by = user.get("id")
+        db.session.commit()
+        _log_activity("employer.updated", f"{employer.employer_code}: {employer.company_name}")
+        flash("Employer updated.", "success")
+        return redirect(url_for("frontend.organization_employers"))
+    return render_template("organization/employers/form.html", employer=employer, form={})
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/delete", methods=["POST"])
+@login_required
+@require_permission("employer.delete")
+def organization_employer_delete(employer_id):
+    from app.models.employer import Employer
+
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    employer = Employer.query.filter_by(id=employer_id, organization_id=org_id, status=1).first_or_404()
+    employer.status = 0  # soft delete: placements and history stay intact
+    employer.modified_by = user.get("id")
+    db.session.commit()
+    _log_activity("employer.deleted", f"{employer.employer_code}: {employer.company_name}")
+    flash("Employer deactivated. Existing records linked to it are kept.", "success")
+    return redirect(url_for("frontend.organization_employers"))
+
+
 @frontend_bp.route("/organization/schemes")
 @login_required
 @require_permission("scheme.view")

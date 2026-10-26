@@ -4899,7 +4899,13 @@ def organization_employer_delete(employer_id):
     employer.modified_by = user.get("id")
     db.session.commit()
     _log_activity("employer.deleted", f"{employer.employer_code}: {employer.company_name}")
-    flash("Employer deactivated. Existing records linked to it are kept.", "success")
+    from app.models.candidate_placement import CandidatePlacement
+    working = CandidatePlacement.query.filter_by(employer_id=employer.id, working_status="WORKING", status=1).count()
+    flash(
+        f"Employer deactivated. {working} candidate(s) currently working there keep their placement records."
+        if working else "Employer deactivated. Existing records linked to it are kept.",
+        "success",
+    )
     return redirect(url_for("frontend.organization_employers"))
 
 
@@ -5110,6 +5116,37 @@ def _sync_candidate_placement(candidate):
         verification_type="EMPLOYER", verification_status="pending",
     ))
     return placement
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/placements")
+@login_required
+@require_permission("employer.view")
+def organization_employer_placements(employer_id):
+    from app.models.employer import Employer
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+
+    org_id = (session.get("user") or {}).get("organization_id")
+    employer = Employer.query.filter_by(id=employer_id, organization_id=org_id).first_or_404()
+    page = request.args.get("page", 1, type=int)
+    pagination = (
+        CandidatePlacement.query.filter_by(employer_id=employer.id, organization_id=org_id, status=1)
+        .order_by(CandidatePlacement.joining_date.desc())
+        .paginate(page=page, per_page=20, error_out=False)
+    )
+    items = pagination.items
+    cand_ids = {p.candidate_id for p in items}
+    place_ids = [p.id for p in items]
+    candidates = {c.id: c for c in Candidate.query.filter(Candidate.id.in_(cand_ids)).all()} if cand_ids else {}
+    verifications = (
+        {v.placement_id: v.verification_status for v in Verification.query.filter(Verification.placement_id.in_(place_ids)).all()}
+        if place_ids else {}
+    )
+    rows = [
+        {"placement": p, "candidate": candidates.get(p.candidate_id), "verification": verifications.get(p.id, "pending")}
+        for p in items
+    ]
+    return render_template("organization/employers/placements.html", employer=employer, rows=rows, pagination=pagination)
 
 
 @frontend_bp.route("/organization/schemes")

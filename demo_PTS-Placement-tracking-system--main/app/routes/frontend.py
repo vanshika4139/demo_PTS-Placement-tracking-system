@@ -5028,6 +5028,71 @@ def organization_vacancy_edit(employer_id, vacancy_id):
     return render_template("organization/employers/vacancy_form.html", employer=employer, vacancy=vacancy, form=form)
 
 
+def _sync_candidate_placement(candidate):
+    """Keeps candidate_placements and verifications in step with the candidate's placement fields.
+    Placement history is never overwritten: a changed employer marks the old row LEFT and adds a new row.
+    Does not commit, so the caller's commit makes it one transaction."""
+    from app.models.employer import Employer
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+
+    user_id = (session.get("user") or {}).get("id")
+    org_id = candidate.organization_id
+    name = (candidate.employer_name or "").strip()
+    now = datetime.utcnow()
+    current = CandidatePlacement.query.filter_by(candidate_id=candidate.id, working_status="WORKING", status=1).first()
+
+    if not name:
+        if current:
+            current.working_status = "LEFT"
+            current.exit_date = candidate.exit_date or now
+            current.exit_reason = candidate.exit_reason or "Placement removed"
+            current.modified_by = user_id
+        return None
+
+    employer = Employer.query.filter(
+        Employer.organization_id == org_id, Employer.status == 1,
+        db.func.lower(Employer.company_name) == name.lower(),
+    ).first()
+    if not employer:
+        employer = Employer(
+            organization_id=org_id, employer_code=_next_employer_code(org_id),
+            company_name=name[:255], status=1, created_by=user_id,
+        )
+        db.session.add(employer)
+        db.session.flush()
+
+    if current and current.employer_id == employer.id:
+        current.job_role = candidate.job_role
+        current.salary = candidate.salary
+        current.location = candidate.location
+        current.joining_date = candidate.joining_date
+        current.modified_by = user_id
+        verification = Verification.query.filter_by(placement_id=current.id).first()
+        if verification:
+            verification.verification_status = candidate.verification_status or "pending"
+        return current
+
+    if current:
+        current.working_status = "LEFT"
+        current.exit_date = now
+        current.exit_reason = "Moved to another employer"
+        current.modified_by = user_id
+
+    placement = CandidatePlacement(
+        organization_id=org_id, candidate_id=candidate.id, employer_id=employer.id,
+        job_role=candidate.job_role, salary=candidate.salary, location=candidate.location,
+        joining_date=candidate.joining_date, working_status="WORKING", status=1, created_by=user_id,
+    )
+    db.session.add(placement)
+    db.session.flush()
+    db.session.add(Verification(
+        organization_id=org_id, candidate_id=candidate.id, placement_id=placement.id, employer_id=employer.id,
+        verification_type="EMPLOYER", verification_status="pending",
+    ))
+    return placement
+
+
 @frontend_bp.route("/organization/schemes")
 @login_required
 @require_permission("scheme.view")
@@ -5788,6 +5853,7 @@ def organization_candidate_edit(candidate_id):
         if not candidate.password_hash and candidate.mobile:
             candidate.password_hash = generate_password_hash(candidate.mobile.strip())
 
+        _sync_candidate_placement(candidate)
         db.session.commit()
 
         if candidate.training_status == "training_completed" and old_training_status != "training_completed":
@@ -7677,6 +7743,7 @@ def candidate_report_placement():
     candidate.location = location or None
     candidate.salary = salary or None
     candidate.working_status = "Working"
+    _sync_candidate_placement(candidate)
     db.session.commit()
 
     CandidateLifecycleService().ensure_follow_ups(candidate)

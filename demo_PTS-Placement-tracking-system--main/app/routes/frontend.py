@@ -4347,7 +4347,7 @@ def super_admin_users():
 @super_admin_required
 def super_admin_create_user():
     organizations = Organization.query.filter_by(status=1).all()
-    roles = Role.query.filter_by(is_deleted=False).order_by(Role.name).all()
+    roles = Role.query.filter(Role.is_deleted == False, Role.code != "employer").order_by(Role.name).all()
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -5544,7 +5544,22 @@ def organization_candidates():
         query = query.filter_by(training_status=training_status)
 
     if verification_status:
-        query = query.filter_by(verification_status=verification_status)
+        from app.models.verification import Verification
+        from app.models.candidate_placement import CandidatePlacement
+        _vs_ids = [
+            cid for (cid,) in db.session.query(Verification.candidate_id)
+            .join(CandidatePlacement, CandidatePlacement.id == Verification.placement_id)
+            .filter(
+                CandidatePlacement.working_status == "WORKING", CandidatePlacement.status == 1,
+                CandidatePlacement.organization_id == user.get("organization_id"),
+                (Verification.verification_status == "verified") if verification_status == "verified"
+                else (Verification.verification_status != "verified"),
+            ).all()
+        ]
+        if verification_status in ("verified", "pending"):
+            query = query.filter(Candidate.id.in_(_vs_ids)) if _vs_ids else query.filter(db.false())
+        else:
+            query = query.filter_by(verification_status=verification_status)
 
     if placed_filter == "yes":
         query = query.filter(Candidate.employer_name.isnot(None), Candidate.employer_name != "")
@@ -9664,7 +9679,7 @@ def organization_user_create():
     from app.models import UserRole
 
     org_id = session["user"]["organization_id"]
-    roles = _org_assignable_roles()
+    roles = [r for r in _org_assignable_roles() if r.code != "employer"]
     assignable_ids = {r.id for r in roles}
 
     if request.method == "POST":
@@ -9691,6 +9706,10 @@ def organization_user_create():
 
         if not rbac_role_id or rbac_role_id not in assignable_ids:
             flash("Please select a valid role for this user.", "error")
+            return _org_user_form_response(None, roles, values)
+        _picked = next((r for r in roles if r.id == rbac_role_id), None)
+        if _picked is not None and _picked.code == "employer":
+            flash("Employer logins are created from the Employers page.", "error")
             return _org_user_form_response(None, roles, values)
 
         # Checks ALL users (including soft-deleted): the database UNIQUE

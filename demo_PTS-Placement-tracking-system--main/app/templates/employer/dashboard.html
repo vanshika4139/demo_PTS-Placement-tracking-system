@@ -28,7 +28,7 @@
         <td style="text-align:right; white-space:nowrap;">
           <form method="post" action="{{ url_for('frontend.employer_verification_decide', verification_id=r.verification.id) }}" style="display:inline;">
             <button type="submit" name="decision" value="verify" class="primary-btn">Verify</button>
-            <button type="submit" name="decision" value="reject" class="ghost-btn" style="color:#dc2626;" onclick="return confirm('Reject this placement?');">Reject</button>
+
           </form>
         </td>
       </tr>

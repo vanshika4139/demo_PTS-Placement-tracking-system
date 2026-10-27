@@ -5245,8 +5245,9 @@ def employer_verification_decide(verification_id):
     employer = _portal_employer()
     back = redirect(url_for("frontend.employer_dashboard"))
     decision = request.form.get("decision")
-    if decision not in ("verify", "reject"):
-        flash("Please choose Verify or Reject.", "error")
+    # Reject is not defined in the SRS (FR-29) and needs CEO confirmation, so only Verify is accepted.
+    if decision != "verify":
+        flash("Only Verify is available for now.", "error")
         return back
     verification = Verification.query.filter_by(
         id=verification_id, employer_id=employer.id, organization_id=employer.organization_id

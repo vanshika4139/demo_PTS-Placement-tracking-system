@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Employer Login{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Employer login: {{ employer.company_name }}</h2>
+    <p>{{ employer.employer_code }}. The employer signs in at the normal login page.</p>
+  </div>
+  <a class="ghost-btn" href="{{ url_for('frontend.organization_employers') }}">Back to Employers</a>
+</div>
+
+<div class="panel-card" style="margin-bottom:16px;">
+  <h3 style="margin-top:0;">Existing logins</h3>
+  {% if logins %}
+  <ul>{% for u in logins %}<li>{{ u.email }} ({{ 'active' if u.is_active else 'inactive' }})</li>{% endfor %}</ul>
+  {% else %}
+  <p>No login yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel-card">
+  <h3 style="margin-top:0;">Create a login</h3>
+  <form method="post" class="full-form">
+    <div class="form-grid">
+      <label>Full name
+        <input type="text" name="full_name" maxlength="255" value="{{ form.get('full_name', '') }}">
+      </label>
+      <label>Email *
+        <input type="email" name="email" required value="{{ form.get('email', '') }}">
+      </label>
+      <label>Password * (at least 6 characters)
+        <input type="password" name="password" minlength="6" required>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Create Login</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

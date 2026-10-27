@@ -614,6 +614,8 @@ def login():
             flash(f"Welcome back, {user.full_name}", "success")
             if user.is_super_admin:
                 return redirect(url_for("frontend.super_admin_dashboard"))
+            if getattr(user, "employer_id", None):
+                return redirect(url_for("frontend.employer_dashboard"))
             return redirect(url_for("frontend.organization_dashboard"))
     return render_template("auth/login.html", error=error)
 
@@ -2343,10 +2345,7 @@ def get_organization_dashboard_data(organization_id, created_by_filter=None):
     sector_data = [s[1] for s in top_sectors]
 
     verification_funnel_labels = ["Pending", "Verified"]
-    verification_funnel_data = [
-        sum(1 for c in all_candidates if (c.verification_status or "pending") == "pending"),
-        sum(1 for c in all_candidates if c.verification_status == "verified"),
-    ]
+    verification_funnel_data = [not_verified, verified]
 
     return {
         "stats": stats,
@@ -4650,6 +4649,8 @@ def super_admin_impersonate_user(user_id):
     session.permanent = True
 
     flash(f"You are now viewing as {target.full_name}.", "success")
+    if getattr(target, "employer_id", None):
+        return redirect(url_for("frontend.employer_dashboard"))
     return redirect(url_for("frontend.organization_dashboard"))
 
 
@@ -5156,6 +5157,267 @@ def organization_employer_placements(employer_id):
         for p in items
     ]
     return render_template("organization/employers/placements.html", employer=employer, rows=rows, pagination=pagination)
+
+
+def _portal_employer():
+    """The Employer record of the logged-in employer user. Never taken from the request."""
+    from flask import abort
+    from app.models.employer import Employer
+
+    sess = session.get("user") or {}
+    db_user = User.query.get(sess.get("id"))
+    if not db_user or db_user.is_deleted or not db_user.is_active or not getattr(db_user, "employer_id", None):
+        abort(403)
+    return Employer.query.filter_by(
+        id=db_user.employer_id, organization_id=db_user.organization_id, status=1
+    ).first_or_404()
+
+
+@frontend_bp.route("/employer/dashboard")
+@login_required
+@require_permission("employer_portal.view")
+def employer_dashboard():
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _portal_employer()
+    org_id = employer.organization_id
+    base = CandidatePlacement.query.filter_by(employer_id=employer.id, organization_id=org_id, status=1)
+    working = base.filter_by(working_status="WORKING").count()
+    left = base.filter_by(working_status="LEFT").count()
+    open_vacancies = EmployerVacancy.query.filter_by(
+        employer_id=employer.id, organization_id=org_id, status=1, vacancy_status="OPEN"
+    ).count()
+    pending_rows = (
+        db.session.query(Verification, CandidatePlacement)
+        .join(CandidatePlacement, CandidatePlacement.id == Verification.placement_id)
+        .filter(
+            Verification.employer_id == employer.id, Verification.organization_id == org_id,
+            Verification.verification_status == "pending",
+            CandidatePlacement.working_status == "WORKING", CandidatePlacement.status == 1,
+        )
+        .order_by(CandidatePlacement.joining_date.desc())
+        .limit(50).all()
+    )
+    cand_ids = {p.candidate_id for _v, p in pending_rows}
+    candidates = {c.id: c for c in Candidate.query.filter(Candidate.id.in_(cand_ids)).all()} if cand_ids else {}
+    pending = [{"verification": v, "placement": p, "candidate": candidates.get(p.candidate_id)} for v, p in pending_rows]
+    return render_template(
+        "employer/dashboard.html", employer=employer, working=working, left=left,
+        open_vacancies=open_vacancies, pending=pending,
+    )
+
+
+@frontend_bp.route("/employer/placements")
+@login_required
+@require_permission("employer_portal.view")
+def employer_portal_placements():
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+
+    employer = _portal_employer()
+    page = request.args.get("page", 1, type=int)
+    pagination = (
+        CandidatePlacement.query.filter_by(employer_id=employer.id, organization_id=employer.organization_id, status=1)
+        .order_by(CandidatePlacement.joining_date.desc())
+        .paginate(page=page, per_page=20, error_out=False)
+    )
+    items = pagination.items
+    cand_ids = {p.candidate_id for p in items}
+    place_ids = [p.id for p in items]
+    candidates = {c.id: c for c in Candidate.query.filter(Candidate.id.in_(cand_ids)).all()} if cand_ids else {}
+    verifications = (
+        {v.placement_id: v.verification_status for v in Verification.query.filter(Verification.placement_id.in_(place_ids)).all()}
+        if place_ids else {}
+    )
+    rows = [{"placement": p, "candidate": candidates.get(p.candidate_id), "verification": verifications.get(p.id, "pending")} for p in items]
+    return render_template("employer/placements.html", employer=employer, rows=rows, pagination=pagination)
+
+
+@frontend_bp.route("/employer/verifications/<verification_id>/decide", methods=["POST"])
+@login_required
+@require_permission("employer_portal.verify")
+def employer_verification_decide(verification_id):
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+
+    employer = _portal_employer()
+    back = redirect(url_for("frontend.employer_dashboard"))
+    decision = request.form.get("decision")
+    if decision not in ("verify", "reject"):
+        flash("Please choose Verify or Reject.", "error")
+        return back
+    verification = Verification.query.filter_by(
+        id=verification_id, employer_id=employer.id, organization_id=employer.organization_id
+    ).first_or_404()
+    placement = CandidatePlacement.query.filter_by(id=verification.placement_id, status=1).first_or_404()
+    if placement.working_status != "WORKING":
+        flash("This candidate has left, so the placement can no longer be verified.", "error")
+        return back
+    candidate = Candidate.query.filter_by(id=verification.candidate_id, organization_id=employer.organization_id).first_or_404()
+
+    new_status = "verified" if decision == "verify" else "rejected"
+    verification.verification_status = new_status
+    verification.verified_by = (session.get("user") or {}).get("id")
+    verification.verified_at = datetime.utcnow()
+    candidate.verification_status = new_status
+    db.session.add(Notification(
+        title=f"Employment {new_status}: {candidate.full_name}",
+        message=f"{employer.company_name} marked {candidate.full_name}'s placement as {new_status}.",
+        type="success" if new_status == "verified" else "warning",
+        organization_id=str(candidate.organization_id),
+        candidate_id=candidate.id,
+    ))
+    db.session.add(ActivityLog(
+        user_id=(session.get("user") or {}).get("id"),
+        action="employer.placement_" + new_status,
+        details=f"{employer.employer_code}: {candidate.registration_number or candidate.id}"[:500],
+    ))
+    db.session.commit()
+    # audit log written in the same transaction above
+    invalidate_report_cache("reports")
+    invalidate_report_cache("dashboard:org")
+    invalidate_report_cache("dashboard:super_admin")
+    # notification written in the same transaction above
+    flash(f"Placement marked {new_status}.", "success")
+    return back
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/login", methods=["GET", "POST"])
+@login_required
+@require_permission("employer.update")
+def organization_employer_login(employer_id):
+    """Org Admin creates a login for an employer. The user is tied to this employer and organization."""
+    from sqlalchemy.exc import IntegrityError
+    from app.models import Role, UserRole
+    from app.models.employer import Employer
+
+    org_id = (session.get("user") or {}).get("organization_id")
+    employer = Employer.query.filter_by(id=employer_id, organization_id=org_id, status=1).first_or_404()
+    logins = User.query.filter_by(employer_id=employer.id, is_deleted=False).all()
+
+    def _page(form=None):
+        return render_template("organization/employers/login_form.html", employer=employer, logins=logins, form=form or {})
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        password = request.form.get("password") or ""
+        full_name = (request.form.get("full_name") or "").strip() or employer.contact_person or employer.company_name
+        form = {"email": email, "full_name": full_name}
+        if not email or "@" not in email:
+            flash("Please enter a valid email.", "error")
+            return _page(form)
+        if len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+            return _page(form)
+        if User.query.filter_by(email=email).first():
+            flash("A user with this email already exists.", "error")
+            return _page(form)
+        role = Role.query.filter_by(code="employer", is_deleted=False).first()
+        if not role:
+            flash("The Employer role is missing. Run the database upgrade first.", "error")
+            return _page(form)
+        try:
+            new_user = User(
+                email=email, full_name=full_name[:255], password_hash=generate_password_hash(password),
+                is_super_admin=False, organization_id=org_id, employer_id=employer.id, is_active=True,
+            )
+            db.session.add(new_user)
+            db.session.flush()
+            db.session.add(UserRole(user_id=new_user.id, role_id=role.id))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("Could not create the login. That email is already in use.", "error")
+            return _page(form)
+        _log_activity("employer.login_created", f"{employer.employer_code}: {email}")
+        flash("Employer login created. Share the email and password with the employer.", "success")
+        return redirect(url_for("frontend.organization_employer_login", employer_id=employer.id))
+    return _page()
+
+
+@frontend_bp.route("/employer/vacancies")
+@login_required
+@require_permission("employer_portal.vacancy")
+def employer_portal_vacancies():
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _portal_employer()
+    view = request.args.get("view", "open")
+    page = request.args.get("page", 1, type=int)
+    query = EmployerVacancy.query.filter_by(employer_id=employer.id, organization_id=employer.organization_id, status=1)
+    if view == "history":
+        query = query.filter(EmployerVacancy.vacancy_status != "OPEN")
+    else:
+        view = "open"
+        query = query.filter(EmployerVacancy.vacancy_status == "OPEN")
+    pagination = query.order_by(EmployerVacancy.created_at.desc()).paginate(page=page, per_page=20, error_out=False)
+    return render_template("employer/vacancies.html", employer=employer, vacancies=pagination.items, pagination=pagination, view=view)
+
+
+@frontend_bp.route("/employer/vacancies/create", methods=["GET", "POST"])
+@login_required
+@require_permission("employer_portal.vacancy")
+def employer_portal_vacancy_create():
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _portal_employer()
+    user = session.get("user") or {}
+    if request.method == "POST":
+        values, error = _vacancy_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("employer/vacancy_form.html", employer=employer, vacancy=None, form=request.form)
+        vacancy = EmployerVacancy(
+            organization_id=employer.organization_id, employer_id=employer.id,
+            status=1, created_by=user.get("id"), **values,
+        )
+        db.session.add(vacancy)
+        db.session.add(ActivityLog(
+            user_id=user.get("id"), action="vacancy.created",
+            details=f"{employer.employer_code}: {values['job_title']} ({values['positions']})"[:500],
+        ))
+        db.session.commit()
+        flash("Vacancy added.", "success")
+        return redirect(url_for("frontend.employer_portal_vacancies"))
+    return render_template("employer/vacancy_form.html", employer=employer, vacancy=None, form={})
+
+
+@frontend_bp.route("/employer/vacancies/<vacancy_id>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("employer_portal.vacancy")
+def employer_portal_vacancy_edit(vacancy_id):
+    from app.models.employer_vacancy import EmployerVacancy
+
+    employer = _portal_employer()
+    user = session.get("user") or {}
+    vacancy = EmployerVacancy.query.filter_by(
+        id=vacancy_id, employer_id=employer.id, organization_id=employer.organization_id, status=1
+    ).first_or_404()
+    if request.method == "POST":
+        values, error = _vacancy_form_values()
+        if error:
+            flash(error, "error")
+            return render_template("employer/vacancy_form.html", employer=employer, vacancy=vacancy, form=request.form)
+        old_status = vacancy.vacancy_status
+        for key, value in values.items():
+            setattr(vacancy, key, value)
+        vacancy.modified_by = user.get("id")
+        db.session.add(ActivityLog(
+            user_id=user.get("id"), action="vacancy.updated",
+            details=f"{employer.employer_code}: {vacancy.job_title}, status {old_status} -> {vacancy.vacancy_status}"[:500],
+        ))
+        db.session.commit()
+        flash("Vacancy updated.", "success")
+        return redirect(url_for("frontend.employer_portal_vacancies"))
+    form = {
+        "job_title": vacancy.job_title, "positions": vacancy.positions,
+        "salary_min": vacancy.salary_min if vacancy.salary_min is not None else "",
+        "salary_max": vacancy.salary_max if vacancy.salary_max is not None else "",
+        "location": vacancy.location or "", "vacancy_status": vacancy.vacancy_status,
+    }
+    return render_template("employer/vacancy_form.html", employer=employer, vacancy=vacancy, form=form)
 
 
 @frontend_bp.route("/organization/schemes")

@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Employer Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>{{ employer.company_name }}</h2>
+  <p>{{ employer.employer_code }}. Your placed candidates and verifications.</p>
+</div>
+
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:16px;">
+  <div class="panel-card"><div>Working candidates</div><h2 style="margin:6px 0 0;">{{ working }}</h2></div>
+  <div class="panel-card"><div>Left</div><h2 style="margin:6px 0 0;">{{ left }}</h2></div>
+  <div class="panel-card"><div>Open vacancies</div><h2 style="margin:6px 0 0;">{{ open_vacancies }}</h2></div>
+  <div class="panel-card"><div>Pending verification</div><h2 style="margin:6px 0 0;">{{ pending|length }}</h2></div>
+</div>
+
+<div class="panel-card">
+  <h3 style="margin-top:0;">Candidates waiting for your verification</h3>
+  <table class="data-table">
+    <thead><tr><th>Candidate</th><th>Job role</th><th>Joining date</th><th>Salary</th><th></th></tr></thead>
+    <tbody>
+      {% for r in pending %}
+      <tr>
+        <td>{{ r.candidate.full_name if r.candidate else '-' }}</td>
+        <td>{{ r.placement.job_role or '-' }}</td>
+        <td>{{ r.placement.joining_date.strftime('%d-%m-%Y') if r.placement.joining_date else '-' }}</td>
+        <td>{{ r.placement.salary or '-' }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          <form method="post" action="{{ url_for('frontend.employer_verification_decide', verification_id=r.verification.id) }}" style="display:inline;">
+            <button type="submit" name="decision" value="verify" class="primary-btn">Verify</button>
+            <button type="submit" name="decision" value="reject" class="ghost-btn" style="color:#dc2626;" onclick="return confirm('Reject this placement?');">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">Nothing is waiting for verification.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

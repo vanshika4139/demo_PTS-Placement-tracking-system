@@ -19,6 +19,7 @@ class User(db.Model):
     last_name = Column(String(120), nullable=True)
     date_of_birth = Column(DateTime, nullable=True)
     organization_id = Column(BigInteger, ForeignKey("organizations.id"), nullable=True)
+    employer_id = Column(MySQLCHAR(32), nullable=True, index=True)  # set only for Employer portal users
     is_super_admin = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime, nullable=True)

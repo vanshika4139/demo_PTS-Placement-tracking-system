@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}My Placements{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>My Placements</h2>
+  <p>{{ employer.company_name }} ({{ employer.employer_code }})</p>
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead><tr><th>Candidate</th><th>Job role</th><th>Joining date</th><th>Status</th><th>Exit date</th><th>Verification</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.candidate.full_name if r.candidate else '-' }}</td>
+        <td>{{ r.placement.job_role or '-' }}</td>
+        <td>{{ r.placement.joining_date.strftime('%d-%m-%Y') if r.placement.joining_date else '-' }}</td>
+        <td>{{ r.placement.working_status }}</td>
+        <td>{{ r.placement.exit_date.strftime('%d-%m-%Y') if r.placement.exit_date else '-' }}</td>
+        <td>{{ r.verification|capitalize }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No placements yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if pagination.pages > 1 %}
+  <div style="display:flex; gap:12px; align-items:center; margin-top:16px;">
+    {% if pagination.has_prev %}<a class="ghost-btn" href="{{ url_for('frontend.employer_portal_placements', page=pagination.prev_num) }}">Previous</a>{% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a class="ghost-btn" href="{{ url_for('frontend.employer_portal_placements', page=pagination.next_num) }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -3,6 +3,10 @@
   <ul class="nav-list">
     {% if session.user.is_super_admin %}
     <li><a href="/super-admin/dashboard">Dashboard</a></li>
+    {% elif has_permission(session.user, 'employer_portal.view') %}
+    <li><a href="/employer/dashboard">Dashboard</a></li>
+    <li><a href="/employer/placements">My Placements</a></li>
+    <li><a href="/employer/vacancies">Vacancies</a></li>
     {% else %}
     <li><a href="/organization/dashboard">Dashboard</a></li>
     {% endif %}

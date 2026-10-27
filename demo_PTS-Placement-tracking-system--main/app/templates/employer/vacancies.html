@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}My Vacancies{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>My Vacancies</h2>
+    <p>{{ employer.company_name }} ({{ employer.employer_code }})</p>
+  </div>
+  <a class="primary-btn" href="{{ url_for('frontend.employer_portal_vacancy_create') }}">Add Vacancy</a>
+</div>
+
+<div class="panel-card">
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <a class="{{ 'primary-btn' if view == 'open' else 'ghost-btn' }}" href="{{ url_for('frontend.employer_portal_vacancies', view='open') }}">Open</a>
+    <a class="{{ 'primary-btn' if view == 'history' else 'ghost-btn' }}" href="{{ url_for('frontend.employer_portal_vacancies', view='history') }}">Hiring history</a>
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Job title</th><th>Positions</th><th>Salary range</th><th>Location</th><th>Status</th><th>Added</th><th></th></tr></thead>
+    <tbody>
+      {% for v in vacancies %}
+      <tr>
+        <td><strong>{{ v.job_title }}</strong></td>
+        <td>{{ v.positions }}</td>
+        <td>{% if v.salary_min is not none or v.salary_max is not none %}{{ '{:,.0f}'.format(v.salary_min) if v.salary_min is not none else '-' }} to {{ '{:,.0f}'.format(v.salary_max) if v.salary_max is not none else '-' }}{% else %}-{% endif %}</td>
+        <td>{{ v.location or '-' }}</td>
+        <td>{{ v.vacancy_status }}</td>
+        <td>{{ v.created_at.strftime('%d-%m-%Y') if v.created_at else '-' }}</td>
+        <td style="text-align:right;"><a class="ghost-btn" href="{{ url_for('frontend.employer_portal_vacancy_edit', vacancy_id=v.id) }}">Edit</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">{{ 'No open vacancies.' if view == 'open' else 'No filled or closed vacancies yet.' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if pagination.pages > 1 %}
+  <div style="display:flex; gap:12px; align-items:center; margin-top:16px;">
+    {% if pagination.has_prev %}<a class="ghost-btn" href="{{ url_for('frontend.employer_portal_vacancies', view=view, page=pagination.prev_num) }}">Previous</a>{% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a class="ghost-btn" href="{{ url_for('frontend.employer_portal_vacancies', view=view, page=pagination.next_num) }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

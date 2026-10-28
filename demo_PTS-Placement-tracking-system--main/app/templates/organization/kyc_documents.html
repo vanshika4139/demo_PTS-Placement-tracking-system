@@ -123,7 +123,7 @@
   {% if kyc_upper == 'APPROVED' %}
     <div class="kd-status-banner approved">&#10003; Your KYC has been approved. No further action needed.</div>
   {% elif kyc_upper == 'REJECTED' %}
-    <div class="kd-status-banner rejected">&#9888; One or more documents were rejected. Check the remarks below, fix the issue, and re-upload.</div>
+    <div class="kd-status-banner rejected">&#9888; Your KYC was rejected. Check the remarks below and upload all documents again. The Super Admin will review them from the start.</div>
   {% else %}
     <div class="kd-status-banner pending">&#8987; Your KYC is pending review. Upload every document below to complete verification.</div>
   {% endif %}
@@ -164,7 +164,7 @@
           <a class="kd-btn" href="{{ url_for('frontend.organization_kyc_document_download', document_id=doc.id) }}">Download</a>
         {% endif %}
 
-        {% if not doc or doc.status != 'APPROVED' %}
+        {% if not doc or doc.status != 'APPROVED' or kyc_upper == 'REJECTED' %}
         <form method="post" action="{{ url_for('frontend.organization_kyc_document_upload') }}"
               enctype="multipart/form-data" class="kd-upload-form">
           <input type="hidden" name="doc_type" value="{{ doc_type }}">

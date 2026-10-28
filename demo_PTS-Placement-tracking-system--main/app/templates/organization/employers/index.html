@@ -30,7 +30,6 @@
         <td>{{ e.contact_person or '-' }}</td>
         <td>{{ e.mobile or '-' }}</td>
         <td style="text-align:right; white-space:nowrap;">
-          <a class="ghost-btn" href="{{ url_for('frontend.organization_employer_login', employer_id=e.id) }}">Login</a>
           <a class="ghost-btn" href="{{ url_for('frontend.organization_employer_placements', employer_id=e.id) }}">Placements</a>
           <a class="ghost-btn" href="{{ url_for('frontend.organization_vacancies', employer_id=e.id) }}">Vacancies</a>
           <a class="ghost-btn" href="{{ url_for('frontend.organization_employer_edit', employer_id=e.id) }}">Edit</a>

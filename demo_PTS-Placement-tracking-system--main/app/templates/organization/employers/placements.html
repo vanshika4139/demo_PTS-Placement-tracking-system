@@ -13,7 +13,7 @@
 <div class="panel-card">
   <table class="data-table">
     <thead>
-      <tr><th>Candidate</th><th>Job role</th><th>Joining date</th><th>Status</th><th>Exit date</th><th>Exit reason</th><th>Verification</th></tr>
+      <tr><th>Candidate</th><th>Job role</th><th>Joining date</th><th>Status</th><th>Exit date</th><th>Exit reason</th><th>Verification</th><th></th></tr>
     </thead>
     <tbody>
       {% for r in rows %}
@@ -25,9 +25,16 @@
         <td>{{ r.placement.exit_date.strftime('%d-%m-%Y') if r.placement.exit_date else '-' }}</td>
         <td>{{ r.placement.exit_reason or '-' }}</td>
         <td>{{ r.verification|capitalize }}</td>
+        <td style="text-align:right;">
+          {% if r.placement.working_status == 'WORKING' and r.verification != 'verified' and has_permission(session.user, 'placement.update') %}
+          <form method="post" action="{{ url_for('frontend.organization_placement_verify', employer_id=employer.id, placement_id=r.placement.id) }}">
+            <button type="submit" class="primary-btn">Verify</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="7">No placements yet.</td></tr>
+      <tr><td colspan="8">No placements yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

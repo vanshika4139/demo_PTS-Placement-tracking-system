@@ -557,6 +557,8 @@ def login():
             db.session.commit()
         else:
             org_block_reason = None
+            if getattr(user, "employer_id", None) and not EMPLOYER_PORTAL_ENABLED:
+                org_block_reason = "Employer login is on hold. Please contact your organization administrator."
             if not user.is_super_admin and user.organization_id:
                 organization = Organization.query.get(user.organization_id)
                 if organization:
@@ -5159,11 +5161,16 @@ def organization_employer_placements(employer_id):
     return render_template("organization/employers/placements.html", employer=employer, rows=rows, pagination=pagination)
 
 
+EMPLOYER_PORTAL_ENABLED = False  # CEO: separate employer login/portal is on hold; set True to bring it back
+
+
 def _portal_employer():
     """The Employer record of the logged-in employer user. Never taken from the request."""
     from flask import abort
     from app.models.employer import Employer
 
+    if not EMPLOYER_PORTAL_ENABLED:
+        abort(404)
     sess = session.get("user") or {}
     db_user = User.query.get(sess.get("id"))
     if not db_user or db_user.is_deleted or not db_user.is_active or not getattr(db_user, "employer_id", None):
@@ -5291,9 +5298,12 @@ def employer_verification_decide(verification_id):
 def organization_employer_login(employer_id):
     """Org Admin creates a login for an employer. The user is tied to this employer and organization."""
     from sqlalchemy.exc import IntegrityError
+    from flask import abort
     from app.models import Role, UserRole
     from app.models.employer import Employer
 
+    if not EMPLOYER_PORTAL_ENABLED:
+        abort(404)
     org_id = (session.get("user") or {}).get("organization_id")
     employer = Employer.query.filter_by(id=employer_id, organization_id=org_id, status=1).first_or_404()
     logins = User.query.filter_by(employer_id=employer.id, is_deleted=False).all()
@@ -5419,6 +5429,54 @@ def employer_portal_vacancy_edit(vacancy_id):
         "location": vacancy.location or "", "vacancy_status": vacancy.vacancy_status,
     }
     return render_template("employer/vacancy_form.html", employer=employer, vacancy=vacancy, form=form)
+
+
+@frontend_bp.route("/organization/employers/<employer_id>/placements/<placement_id>/verify", methods=["POST"])
+@login_required
+@require_permission("placement.update")
+def organization_placement_verify(employer_id, placement_id):
+    """Org Admin (or Placement Officer) verifies a candidate's placement with this employer."""
+    from app.models.employer import Employer
+    from app.models.candidate_placement import CandidatePlacement
+    from app.models.verification import Verification
+
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    employer = Employer.query.filter_by(id=employer_id, organization_id=org_id).first_or_404()
+    back = redirect(url_for("frontend.organization_employer_placements", employer_id=employer.id))
+    placement = CandidatePlacement.query.filter_by(
+        id=placement_id, employer_id=employer.id, organization_id=org_id, status=1
+    ).first_or_404()
+    if placement.working_status != "WORKING":
+        flash("This candidate has left, so the placement can no longer be verified.", "error")
+        return back
+    verification = Verification.query.filter_by(placement_id=placement.id, organization_id=org_id).first_or_404()
+    if verification.verification_status == "verified":
+        flash("This placement is already verified.", "info")
+        return back
+    candidate = Candidate.query.filter_by(id=placement.candidate_id, organization_id=org_id).first_or_404()
+
+    verification.verification_status = "verified"
+    verification.verified_by = user.get("id")
+    verification.verified_at = datetime.utcnow()
+    candidate.verification_status = "verified"
+    db.session.add(Notification(
+        title=f"Employment verified: {candidate.full_name}",
+        message=f"{candidate.full_name}'s placement at {employer.company_name} was verified.",
+        type="success",
+        organization_id=str(org_id),
+        candidate_id=candidate.id,
+    ))
+    db.session.add(ActivityLog(
+        user_id=user.get("id"), action="placement.verified",
+        details=f"{employer.employer_code}: {candidate.registration_number or candidate.id}"[:500],
+    ))
+    db.session.commit()
+    invalidate_report_cache("reports")
+    invalidate_report_cache("dashboard:org")
+    invalidate_report_cache("dashboard:super_admin")
+    flash("Placement verified.", "success")
+    return back
 
 
 @frontend_bp.route("/organization/schemes")

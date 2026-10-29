@@ -1007,6 +1007,27 @@ def get_super_admin_dashboard_data():
     payment_status_labels = list(payment_status_counts.keys())
     payment_status_data = list(payment_status_counts.values())
 
+    # ---------------- Candidate growth, placement trend and placement rate (FR-03) ----------------
+    from app.models.candidate_placement import CandidatePlacement as _CP
+    _cands = Candidate.query.filter_by(is_deleted=False).all()
+    _placements = _CP.query.filter(_CP.status == 1).all()
+    candidate_growth_labels, candidate_growth_data = [], []
+    placement_trend_labels, placement_trend_data = [], []
+    placement_rate_labels, placement_rate_data = [], []
+    for month_key in months:
+        year, month = map(int, month_key.split("-"))
+        label = datetime(year, month, 1).strftime("%b %Y")
+        month_end = datetime(year, month, 1) + relativedelta(months=1)
+        candidate_growth_labels.append(label)
+        candidate_growth_data.append(sum(1 for c in _cands if c.created_at and c.created_at.year == year and c.created_at.month == month))
+        placement_trend_labels.append(label)
+        placement_trend_data.append(sum(1 for p in _placements if p.created_at and p.created_at.year == year and p.created_at.month == month))
+        # Approximation: status history is not stored, so rate = candidates placed by month end / candidates registered by month end.
+        registered = sum(1 for c in _cands if c.created_at and c.created_at < month_end)
+        placed_ids = {p.candidate_id for p in _placements if p.created_at and p.created_at < month_end}
+        placement_rate_labels.append(label)
+        placement_rate_data.append(round(len(placed_ids) * 100.0 / registered, 1) if registered else 0)
+
     recent_organizations_raw = Organization.query.filter_by(is_deleted=False).order_by(Organization.created_at.desc()).limit(5).all()
     recent_organizations = [
         {
@@ -1020,6 +1041,12 @@ def get_super_admin_dashboard_data():
         }
         for o in recent_organizations_raw
     ]
+
+    _extra_charts = {
+        "candidate_growth_labels": candidate_growth_labels, "candidate_growth_data": candidate_growth_data,
+        "placement_trend_labels": placement_trend_labels, "placement_trend_data": placement_trend_data,
+        "placement_rate_labels": placement_rate_labels, "placement_rate_data": placement_rate_data,
+    }
 
     # ---------------- Subscription expiry alerts ----------------
     EXPIRY_WINDOW_DAYS = 30
@@ -1132,6 +1159,12 @@ def get_super_admin_dashboard_data():
         "monthly_revenue_data": monthly_revenue_data,
         "subscription_trend_labels": subscription_trend_labels,
         "subscription_trend_data": subscription_trend_data,
+        "candidate_growth_labels": candidate_growth_labels,
+        "candidate_growth_data": candidate_growth_data,
+        "placement_trend_labels": placement_trend_labels,
+        "placement_trend_data": placement_trend_data,
+        "placement_rate_labels": placement_rate_labels,
+        "placement_rate_data": placement_rate_data,
         "recent_organizations": recent_organizations,
         "expiring_subscriptions": expiring_subscriptions,
         "recent_support_tickets": recent_support_tickets,

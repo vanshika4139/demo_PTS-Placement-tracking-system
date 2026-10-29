@@ -366,6 +366,18 @@
     <h3>Active Subscriptions Trend</h3>
     <canvas id="subscriptionTrendChart" height="200"></canvas>
   </div>
+  <div class="panel-card">
+    <h3>Candidate Growth</h3>
+    <canvas id="candidateGrowthChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Placement Rate (%)</h3>
+    <canvas id="placementRateChart" height="200"></canvas>
+  </div>
+  <div class="panel-card">
+    <h3>Placement Trend</h3>
+    <canvas id="placementTrendChart" height="200"></canvas>
+  </div>
 </div>
 
 <div class="sa-section-title">Recently Registered Organizations</div>
@@ -543,11 +555,43 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  
+  const candidateGrowthCtx = document.getElementById('candidateGrowthChart');
+  if (candidateGrowthCtx) {
+    new Chart(candidateGrowthCtx, {
+      type: 'line',
+      data: {
+        labels: {{ candidate_growth_labels | tojson }},
+        datasets: [{ label: 'New candidates', data: {{ candidate_growth_data | tojson }},
+          borderColor: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.1)', tension: 0.3, fill: true }]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
+    });
+  }
 
-  
+  const placementRateCtx = document.getElementById('placementRateChart');
+  if (placementRateCtx) {
+    new Chart(placementRateCtx, {
+      type: 'line',
+      data: {
+        labels: {{ placement_rate_labels | tojson }},
+        datasets: [{ label: 'Placement rate (%)', data: {{ placement_rate_data | tojson }},
+          borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)', tension: 0.3, fill: true }]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } }
+    });
+  }
 
-  
+  const placementTrendCtx = document.getElementById('placementTrendChart');
+  if (placementTrendCtx) {
+    new Chart(placementTrendCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ placement_trend_labels | tojson }},
+        datasets: [{ label: 'Placements', data: {{ placement_trend_data | tojson }}, backgroundColor: '#f59e0b' }]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
+    });
+  }
 });
 </script>
 {% endblock %}

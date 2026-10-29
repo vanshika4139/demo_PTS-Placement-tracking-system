@@ -57,6 +57,7 @@
     </label>
     <button type="submit" class="rp-btn">Filter</button>
     <a href="/super-admin/reports" class="rp-btn plain">Reset</a>
+    <a href="/super-admin/reports/segments" class="rp-btn ghost">Segment reports</a>
   </form>
   <div class="rp-exports">
     <a class="rp-btn ghost" href="{{ url_for('frontend.super_admin_reports_export', fmt='xlsx', **filters) }}">Excel</a>

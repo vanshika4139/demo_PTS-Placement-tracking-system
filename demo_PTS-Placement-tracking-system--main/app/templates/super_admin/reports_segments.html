@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Segment Reports{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Segment Reports</h2>
+    <p>Platform-wide candidate counts grouped by one segment. Counts only, no candidate details.</p>
+  </div>
+  <a class="ghost-btn" href="/super-admin/reports">Organization report</a>
+</div>
+
+<div class="panel-card">
+  <div style="display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:flex-end; margin-bottom:16px;">
+    <form method="get" style="display:flex; gap:8px; align-items:flex-end;">
+      <label>Segment
+        <select name="by">
+          {% for key, label in segments.items() %}
+          <option value="{{ key }}" {{ 'selected' if by == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="primary-btn">Show</button>
+    </form>
+    <div style="display:flex; gap:8px;">
+      <a class="ghost-btn" href="{{ url_for('frontend.super_admin_report_segments_export', fmt='xlsx', by=by) }}">Excel</a>
+      <a class="ghost-btn" href="{{ url_for('frontend.super_admin_report_segments_export', fmt='csv', by=by) }}">CSV</a>
+      <a class="ghost-btn" href="{{ url_for('frontend.super_admin_report_segments_export', fmt='pdf', by=by) }}">PDF</a>
+    </div>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr><th>{{ segments[by] }}</th><th>Candidates</th><th>Placed</th><th>Verification Pending</th><th>Placement Rate</th><th>Avg Salary</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.segment }}</strong></td>
+        <td>{{ r.total }}</td>
+        <td>{{ r.placed }}</td>
+        <td>{{ r.pending }}</td>
+        <td>{{ r.rate }}%</td>
+        <td>{{ '{:,}'.format(r.avg_salary) if r.avg_salary is not none else '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No candidates yet.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr>
+        <td><strong>Total</strong></td>
+        <td><strong>{{ totals.total }}</strong></td>
+        <td><strong>{{ totals.placed }}</strong></td>
+        <td><strong>{{ totals.pending }}</strong></td>
+        <td><strong>{{ totals.rate }}%</strong></td>
+        <td><strong>{{ '{:,}'.format(totals.avg_salary) if totals.avg_salary is not none else '-' }}</strong></td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}

@@ -2859,6 +2859,159 @@ def super_admin_reports_export(fmt):
     _log_activity("Exported organization report", f"{fmt.upper()}, {len(rows)} organization(s)")
     return send_file(buffer, as_attachment=True, download_name=f"organization_report.{fmt}", mimetype=mimetype)
 
+_REPORT_SEGMENTS = {
+    "state": "State", "district": "District", "course": "Course", "sector": "Sector", "trainer": "Trainer",
+    "placement_status": "Placement status", "verification": "Verification status",
+    "training_status": "Training status (includes dropout)", "migration": "Migration", "attendance": "Attendance",
+}
+_SEGMENT_HEADERS = ["Segment", "Candidates", "Placed", "Verification Pending", "Placement Rate (%)", "Avg Salary"]
+
+
+def _segment_rows(by):
+    """Platform-wide candidate counts grouped by one segment (FR-17). Counts only, no candidate details."""
+    import re as _re
+    from sqlalchemy import func
+    from app.models import Attendance
+
+    cands = db.session.query(
+        Candidate.id, Candidate.state, Candidate.district, Candidate.course, Candidate.sector, Candidate.trainer,
+        Candidate.training_status, Candidate.employer_name, Candidate.working_status, Candidate.exit_date,
+        Candidate.exit_reason, Candidate.verification_status, Candidate.salary,
+    ).filter(Candidate.is_deleted == False).all()
+
+    att = {}
+    if by == "attendance":
+        for cid, marked, present in (
+            db.session.query(Attendance.candidate_id, func.count(Attendance.id),
+                             func.sum(func.if_(Attendance.status == "present", 1, 0)))
+            .group_by(Attendance.candidate_id).all()
+        ):
+            att[cid] = (int(marked or 0), int(present or 0))
+
+    groups = {}
+    for (cid, state, district, course, sector, trainer, tstatus, employer, wstatus,
+         exit_date, exit_reason, vstatus, salary) in cands:
+        placed = bool((employer or "").strip())
+        left = exit_date is not None or (wstatus or "").strip().lower() == "left"
+        simple = {"state": state, "district": district, "course": course, "sector": sector, "trainer": trainer}
+        if by in simple:
+            key = (simple[by] or "").strip() or "Unspecified"
+        elif by == "placement_status":
+            key = "Left job" if left else ("Placed" if placed else "Not placed")
+        elif by == "verification":
+            key = (vstatus or "pending").replace("_", " ").title()
+        elif by == "training_status":
+            key = (tstatus or "Unspecified").replace("_", " ").title()
+        elif by == "migration":
+            text = f"{exit_reason or ''} {wstatus or ''}".lower()
+            key = "Migrated" if "migrat" in text else "Not migrated"
+        else:
+            marked, present = att.get(cid, (0, 0))
+            if not marked:
+                key = "No attendance marked"
+            else:
+                pct = present * 100.0 / marked
+                key = "90% and above" if pct >= 90 else "75-89%" if pct >= 75 else "50-74%" if pct >= 50 else "Below 50%"
+        g = groups.setdefault(key, {"total": 0, "placed": 0, "pending": 0, "sal": []})
+        g["total"] += 1
+        g["placed"] += 1 if placed else 0
+        g["pending"] += 1 if (vstatus or "pending") == "pending" else 0
+        if placed and salary:
+            found = _re.search(r"\d+(?:\.\d+)?", str(salary).replace(",", ""))
+            if found:
+                g["sal"].append(float(found.group()))
+
+    rows = []
+    all_sal = []
+    for key, g in sorted(groups.items(), key=lambda kv: (-kv[1]["total"], kv[0])):
+        all_sal += g["sal"]
+        rows.append({
+            "segment": key, "total": g["total"], "placed": g["placed"], "pending": g["pending"],
+            "rate": round(g["placed"] * 100.0 / g["total"], 1) if g["total"] else 0,
+            "avg_salary": round(sum(g["sal"]) / len(g["sal"])) if g["sal"] else None,
+        })
+    t_total = sum(r["total"] for r in rows)
+    t_placed = sum(r["placed"] for r in rows)
+    totals = {
+        "total": t_total, "placed": t_placed, "pending": sum(r["pending"] for r in rows),
+        "rate": round(t_placed * 100.0 / t_total, 1) if t_total else 0,
+        "avg_salary": round(sum(all_sal) / len(all_sal)) if all_sal else None,
+    }
+    return rows, totals
+
+
+@frontend_bp.route("/super-admin/reports/segments")
+@super_admin_required
+def super_admin_report_segments():
+    by = request.args.get("by", "state")
+    if by not in _REPORT_SEGMENTS:
+        by = "state"
+    rows, totals = _segment_rows(by)
+    return render_template("super_admin/reports_segments.html", by=by, segments=_REPORT_SEGMENTS, rows=rows, totals=totals)
+
+
+@frontend_bp.route("/super-admin/reports/segments/export/<fmt>")
+@super_admin_required
+def super_admin_report_segments_export(fmt):
+    from io import BytesIO, StringIO
+    from flask import send_file, abort
+    import csv
+
+    if fmt not in ("xlsx", "csv", "pdf"):
+        abort(404)
+    by = request.args.get("by", "state")
+    if by not in _REPORT_SEGMENTS:
+        by = "state"
+    rows, totals = _segment_rows(by)
+    headers = [_REPORT_SEGMENTS[by]] + _SEGMENT_HEADERS[1:]
+    avg = lambda v: v if v is not None else "-"
+    data = [[r["segment"], r["total"], r["placed"], r["pending"], r["rate"], avg(r["avg_salary"])] for r in rows]
+    data.append(["Total", totals["total"], totals["placed"], totals["pending"], totals["rate"], avg(totals["avg_salary"])])
+    buffer = BytesIO()
+
+    if fmt == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Segment Report"
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        for line in data:
+            ws.append(line)
+        wb.save(buffer)
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif fmt == "csv":
+        out = StringIO()
+        writer = csv.writer(out)
+        writer.writerow(headers)
+        writer.writerows(data)
+        buffer.write(out.getvalue().encode("utf-8-sig"))
+        mimetype = "text/csv"
+    else:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
+        table = Table([headers] + [[str(x) for x in line] for line in data], repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ]))
+        doc.build([Paragraph("Segment Report: " + _REPORT_SEGMENTS[by], getSampleStyleSheet()["Title"]), Spacer(1, 6), table])
+        mimetype = "application/pdf"
+
+    buffer.seek(0)
+    _log_activity("Exported segment report", f"{by}, {fmt.upper()}")
+    return send_file(buffer, as_attachment=True, download_name=f"segment_report_{by}.{fmt}", mimetype=mimetype)
+
+
 @frontend_bp.route("/super-admin/organizations/bulk-topup", methods=["POST"])
 @super_admin_required
 def super_admin_organizations_bulk_topup():

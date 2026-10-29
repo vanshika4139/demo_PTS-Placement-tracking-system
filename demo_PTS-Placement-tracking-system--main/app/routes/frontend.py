@@ -870,6 +870,26 @@ def get_super_admin_dashboard_data():
     _st_progress = SupportTicket.query.filter(_super_admin_ticket_filter()).filter_by(status="in_progress").count()
     _st_resolved = SupportTicket.query.filter(_super_admin_ticket_filter()).filter_by(status="resolved").count()
 
+    from app.models.verification import Verification
+    from app.models.candidate_placement import CandidatePlacement
+    _total_candidates = Candidate.query.filter_by(is_deleted=False).count()
+    _active_candidates = Candidate.query.filter_by(is_deleted=False, account_status="active").count()
+    _monthly_placements = CandidatePlacement.query.filter(
+        CandidatePlacement.status == 1,
+        CandidatePlacement.created_at >= datetime.combine(current_month_start, datetime.min.time()),
+    ).count()
+    _pending_followups = FollowUpCheckpoint.query.filter(
+        FollowUpCheckpoint.status == "pending", FollowUpCheckpoint.due_date <= today,
+    ).count()
+    _verification_pending = (
+        db.session.query(db.func.count(db.distinct(Verification.candidate_id)))
+        .join(CandidatePlacement, CandidatePlacement.id == Verification.placement_id)
+        .filter(
+            CandidatePlacement.working_status == "WORKING", CandidatePlacement.status == 1,
+            Verification.verification_status != "verified",
+        ).scalar() or 0
+    )
+
     stat_sections = [
         {
             "title": "Organizations",
@@ -896,6 +916,16 @@ def get_super_admin_dashboard_data():
                 {"title": "Active Subscriptions", "value": str(active_subscriptions), "link": url_for("frontend.super_admin_organizations", filter="active"), "accent": "#2563eb"},
                 {"title": "Current Month Revenue", "value": f"Rs. {current_month_revenue:,.2f}", "link": url_for("frontend.super_admin_organizations"), "accent": "#16a34a"},
                 {"title": "Custom Plan Requests", "value": str(pending_plan_requests), "link": url_for("frontend.notifications"), "accent": "#f59e0b"},
+            ],
+        },
+        {
+            "title": "Candidates & Placements",
+            "cards": [
+                {"title": "Total Candidates", "value": str(_total_candidates), "link": None, "accent": "#2563eb"},
+                {"title": "Active Candidates", "value": str(_active_candidates), "link": None, "accent": "#16a34a"},
+                {"title": "Monthly Placements", "value": str(_monthly_placements), "link": None, "accent": "#8b5cf6"},
+                {"title": "Pending Follow-ups", "value": str(_pending_followups), "link": None, "accent": "#f59e0b"},
+                {"title": "Verification-Pending Candidates", "value": str(_verification_pending), "link": None, "accent": "#ef4444"},
             ],
         },
         {

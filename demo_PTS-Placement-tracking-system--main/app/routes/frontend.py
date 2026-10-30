@@ -5695,6 +5695,173 @@ def organization_placement_verify(employer_id, placement_id):
     return back
 
 
+EVIDENCE_TYPES = {
+    "location": "Location",
+    "photo": "Photo",
+    "experience_letter": "Experience letter",
+    "bank_statement": "Bank statement",
+}
+_EVIDENCE_FILE_EXTS = {
+    "photo": {".jpg", ".jpeg", ".png"},
+    "experience_letter": {".pdf", ".jpg", ".jpeg", ".png"},
+    "bank_statement": {".pdf", ".jpg", ".jpeg", ".png"},
+}
+
+
+def _evidence_map(candidate_id):
+    from app.models.candidate_evidence import CandidateEvidence
+
+    return {e.evidence_type: e for e in CandidateEvidence.query.filter_by(candidate_id=candidate_id).all()}
+
+
+def _send_evidence_file(row):
+    from flask import abort, send_file
+
+    if row is None or not row.file_path or not os.path.exists(row.file_path):
+        abort(404)
+    return send_file(os.path.abspath(row.file_path), as_attachment=True, download_name=row.original_filename or "evidence")
+
+
+@frontend_bp.route("/candidate/evidence")
+@candidate_login_required
+def candidate_evidence():
+    candidate = Candidate.query.get_or_404((session.get("candidate") or {}).get("id"))
+    return render_template(
+        "candidate/evidence.html", candidate=candidate, types=EVIDENCE_TYPES,
+        evidence=_evidence_map(candidate.id), placed=bool(candidate.employer_name),
+    )
+
+
+@frontend_bp.route("/candidate/evidence/<etype>/upload", methods=["POST"])
+@candidate_login_required
+def candidate_evidence_upload(etype):
+    from flask import abort
+    from app.models.candidate_evidence import CandidateEvidence
+    from app.models.candidate_placement import CandidatePlacement
+
+    if etype not in EVIDENCE_TYPES:
+        abort(404)
+    candidate = Candidate.query.get_or_404((session.get("candidate") or {}).get("id"))
+    back = redirect(url_for("frontend.candidate_evidence"))
+    if not candidate.employer_name:
+        flash("You can upload evidence after your placement is recorded.", "error")
+        return back
+    placement = CandidatePlacement.query.filter_by(candidate_id=candidate.id, working_status="WORKING", status=1).first()
+    row = CandidateEvidence.query.filter_by(candidate_id=candidate.id, evidence_type=etype).first()
+    old_path = None
+
+    if etype == "location":
+        try:
+            lat = round(float(request.form.get("latitude", "")), 6)
+            lng = round(float(request.form.get("longitude", "")), 6)
+        except ValueError:
+            flash("Could not read your location. Please allow location access in the browser and try again.", "error")
+            return back
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            flash("The location is not valid.", "error")
+            return back
+        if row is None:
+            row = CandidateEvidence(organization_id=candidate.organization_id, candidate_id=candidate.id, evidence_type=etype)
+            db.session.add(row)
+        row.latitude, row.longitude = str(lat), str(lng)
+    else:
+        upload = request.files.get("document")
+        if not upload or not upload.filename:
+            flash("Please choose a file to upload.", "error")
+            return back
+        original = secure_filename(upload.filename)
+        ext = os.path.splitext(original)[1].lower()
+        if not original or ext not in _EVIDENCE_FILE_EXTS[etype]:
+            flash("Photo must be JPG or PNG. Other documents must be PDF, JPG or PNG.", "error")
+            return back
+        upload.stream.seek(0, os.SEEK_END)
+        size = upload.stream.tell()
+        upload.stream.seek(0)
+        if size == 0:
+            flash("The file is empty.", "error")
+            return back
+        if size > 5 * 1024 * 1024:
+            flash("File is too large (maximum 5 MB).", "error")
+            return back
+        _blocked_msg = _storage_block_message(candidate.organization_id, for_candidate=True)
+        if _blocked_msg:
+            flash(_blocked_msg, "error")
+            return back
+        folder = os.path.join("app", "private_uploads", "candidate_documents", str(candidate.organization_id))
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"evidence_{etype}_{uuid.uuid4().hex}{ext}")
+        upload.save(path)
+        if row is None:
+            row = CandidateEvidence(organization_id=candidate.organization_id, candidate_id=candidate.id, evidence_type=etype)
+            db.session.add(row)
+        else:
+            old_path = row.file_path
+        row.file_path = path
+        row.original_filename = original
+
+    row.placement_id = placement.id if placement else None
+    db.session.commit()
+    if old_path and old_path != row.file_path and os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    _log_activity("candidate.evidence_uploaded", f"{candidate.registration_number or candidate.id}: {EVIDENCE_TYPES[etype]}")
+    _create_notification(
+        title=f"Evidence uploaded: {candidate.full_name}",
+        message=f"{candidate.full_name} uploaded placement evidence: {EVIDENCE_TYPES[etype].lower()}.",
+        notif_type="info",
+        organization_id=candidate.organization_id,
+        candidate_id=candidate.id,
+    )
+    flash(f"{EVIDENCE_TYPES[etype]} saved.", "success")
+    return back
+
+
+@frontend_bp.route("/candidate/evidence/<etype>/download")
+@candidate_login_required
+def candidate_evidence_download(etype):
+    from flask import abort
+    from app.models.candidate_evidence import CandidateEvidence
+
+    if etype not in EVIDENCE_TYPES:
+        abort(404)
+    cid = (session.get("candidate") or {}).get("id")
+    return _send_evidence_file(CandidateEvidence.query.filter_by(candidate_id=cid, evidence_type=etype).first())
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/evidence")
+@login_required
+@require_permission("placement.view")
+def organization_candidate_evidence(candidate_id):
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    return render_template(
+        "organization/candidates/evidence.html", candidate=candidate, types=EVIDENCE_TYPES,
+        evidence=_evidence_map(candidate.id),
+    )
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/evidence/<etype>/download")
+@login_required
+@require_permission("placement.view")
+def organization_candidate_evidence_download(candidate_id, etype):
+    from flask import abort
+    from app.models.candidate_evidence import CandidateEvidence
+
+    if etype not in EVIDENCE_TYPES:
+        abort(404)
+    user = session.get("user")
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, user):
+        flash("You do not have permission to view this candidate.", "error")
+        return redirect(url_for("frontend.no_access"))
+    return _send_evidence_file(CandidateEvidence.query.filter_by(candidate_id=candidate.id, evidence_type=etype).first())
+
+
 @frontend_bp.route("/organization/schemes")
 @login_required
 @require_permission("scheme.view")

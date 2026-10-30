@@ -18,7 +18,7 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.candidate.full_name if r.candidate else '-' }}</td>
+        <td>{% if r.candidate %}{{ r.candidate.full_name }} <a href="{{ url_for('frontend.organization_candidate_evidence', candidate_id=r.candidate.id) }}" style="font-size:0.8rem;">Evidence</a>{% else %}-{% endif %}</td>
         <td>{{ r.placement.job_role or '-' }}</td>
         <td>{{ r.placement.joining_date.strftime('%d-%m-%Y') if r.placement.joining_date else '-' }}</td>
         <td>{{ r.placement.working_status }}</td>

@@ -273,6 +273,7 @@
     {% if candidate.employer_name %}
     <div class="panel-card">
       <h3>Monthly Salary Slips</h3>
+<p style="margin:0 0 12px;"><a href="/candidate/evidence">Upload placement evidence (location, photo, experience letter, bank statement)</a></p>
       <p style="color:var(--muted); font-size:0.85rem; margin-top:-6px; margin-bottom:12px;">Upload your salary slip for each month (PDF, JPG or PNG, max 5 MB). Uploading the same month again replaces it.</p>
       <form method="post" action="{{ url_for('frontend.candidate_upload_salary_slip') }}" enctype="multipart/form-data" class="full-form">
         {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}

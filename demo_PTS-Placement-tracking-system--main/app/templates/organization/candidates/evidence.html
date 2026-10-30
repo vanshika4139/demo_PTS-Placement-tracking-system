@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Placement Evidence{% endblock %}
+
+{% block content %}
+<div class="page-header page-header-inline">
+  <div>
+    <h2>Placement evidence: {{ candidate.full_name }}</h2>
+    <p>{{ candidate.registration_number or '-' }}. What the candidate uploaded to support the placement.</p>
+  </div>
+  <a class="ghost-btn" href="javascript:history.back()">Back</a>
+</div>
+
+<div class="panel-card">
+  <table class="data-table">
+    <thead><tr><th>Evidence</th><th>Status</th><th>Uploaded</th><th></th></tr></thead>
+    <tbody>
+      {% for key, label in types.items() %}
+      {% set e = evidence.get(key) %}
+      <tr>
+        <td><strong>{{ label }}</strong></td>
+        <td>
+          {% if not e %}Not uploaded
+          {% elif key == 'location' %}{{ e.latitude }}, {{ e.longitude }}
+          {% else %}{{ e.original_filename }}{% endif %}
+        </td>
+        <td>{{ e.updated_at|ist if e else '-' }}</td>
+        <td style="text-align:right;">
+          {% if e and key == 'location' %}
+          <a class="ghost-btn" target="_blank" rel="noopener" href="https://www.google.com/maps?q={{ e.latitude }},{{ e.longitude }}">View on map</a>
+          {% elif e %}
+          <a class="ghost-btn" href="{{ url_for('frontend.organization_candidate_evidence_download', candidate_id=candidate.id, etype=key) }}">Download</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

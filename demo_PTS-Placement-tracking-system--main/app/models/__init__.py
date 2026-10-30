@@ -45,6 +45,7 @@ from app.models.employer import Employer  # noqa: F401
 from app.models.employer_vacancy import EmployerVacancy  # noqa: F401
 from app.models.candidate_placement import CandidatePlacement  # noqa: F401
 from app.models.verification import Verification  # noqa: F401
+from app.models.candidate_evidence import CandidateEvidence  # noqa: F401
 
 __all__ = [
     "Candidate",

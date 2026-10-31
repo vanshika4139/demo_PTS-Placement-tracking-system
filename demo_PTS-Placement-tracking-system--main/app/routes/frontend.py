@@ -9646,17 +9646,8 @@ def settings_profile():
 @login_required
 @require_permission("settings.view")
 def settings_login_history_delete(login_id):
-    user = session.get("user")
-    login_record = LoginHistory.query.get_or_404(login_id)
-
-    if not user.get("is_super_admin") and login_record.user_id != user.get("id"):
-        flash("You do not have permission to delete this login record.", "error")
-        return redirect(url_for("frontend.settings_profile"))
-
-    db.session.delete(login_record)
-    db.session.commit()
-    _log_activity("Deleted login history record", login_record.email)
-    flash("Login record deleted", "success")
+    flash("Login records cannot be edited or deleted.", "error")
+    _log_activity("Blocked login history delete attempt", str(login_id))
     return redirect(url_for("frontend.settings_profile"))
 
 

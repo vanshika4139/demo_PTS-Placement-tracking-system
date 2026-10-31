@@ -424,12 +424,16 @@ def _training_certificate_pdf_response(candidate):
     return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": disposition})
 
 
-def _log_activity(action, details=None):
+def _log_activity(action, details=None, module=None, old_value=None, new_value=None):
     user = session.get("user")
     log = ActivityLog(
         user_id=user.get("id") if user else None,
+        organization_id=user.get("organization_id") if user else None,
         action=action,
         details=details,
+        module=module,
+        old_value=None if old_value is None else str(old_value),
+        new_value=None if new_value is None else str(new_value),
     )
     db.session.add(log)
     db.session.commit()

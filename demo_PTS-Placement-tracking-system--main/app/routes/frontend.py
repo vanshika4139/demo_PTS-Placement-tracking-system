@@ -445,14 +445,18 @@ def _audit_snapshot(obj, fields):
     return {f: getattr(obj, f, None) for f in fields}
 
 
-def _audit_diff(before, obj):
+def _audit_diff(before, obj, mask=()):
     import json as _json
     old, new = {}, {}
     for f, v in before.items():
         nv = getattr(obj, f, None)
-        if str(v) != str(nv):
-            old[f] = v
-            new[f] = nv
+        if ("" if v is None else str(v)) != ("" if nv is None else str(nv)):
+            if f in mask:
+                old[f] = "(hidden)"
+                new[f] = "(changed)"
+            else:
+                old[f] = v
+                new[f] = nv
     return (
         _json.dumps(old, default=str) if old else None,
         _json.dumps(new, default=str) if new else None,
@@ -6563,6 +6567,14 @@ def organization_candidate_edit(candidate_id):
         was_placed = bool(candidate.employer_name)
         old_training_status = candidate.training_status
         old_email = (candidate.email or "").strip()
+        _CAND_AUDIT_FIELDS = [
+            "full_name", "mobile", "email", "registration_number", "training_status",
+            "verification_status", "working_status", "employer_name", "job_role",
+            "location", "department", "manager", "hr_contact", "batch_id", "scheme_id",
+            "joining_date", "bank_name", "account_number", "ifsc", "salary", "aadhaar", "pan",
+        ]
+        _CAND_AUDIT_MASK = ("bank_name", "account_number", "ifsc", "salary", "aadhaar", "pan")
+        _cand_before = _audit_snapshot(candidate, _CAND_AUDIT_FIELDS)
 
         new_mobile = (request.form.get("mobile") or "").strip()
         new_email = (request.form.get("email") or "").strip()
@@ -6718,7 +6730,9 @@ def organization_candidate_edit(candidate_id):
             except Exception:
                 logging.getLogger(__name__).exception("Failed to send email-change notification")
 
-        _log_activity("Updated candidate", f"{candidate.full_name}")
+        _old, _new = _audit_diff(_cand_before, candidate, mask=_CAND_AUDIT_MASK)
+        _log_activity("Updated candidate", f"{candidate.full_name}",
+                      module="candidate", old_value=_old, new_value=_new)
         invalidate_report_cache("reports")
         invalidate_report_cache("dashboard:org")
         invalidate_report_cache("dashboard:super_admin")

@@ -4514,9 +4514,10 @@ def super_admin_activity_log_purge():
     from datetime import datetime, timedelta
     from app.models import ActivityLog
 
-    days = _parse_int(request.form.get("older_than_days")) or 90
-    if days < 1:
-        days = 90
+    MIN_RETENTION_DAYS = 1095  # 3 years (SRS NFR-12, FR-59)
+    days = _parse_int(request.form.get("older_than_days")) or MIN_RETENTION_DAYS
+    if days < MIN_RETENTION_DAYS:
+        days = MIN_RETENTION_DAYS
     cutoff = datetime.utcnow() - timedelta(days=days)
 
     deleted_count = ActivityLog.query.filter(ActivityLog.created_at < cutoff).delete(synchronize_session=False)
@@ -4524,7 +4525,7 @@ def super_admin_activity_log_purge():
 
     _log_activity("Purged activity log", f"Removed {deleted_count} entries older than {days} day(s)")
 
-    flash(f"Deleted {deleted_count} activity log entries older than {days} day(s).", "success")
+    flash(f"Deleted {deleted_count} activity log entries older than {days} day(s). Entries newer than 3 years are always kept.", "success")
     return redirect(url_for(
         "frontend.super_admin_activity_log",
         action=request.form.get("action_filter"),
@@ -9663,17 +9664,8 @@ def settings_login_history_delete(login_id):
 @login_required
 @require_permission("settings.view")
 def settings_activity_log_delete(log_id):
-    user = session.get("user")
-    log_entry = ActivityLog.query.get_or_404(log_id)
-
-    if not user.get("is_super_admin") and log_entry.user_id != user.get("id"):
-        flash("You do not have permission to delete this activity record.", "error")
-        return redirect(url_for("frontend.settings_profile"))
-
-    db.session.delete(log_entry)
-    db.session.commit()
-    _log_activity("Deleted activity log entry", log_entry.action)
-    flash("Activity record deleted", "success")
+    flash("Audit records cannot be edited or deleted.", "error")
+    _log_activity("Blocked activity log delete attempt", str(log_id))
     return redirect(url_for("frontend.settings_profile"))
 
 

@@ -426,6 +426,8 @@ def _training_certificate_pdf_response(candidate):
 
 def _log_activity(action, details=None, module=None, old_value=None, new_value=None):
     user = session.get("user")
+    if module is None and action and "." in action:
+        module = action.split(".", 1)[0]
     log = ActivityLog(
         user_id=user.get("id") if user else None,
         organization_id=user.get("organization_id") if user else None,
@@ -437,6 +439,24 @@ def _log_activity(action, details=None, module=None, old_value=None, new_value=N
     )
     db.session.add(log)
     db.session.commit()
+
+
+def _audit_snapshot(obj, fields):
+    return {f: getattr(obj, f, None) for f in fields}
+
+
+def _audit_diff(before, obj):
+    import json as _json
+    old, new = {}, {}
+    for f, v in before.items():
+        nv = getattr(obj, f, None)
+        if str(v) != str(nv):
+            old[f] = v
+            new[f] = nv
+    return (
+        _json.dumps(old, default=str) if old else None,
+        _json.dumps(new, default=str) if new else None,
+    )
 
 
 def _check_and_suspend_expired_subscriptions():
@@ -3556,6 +3576,12 @@ def super_admin_edit_organization(organization_id):
         organization.registration_number = request.form.get("registration_number")
         organization.gst_number = request.form.get("gst_number")
         organization.pan_number = request.form.get("pan_number")
+        _org_before = _audit_snapshot(organization, [
+            "website", "email", "mobile", "contact_person", "designation", "address",
+            "district", "pincode", "subscription_plan_id", "subscription_expiry_date",
+            "candidate_limit", "whatsapp_credits", "sms_credits", "email_credits",
+            "webhook_url", "payment_status", "status",
+        ])
         organization.website = request.form.get("website")
         organization.email = request.form.get("email")
         organization.mobile = request.form.get("mobile")
@@ -3583,7 +3609,9 @@ def super_admin_edit_organization(organization_id):
         organization.payment_status = request.form.get("payment_status")
         organization.status = 1 if request.form.get("status") == "active" else 0
         db.session.commit()
-        _log_activity("Updated organization", f"{organization.organization_name}")
+        _old, _new = _audit_diff(_org_before, organization)
+        _log_activity("Updated organization", f"{organization.organization_name}",
+                      module="organization", old_value=_old, new_value=_new)
         invalidate_report_cache("dashboard:super_admin")
         flash("Organization updated successfully", "success")
         return redirect(url_for("frontend.super_admin_organization_detail", organization_id=organization.id))
@@ -3743,6 +3771,11 @@ def super_admin_plan_edit(plan_id):
 
     if request.method == "POST":
         actor = session.get("user") or {}
+        _plan_before = _audit_snapshot(plan, [
+            "name", "price", "default_billing_cycle", "candidate_limit", "whatsapp_credits",
+            "sms_credits", "email_credits", "ai_call_allowance", "storage_limit_mb",
+            "api_access", "custom_branding", "report_access_level", "display_order",
+        ])
         plan.name = request.form.get("name", "").strip() or plan.name
         _raw_price = (request.form.get("price") or "").strip()
         if _raw_price != "":
@@ -3770,7 +3803,9 @@ def super_admin_plan_edit(plan_id):
         # NOTE: code is intentionally not editable after creation - it may be
         # referenced elsewhere (e.g. future billing-gateway plan mapping).
         db.session.commit()
-        _log_activity("plan.updated", f"Updated plan '{plan.name}' ({plan.code})")
+        _old, _new = _audit_diff(_plan_before, plan)
+        _log_activity("plan.updated", f"Updated plan '{plan.name}' ({plan.code})",
+                      module="plan", old_value=_old, new_value=_new)
         flash("Plan updated successfully.", "success")
         return redirect(url_for("frontend.super_admin_plans"))
 

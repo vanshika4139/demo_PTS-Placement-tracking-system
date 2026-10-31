@@ -94,7 +94,7 @@
 
   <table class="data-table">
     <thead>
-      <tr><th>When</th><th>User</th><th>Action</th><th>Details</th></tr>
+      <tr><th>When</th><th>User</th><th>Action</th><th>Module</th><th>Details</th><th>Old value</th><th>New value</th></tr>
     </thead>
     <tbody>
       {% for log in logs %}
@@ -102,10 +102,13 @@
         <td class="al-time">{{ log.created_at|ist }}</td>
         <td>{{ user_name_by_id.get(log.user_id, 'System') }}</td>
         <td class="al-action">{{ log.action }}</td>
+        <td>{{ log.module or '—' }}</td>
         <td class="al-details">{{ log.details or '—' }}</td>
+        <td style="font-size:11px;word-break:break-word;max-width:220px;">{{ log.old_value or '—' }}</td>
+        <td style="font-size:11px;word-break:break-word;max-width:220px;">{{ log.new_value or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No activity recorded{% if selected_organization %} for this organization{% endif %} yet.</td></tr>
+      <tr><td colspan="6">No activity recorded{% if selected_organization %} for this organization{% endif %} yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

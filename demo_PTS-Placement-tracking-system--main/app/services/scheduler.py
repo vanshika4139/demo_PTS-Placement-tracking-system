@@ -106,6 +106,23 @@ def init_scheduler(app, hour=2, minute=0):
         id="document_reminders_check",
         replace_existing=True,
     )
+    from app.services.messaging_service import run_notification_retries
+
+    def _run_notification_retries():
+        with app.app_context():
+            try:
+                results = run_notification_retries()
+                logger.info("scheduler: notification retries finished: %s", results)
+            except Exception:
+                logger.exception("scheduler: notification retries failed")
+
+    _scheduler.add_job(
+        _run_notification_retries,
+        trigger="interval",
+        minutes=5,
+        id="notification_retries_check",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("scheduler: daily billing cycle scheduled for %02d:%02d every day", hour, minute)
     

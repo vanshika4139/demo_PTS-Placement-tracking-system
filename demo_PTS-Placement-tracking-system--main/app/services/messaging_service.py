@@ -85,6 +85,24 @@ def _org_uses_own_smtp(organization_id):
     )
 
 
+def _credit_tx(organization_id, channel, change, reason):
+    """Writes one credit transaction with balance before/after. Never raises."""
+    try:
+        from app.models.notification_retry import CommunicationTransaction
+
+        org = Organization.query.get(organization_id)
+        column = "email_credits" if channel == "email" else "whatsapp_credits"
+        after = int(getattr(org, column, 0) or 0) if org else 0
+        db.session.add(CommunicationTransaction(
+            organization_id=organization_id, channel=channel, change=change,
+            balance_before=after - change, balance_after=after, reason=reason,
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("messaging_service: could not write credit transaction")
+
+
 def _reserve_email_credit(organization_id):
     """Atomically takes one email credit; False if the balance is 0 / empty.
     A single UPDATE ... WHERE email_credits > 0, so two emails sent at the
@@ -94,6 +112,8 @@ def _reserve_email_credit(organization_id):
         Organization.email_credits > 0,
     ).update({Organization.email_credits: Organization.email_credits - 1}, synchronize_session=False)
     db.session.commit()
+    if updated == 1:
+        _credit_tx(organization_id, "email", -1, "sent")
     return updated == 1
 
 
@@ -102,6 +122,7 @@ def _refund_email_credit(organization_id):
         {Organization.email_credits: Organization.email_credits + 1}, synchronize_session=False
     )
     db.session.commit()
+    _credit_tx(organization_id, "email", 1, "refund")
 
 
 def _reserve_whatsapp_credit(organization_id):
@@ -111,6 +132,8 @@ def _reserve_whatsapp_credit(organization_id):
         Organization.whatsapp_credits > 0,
     ).update({Organization.whatsapp_credits: Organization.whatsapp_credits - 1}, synchronize_session=False)
     db.session.commit()
+    if updated == 1:
+        _credit_tx(organization_id, "whatsapp", -1, "sent")
     return updated == 1
 
 
@@ -119,6 +142,7 @@ def _refund_whatsapp_credit(organization_id):
         {Organization.whatsapp_credits: Organization.whatsapp_credits + 1}, synchronize_session=False
     )
     db.session.commit()
+    _credit_tx(organization_id, "whatsapp", 1, "refund")
 
 
 def _org_uses_own_whatsapp(organization_id):
@@ -188,6 +212,102 @@ def send_email(to_email, subject, body, organization_id=None, candidate_id=None,
             _refund_email_credit(organization_id)
         logger.warning("messaging_service: email to %s failed (%s)", to_email, exc)
         _log("email", to_email, "failed", organization_id, candidate_id, subject=subject, error_message=str(exc))
+        _queue_retry("email", to_email, subject, body, organization_id, candidate_id, str(exc))
+        return False
+
+
+RETRY_DELAYS_MINUTES = (5, 25, 125)  # exponential backoff, 3 retries after the first failure
+
+
+def _queue_retry(channel, recipient, subject, body, organization_id, candidate_id, error):
+    from datetime import datetime, timedelta
+    from app.models.notification_retry import NotificationRetry
+
+    try:
+        db.session.add(NotificationRetry(
+            organization_id=organization_id, candidate_id=candidate_id, channel=channel,
+            recipient=recipient, subject=(subject or "")[:255] or None, body=body, attempts=1,
+            status="pending", next_attempt_at=datetime.utcnow() + timedelta(minutes=RETRY_DELAYS_MINUTES[0]),
+            last_error=(error or "")[:1000],
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("messaging_service: could not queue retry")
+
+
+def run_notification_retries():
+    """Retries failed deliveries that are due. Called hourly by the scheduler. Never raises."""
+    from datetime import datetime, timedelta
+    from app.models.notification_retry import NotificationRetry
+
+    now = datetime.utcnow()
+    done = sent = gave_up = 0
+    due = NotificationRetry.query.filter(
+        NotificationRetry.status == "pending", NotificationRetry.next_attempt_at <= now
+    ).limit(200).all()
+    for item in due:
+        try:
+            if item.channel == "email":
+                ok = _retry_email(item)
+            else:
+                ok = _retry_whatsapp(item)
+            done += 1
+            if ok:
+                item.status = "sent"
+                sent += 1
+            else:
+                item.attempts += 1
+                if item.attempts > len(RETRY_DELAYS_MINUTES) + 1:
+                    item.status = "failed"
+                    gave_up += 1
+                else:
+                    item.next_attempt_at = now + timedelta(minutes=RETRY_DELAYS_MINUTES[item.attempts - 2])
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("messaging_service: retry %s crashed", item.id)
+    return {"retried": done, "sent": sent, "gave_up": gave_up}
+
+
+def _retry_email(item):
+    charge = bool(item.organization_id) and not _org_uses_own_smtp(item.organization_id)
+    if charge and not _reserve_email_credit(item.organization_id):
+        item.last_error = "No email credits left."
+        return False
+    try:
+        send_notification_email(item.recipient, item.subject or "", item.body or "", organization_id=item.organization_id,
+                                candidate_id=item.candidate_id)
+        _log("email", item.recipient, "sent", item.organization_id, item.candidate_id, subject=item.subject)
+        return True
+    except Exception as exc:
+        if charge:
+            _refund_email_credit(item.organization_id)
+        item.last_error = str(exc)[:1000]
+        return False
+
+
+def _retry_whatsapp(item):
+    access_token, phone_number_id = get_whatsapp_config(item.organization_id)
+    clean = _normalize_whatsapp_number(item.recipient)
+    if not access_token or not phone_number_id or not clean:
+        item.last_error = "WhatsApp is not configured or the number is invalid."
+        return False
+    charge = bool(item.organization_id) and not _org_uses_own_whatsapp(item.organization_id)
+    if charge and not _reserve_whatsapp_credit(item.organization_id):
+        item.last_error = "No WhatsApp credits left."
+        return False
+    try:
+        url = f"{WHATSAPP_GRAPH_API_BASE.rstrip('/')}/{phone_number_id}/messages"
+        payload = {"messaging_product": "whatsapp", "to": clean, "type": "text", "text": {"body": item.body or "", "preview_url": False}}
+        response = requests.post(url, json=payload, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        response.raise_for_status()
+        _log("whatsapp", item.recipient, "sent", item.organization_id, item.candidate_id)
+        return True
+    except Exception as exc:
+        if charge:
+            _refund_whatsapp_credit(item.organization_id)
+        item.last_error = str(exc)[:1000]
         return False
 
 
@@ -302,6 +422,7 @@ def send_whatsapp(to_number, message, organization_id=None, candidate_id=None,
             _refund_whatsapp_credit(organization_id)
         logger.warning("messaging_service: whatsapp to %s failed - network error (%s)", to_number, exc)
         _log("whatsapp", to_number, "failed", organization_id, candidate_id, error_message=str(exc)[:500])
+        _queue_retry("whatsapp", to_number, None, message, organization_id, candidate_id, str(exc)[:500])
         return False
 
 

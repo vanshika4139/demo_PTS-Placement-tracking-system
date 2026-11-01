@@ -481,6 +481,20 @@ def _device_hash(user_agent):
     return hashlib.sha256((user_agent or "")[:500].encode("utf-8")).hexdigest()[:32]
 
 
+def _checkpoint_or_404(checkpoint_id, candidate_id=None):
+    """Security 3.2: a follow-up checkpoint may only be used by users who can access its candidate.
+    Returns 404 (not 403) so the existence of another organization's record is not revealed."""
+    from flask import abort
+    checkpoint = FollowUpCheckpoint.query.get_or_404(checkpoint_id)
+    cand_id = getattr(checkpoint, "candidate_id", None)
+    candidate = Candidate.query.get(cand_id) if cand_id else None
+    if candidate is None or not _can_access_candidate(candidate, session.get("user")):
+        abort(404)
+    if candidate_id is not None and str(cand_id) != str(candidate_id):
+        abort(404)
+    return checkpoint
+
+
 def _audit_role_label(role_id):
     if not role_id:
         return "none"
@@ -8787,7 +8801,7 @@ def organization_placement_detail(candidate_id):
 @login_required
 @require_permission("placement.update")
 def organization_placement_checkpoint_update(checkpoint_id, candidate_id):
-    checkpoint = FollowUpCheckpoint.query.get_or_404(checkpoint_id)
+    checkpoint = _checkpoint_or_404(checkpoint_id, candidate_id)
     new_status = request.form.get("status")
     if new_status in ("pending", "completed", "missed"):
         checkpoint.status = new_status
@@ -8892,7 +8906,7 @@ def organization_tracking():
 @login_required
 @require_permission("tracking.view")
 def organization_tracking_checkpoint_update(checkpoint_id):
-    checkpoint = FollowUpCheckpoint.query.get_or_404(checkpoint_id)
+    checkpoint = _checkpoint_or_404(checkpoint_id)
     new_status = request.form.get("status")
     if new_status in ("pending", "completed", "missed"):
         checkpoint.status = new_status
@@ -8908,7 +8922,7 @@ def organization_tracking_checkpoint_update(checkpoint_id):
 @login_required
 @require_permission("tracking.view")
 def organization_tracking_checkpoint_delete(checkpoint_id):
-    checkpoint = FollowUpCheckpoint.query.get_or_404(checkpoint_id)
+    checkpoint = _checkpoint_or_404(checkpoint_id)
     db.session.delete(checkpoint)
     db.session.commit()
     _log_activity("Deleted follow-up checkpoint", checkpoint.label)

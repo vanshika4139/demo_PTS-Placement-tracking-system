@@ -69,7 +69,7 @@ class Candidate(db.Model):
     upi_id = Column(EncryptedString(), nullable=True)
     employer_name = Column(String(255), nullable=True)
     job_role = Column(String(255), nullable=True)
-    salary = Column(String(40), nullable=True)
+    salary = Column(EncryptedString(), nullable=True)
     joining_date = Column(DateTime, nullable=True)
     working_status = Column(String(80), nullable=True)
     location = Column(String(255), nullable=True)

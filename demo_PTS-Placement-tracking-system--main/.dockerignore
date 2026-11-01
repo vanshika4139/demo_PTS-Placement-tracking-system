@@ -1,0 +1,6 @@
+app/private_uploads
+.env
+.env.*
+venv
+.git
+__pycache__

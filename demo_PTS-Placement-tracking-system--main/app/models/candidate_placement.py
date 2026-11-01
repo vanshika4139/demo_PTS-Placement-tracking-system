@@ -6,6 +6,9 @@ from sqlalchemy.dialects.mysql import CHAR as MySQLCHAR
 from app.extensions import db
 
 
+from app.utils.crypto import EncryptedString
+
+
 class CandidatePlacement(db.Model):
     """One placement of one candidate at one employer (Employer spec 3.3, FR-39).
     History is never overwritten: leaving an employer sets LEFT, joining another creates a new row."""
@@ -17,7 +20,7 @@ class CandidatePlacement(db.Model):
     candidate_id = Column(MySQLCHAR(32), ForeignKey("candidates.id"), nullable=False, index=True)
     employer_id = Column(MySQLCHAR(32), ForeignKey("employers.id"), nullable=False, index=True)
     job_role = Column(String(255), nullable=True)
-    salary = Column(String(40), nullable=True)
+    salary = Column(EncryptedString(), nullable=True)
     location = Column(String(255), nullable=True)
     joining_date = Column(DateTime, nullable=True)
     working_status = Column(String(20), nullable=False, default="WORKING")  # WORKING | LEFT

@@ -441,6 +441,25 @@ def _log_activity(action, details=None, module=None, old_value=None, new_value=N
     db.session.commit()
 
 
+def _audit_role_label(role_id):
+    if not role_id:
+        return "none"
+    from app.models import Role
+    r = Role.query.get(role_id)
+    return r.name if r else str(role_id)
+
+
+def _audit_with_role(old, new, old_role_id, new_role_id):
+    import json as _json
+    if (old_role_id or None) == (new_role_id or None):
+        return old, new
+    o = _json.loads(old) if old else {}
+    n = _json.loads(new) if new else {}
+    o["role"] = _audit_role_label(old_role_id)
+    n["role"] = _audit_role_label(new_role_id)
+    return _json.dumps(o), _json.dumps(n)
+
+
 def _audit_snapshot(obj, fields):
     return {f: getattr(obj, f, None) for f in fields}
 
@@ -4710,6 +4729,7 @@ def super_admin_edit_user(user_id):
     current_role_id = current_user_role.role_id if current_user_role else None
 
     if request.method == "POST":
+        _user_before = _audit_snapshot(user, ["first_name", "last_name", "username", "email", "date_of_birth", "is_super_admin", "organization_id", "is_active", "password_hash"])
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
         username = request.form.get("username", "").strip().lower()
@@ -4780,7 +4800,10 @@ def super_admin_edit_user(user_id):
 
         db.session.commit()
         invalidate_user_permission_cache(user.id)
-        _log_activity("Updated user", f"{user.full_name} ({user.email})")
+        _old, _new = _audit_diff(_user_before, user, mask=("password_hash",))
+        _old, _new = _audit_with_role(_old, _new, current_role_id, (None if role == "super_admin" else rbac_role_id))
+        _log_activity("Updated user", f"{user.full_name} ({user.email})",
+                      module="user", old_value=_old, new_value=_new)
         flash("User updated successfully", "success")
         return redirect(url_for("frontend.super_admin_users"))
 
@@ -10259,6 +10282,7 @@ def organization_user_edit(user_id):
         return redirect(url_for("frontend.organization_users"))
 
     if request.method == "POST":
+        _user_before = _audit_snapshot(target, ["first_name", "last_name", "username", "email", "date_of_birth", "is_super_admin", "organization_id", "is_active", "password_hash"])
         first_name = (request.form.get("first_name") or "").strip()
         last_name = (request.form.get("last_name") or "").strip()
         username = (request.form.get("username") or "").strip().lower()
@@ -10305,7 +10329,10 @@ def organization_user_edit(user_id):
 
         db.session.commit()
         invalidate_user_permission_cache(target.id)
-        _log_activity("Updated user", f"[Org {org_id}] {target.full_name} ({target.email})")
+        _old, _new = _audit_diff(_user_before, target, mask=("password_hash",))
+        _old, _new = _audit_with_role(_old, _new, current_role_id, rbac_role_id)
+        _log_activity("Updated user", f"[Org {org_id}] {target.full_name} ({target.email})",
+                      module="user", old_value=_old, new_value=_new)
         flash("User updated successfully", "success")
         return redirect(url_for("frontend.organization_users"))
 

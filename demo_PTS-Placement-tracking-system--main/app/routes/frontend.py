@@ -234,6 +234,12 @@ def _can_access_candidate(candidate, user):
     created_by restriction entirely."""
     if not user:
         return True
+    # Security 3.2: organization isolation comes first. Only a Super Admin may
+    # reach another organization's candidate; view_all never crosses organizations.
+    if user.get("is_super_admin"):
+        return True
+    if candidate.organization_id != user.get("organization_id"):
+        return False
     if has_permission(user, "candidate.view_all"):
         return True
     return candidate.created_by == user.get("id")

@@ -267,6 +267,11 @@ def _can_access_batch(batch, user):
     can't bypass the list-level restriction by guessing a batch's URL."""
     if not user:
         return True
+    # Security 3.2: organization isolation first; only Super Admin may cross organizations.
+    if user.get("is_super_admin"):
+        return True
+    if batch.organization_id != user.get("organization_id"):
+        return False
     if has_permission(user, "batch.view_all"):
         return True
     return batch.created_by == user.get("id")
@@ -289,6 +294,11 @@ def _can_access_scheme(scheme, user):
     can't bypass the list-level restriction by guessing a scheme's URL."""
     if not user:
         return True
+    # Security 3.2: organization isolation first; only Super Admin may cross organizations.
+    if user.get("is_super_admin"):
+        return True
+    if scheme.organization_id != user.get("organization_id"):
+        return False
     if has_permission(user, "scheme.view_all"):
         return True
     return scheme.created_by == user.get("id")

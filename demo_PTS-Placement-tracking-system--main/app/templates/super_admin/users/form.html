@@ -39,6 +39,14 @@
         <input type="password" name="password" {% if not user %}required{% endif %} autocomplete="new-password">
       </label>
 
+      {% if user %}
+      <label>
+        Allowed IPs (optional)
+        <input type="text" name="allowed_ips" value="{{ user.allowed_ips or '' }}" placeholder="e.g. 203.0.113.5, 10.0.0.0/24" autocomplete="off">
+        <small style="color:#64748b;">Comma-separated IPs or networks. Leave blank for no restriction. Login from any other network is denied.</small>
+      </label>
+      {% endif %}
+
       <label>
         Account Type
         <select name="role" id="role" onchange="toggleOrgField()">

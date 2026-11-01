@@ -4791,7 +4791,7 @@ def super_admin_edit_user(user_id):
     current_role_id = current_user_role.role_id if current_user_role else None
 
     if request.method == "POST":
-        _user_before = _audit_snapshot(user, ["first_name", "last_name", "username", "email", "date_of_birth", "is_super_admin", "organization_id", "is_active", "password_hash"])
+        _user_before = _audit_snapshot(user, ["first_name", "last_name", "username", "email", "date_of_birth", "is_super_admin", "organization_id", "is_active", "allowed_ips", "password_hash"])
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
         username = request.form.get("username", "").strip().lower()
@@ -4839,6 +4839,23 @@ def super_admin_edit_user(user_id):
             ):
                 flash("That role belongs to a different organization. Please pick a role for this organization.", "error")
                 return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
+
+        if "allowed_ips" in request.form:
+            import ipaddress as _ipa, re as _re
+            _rules = [r for r in _re.split(r"[,\s]+", (request.form.get("allowed_ips") or "").strip()) if r]
+            for _r in _rules:
+                try:
+                    _ipa.ip_network(_r, strict=False)
+                except ValueError:
+                    flash(f"Invalid IP address or network: {_r}", "error")
+                    return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
+            _actor = session.get("user") or {}
+            if _rules and user.id == _actor.get("id") and not any(
+                _ipa.ip_address(_client_ip()) in _ipa.ip_network(_r, strict=False) for _r in _rules
+            ):
+                flash("You cannot restrict your own account to IPs that exclude your current network.", "error")
+                return render_template("super_admin/users/form.html", user=user, organizations=organizations, roles=roles, current_role_id=current_role_id)
+            user.allowed_ips = ", ".join(_rules) or None
 
         user.first_name = first_name
         user.last_name = last_name

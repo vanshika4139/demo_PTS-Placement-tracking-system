@@ -441,6 +441,46 @@ def _log_activity(action, details=None, module=None, old_value=None, new_value=N
     db.session.commit()
 
 
+def _client_ip():
+    """Real client IP. X-Forwarded-For is trusted only when the request comes from
+    a private/loopback address (our own nginx), so a public client cannot fake it."""
+    import ipaddress
+    remote = request.remote_addr or ""
+    try:
+        if ipaddress.ip_address(remote).is_private or ipaddress.ip_address(remote).is_loopback:
+            fwd = (request.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()  # last = appended by our nginx; first can be spoofed
+            if fwd:
+                ipaddress.ip_address(fwd)
+                return fwd
+    except ValueError:
+        pass
+    return remote
+
+
+def _ip_allowed(user, ip):
+    """FR-60: empty allowed_ips = no restriction. Otherwise ip must match an IP or CIDR."""
+    import ipaddress, re as _re
+    rules = [r for r in _re.split(r"[,\s]+", (getattr(user, "allowed_ips", None) or "").strip()) if r]
+    if not rules:
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for rule in rules:
+        try:
+            if addr in ipaddress.ip_network(rule, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _device_hash(user_agent):
+    import hashlib
+    return hashlib.sha256((user_agent or "")[:500].encode("utf-8")).hexdigest()[:32]
+
+
 def _audit_role_label(role_id):
     if not role_id:
         return "none"
@@ -584,7 +624,7 @@ def login():
                 email=email,
                 full_name=user.full_name if user else None,
                 user_id=user.id if user else None,
-                ip_address=request.remote_addr,
+                ip_address=_client_ip(),
                 user_agent=request.headers.get("User-Agent", "")[:500],
                 success=False,
                 failure_reason="Invalid credentials",
@@ -596,10 +636,23 @@ def login():
                 email=email,
                 full_name=user.full_name,
                 user_id=user.id,
-                ip_address=request.remote_addr,
+                ip_address=_client_ip(),
                 user_agent=request.headers.get("User-Agent", "")[:500],
                 success=False,
                 failure_reason="Account inactive",
+            ))
+            db.session.commit()
+        elif not _ip_allowed(user, _client_ip()):
+            error = "Login is not allowed from this network. Contact your administrator."
+            db.session.add(LoginHistory(
+                email=email,
+                full_name=user.full_name,
+                user_id=user.id,
+                ip_address=_client_ip(),
+                user_agent=request.headers.get("User-Agent", "")[:500],
+                device_hash=_device_hash(request.headers.get("User-Agent", "")),
+                success=False,
+                failure_reason="IP not allowed",
             ))
             db.session.commit()
         else:
@@ -619,7 +672,7 @@ def login():
                     email=email,
                     full_name=user.full_name,
                     user_id=user.id,
-                    ip_address=request.remote_addr,
+                    ip_address=_client_ip(),
                     user_agent=request.headers.get("User-Agent", "")[:500],
                     success=False,
                     failure_reason=org_block_reason,
@@ -628,13 +681,18 @@ def login():
                 return render_template("auth/login.html", error=error)
 
             from datetime import datetime
+            _dev_hash = _device_hash(request.headers.get("User-Agent", ""))
+            _had_login = LoginHistory.query.filter_by(user_id=user.id, success=True).first() is not None
+            _known_device = LoginHistory.query.filter_by(user_id=user.id, success=True, device_hash=_dev_hash).first() is not None
+            _new_device = _had_login and not _known_device
             user.last_login_at = datetime.utcnow()
             db.session.add(LoginHistory(
                 email=email,
                 full_name=user.full_name,
                 user_id=user.id,
-                ip_address=request.remote_addr,
+                ip_address=_client_ip(),
                 user_agent=request.headers.get("User-Agent", "")[:500],
+                device_hash=_dev_hash,
                 success=True,
             ))
             db.session.commit()
@@ -654,11 +712,15 @@ def login():
                 session_token=session_token,
                 user_id=user.id,
                 user_email=user.email,
-                ip_address=request.remote_addr,
+                ip_address=_client_ip(),
                 user_agent=request.headers.get("User-Agent", "")[:500],
             ))
             db.session.commit()
 
+            if _new_device:
+                _log_activity("security.new_device_login",
+                              f"{user.email} logged in from a new device (IP {_client_ip()})",
+                              module="security")
             session.permanent = True
             flash(f"Welcome back, {user.full_name}", "success")
             if user.is_super_admin:

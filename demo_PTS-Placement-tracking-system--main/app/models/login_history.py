@@ -15,6 +15,7 @@ class LoginHistory(db.Model):
     full_name = Column(String(255), nullable=True)
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(String(500), nullable=True)
+    device_hash = Column(String(64), nullable=True, index=True)
     success = Column(Boolean, nullable=False, default=False)
     failure_reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)

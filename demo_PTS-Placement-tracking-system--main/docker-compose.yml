@@ -11,6 +11,8 @@ services:
       DATABASE_URL: mysql+pymysql://root:${MYSQL_PASSWORD_URL}@mysql:3306/placement_tracking
       REDIS_URL: redis://redis:6379/0
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     volumes:
       - private_uploads:/app/app/private_uploads
     depends_on:

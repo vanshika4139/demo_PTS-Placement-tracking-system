@@ -133,7 +133,7 @@
         <input type="file" name="offer_letter" accept=".pdf,.jpg,.jpeg,.png">
       </label>
       {% if candidate and candidate.offer_letter_url %}
-      <p style="grid-column: 1/-1;">Current file: <a href="{{ candidate.offer_letter_url }}" target="_blank">View Offer Letter</a></p>
+      <p style="grid-column: 1/-1;">Current file: <a href="{{ url_for('frontend.organization_candidate_offer_file', candidate_id=candidate.id) }}" target="_blank">View Offer Letter</a></p>
       {% endif %}
     </div>
 

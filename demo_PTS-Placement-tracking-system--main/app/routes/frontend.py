@@ -6330,10 +6330,10 @@ def organization_candidate_create():
                 return render_template("organization/candidates/form.html", candidate=None, organizations=organizations, batches=batches, schemes=schemes)
             filename = secure_filename(offer_file.filename)
             unique_name = f"{uuid.uuid4().hex}_{filename}"
-            upload_dir = os.path.join("app", "static", "uploads", "offer_letters")
+            upload_dir = os.path.join("app", "private_uploads", "offer_letters", str(org_id))
             os.makedirs(upload_dir, exist_ok=True)
             offer_file.save(os.path.join(upload_dir, unique_name))
-            offer_letter_url = f"/static/uploads/offer_letters/{unique_name}"
+            offer_letter_url = f"private:offer_letters/{org_id}/{unique_name}"
 
         mobile_value = request.form.get("mobile") or ""
         default_password = mobile_value.strip() if mobile_value.strip() else "changeme123"
@@ -6824,10 +6824,10 @@ def organization_candidate_edit(candidate_id):
                 return redirect(url_for("frontend.organization_candidate_edit", candidate_id=candidate.id))
             filename = secure_filename(offer_file.filename)
             unique_name = f"{uuid.uuid4().hex}_{filename}"
-            upload_dir = os.path.join("app", "static", "uploads", "offer_letters")
+            upload_dir = os.path.join("app", "private_uploads", "offer_letters", str(candidate.organization_id))
             os.makedirs(upload_dir, exist_ok=True)
             offer_file.save(os.path.join(upload_dir, unique_name))
-            candidate.offer_letter_url = f"/static/uploads/offer_letters/{unique_name}"
+            candidate.offer_letter_url = f"private:offer_letters/{candidate.organization_id}/{unique_name}"
 
         if not candidate.password_hash and candidate.mobile:
             candidate.password_hash = generate_password_hash(candidate.mobile.strip())
@@ -8461,11 +8461,11 @@ def candidate_upload_proof():
 
     filename = secure_filename(proof_file.filename)
     unique_name = f"{uuid.uuid4().hex}_{filename}"
-    upload_dir = os.path.join("app", "static", "uploads", "placement_proofs")
+    upload_dir = os.path.join("app", "private_uploads", "placement_proofs", str(candidate.organization_id))
     os.makedirs(upload_dir, exist_ok=True)
     proof_file.save(os.path.join(upload_dir, unique_name))
 
-    candidate.offer_letter_url = f"/static/uploads/placement_proofs/{unique_name}"
+    candidate.offer_letter_url = f"private:placement_proofs/{candidate.organization_id}/{unique_name}"
     candidate.placement_proof_uploaded = True
     db.session.commit()
 
@@ -8525,6 +8525,49 @@ def _save_candidate_document(candidate, doc_type, upload):
         except OSError:
             pass
     return True, f"{label} uploaded."
+
+
+PRIVATE_UPLOAD_BASE = os.path.abspath(os.path.join("app", "private_uploads"))
+STATIC_UPLOAD_BASE = os.path.abspath(os.path.join("app", "static", "uploads"))
+
+
+def _resolve_offer_file(stored):
+    """Absolute path of an offer letter / placement proof, or None.
+    New files are stored as 'private:<folder>/<org>/<name>' under app/private_uploads;
+    older ones as '/static/uploads/<folder>/<name>'. Paths that escape the base folder are refused."""
+    if not stored:
+        return None
+    if stored.startswith("private:"):
+        base, rel = PRIVATE_UPLOAD_BASE, stored[len("private:"):]
+    elif stored.startswith("/static/uploads/"):
+        base, rel = STATIC_UPLOAD_BASE, stored[len("/static/uploads/"):]
+    else:
+        return None
+    path = os.path.abspath(os.path.join(base, rel))
+    try:
+        inside = os.path.commonpath([path, base]) == base
+    except ValueError:
+        return None
+    return path if inside and os.path.isfile(path) else None
+
+
+@frontend_bp.route("/organization/candidates/<candidate_id>/offer-file")
+@login_required
+@require_permission("candidate.view")
+def organization_candidate_offer_file(candidate_id):
+    """Security 3.4: offer letters and placement proofs are served only to signed-in users
+    of the candidate's own organization (never from /static)."""
+    from flask import abort, send_file
+    candidate = Candidate.query.get_or_404(candidate_id)
+    if not _can_access_candidate(candidate, session.get("user")):
+        abort(404)
+    path = _resolve_offer_file(candidate.offer_letter_url)
+    if not path:
+        abort(404)
+    inline = path.lower().endswith((".pdf", ".png", ".jpg", ".jpeg"))
+    response = send_file(path, as_attachment=not inline, download_name=os.path.basename(path).split("_", 1)[-1])
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def _send_candidate_document(candidate, doc_type):

@@ -9026,6 +9026,15 @@ def organization_attendance_mark():
         return redirect(url_for("frontend.organization_attendance"))
 
     candidate_ids = request.form.getlist("candidate_ids")
+    # Security 3.2: only candidates of the user's own organization may be marked.
+    _own_ids = (
+        {c.id for c in Candidate.query.filter(
+            Candidate.id.in_(candidate_ids),
+            Candidate.organization_id == user.get("organization_id"),
+        ).all()}
+        if candidate_ids else set()
+    )
+    candidate_ids = [cid for cid in candidate_ids if cid in _own_ids]
     marked_count = 0
 
     for candidate_id in candidate_ids:

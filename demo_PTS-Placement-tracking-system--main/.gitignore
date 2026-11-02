@@ -42,3 +42,4 @@ app/private_uploads/
 *.bak*
 scan*.txt
 next_scan.txt
+!.env.example

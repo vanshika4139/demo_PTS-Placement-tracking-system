@@ -10,9 +10,9 @@ services:
       FLASK_ENV: development
       DATABASE_URL: mysql+pymysql://root:${MYSQL_PASSWORD_URL}@mysql:3306/placement_tracking
       REDIS_URL: redis://redis:6379/0
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      SECRET_KEY: ${SECRET_KEY}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in your .env file}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in your .env file}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in your .env file}
     volumes:
       - private_uploads:/app/app/private_uploads
     depends_on:

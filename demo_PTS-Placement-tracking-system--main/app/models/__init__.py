@@ -37,6 +37,7 @@ from app.models.candidate_consent import CandidateConsent
 from app.models.data_breach import DataBreach
 from app.models.document_reminder_log import DocumentReminderLog
 from app.models.salary_slip import SalarySlip
+from app.models.revoked_token import RevokedToken
 
 from app.models.call_disposition import CallDisposition  # noqa: F401
 from app.models.call_task import CallTask  # noqa: F401
@@ -85,6 +86,7 @@ __all__ = [
     "EmailLog", "CandidateConsent", "DataBreach",
     "DocumentReminderLog",
     "SalarySlip",
+    "RevokedToken",
     "CallDisposition",
     "CallTask",
     "CallLog",

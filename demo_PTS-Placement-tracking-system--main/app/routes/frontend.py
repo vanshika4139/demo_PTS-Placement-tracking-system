@@ -10779,7 +10779,7 @@ def _org_storage_used_mb(org):
         return total
 
     total = 0
-    for sub in ("kyc_documents", "candidate_certificates", "candidate_documents", "salary_slips"):
+    for sub in ("kyc_documents", "candidate_certificates", "candidate_documents", "salary_slips", "offer_letters", "placement_proofs"):
         total += _dir_size(os.path.join("app", "private_uploads", sub, str(org.id)))
 
     urls = [org.logo]

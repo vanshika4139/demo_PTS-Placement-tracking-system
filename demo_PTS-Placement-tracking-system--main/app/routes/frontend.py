@@ -2070,6 +2070,12 @@ def call_center_edit_call_log(task_id):
             flash("Could not save the changes. Please try again.", "error")
             return _render(**form_state)
 
+        import json as _json
+        _old_v = {"disposition": old_disposition.code if old_disposition else None, "duration_seconds": old_seconds}
+        _new_v = {"disposition": disposition.code, "duration_seconds": new_seconds}
+        if notes != old_notes:
+            _old_v["notes"] = "(hidden)"
+            _new_v["notes"] = "(changed)"
         _log_activity(
             "call_log.edited",
             (
@@ -2078,6 +2084,9 @@ def call_center_edit_call_log(task_id):
                 f"duration {old_seconds}s -> {new_seconds}s; "
                 f"old notes: {old_notes[:200]}"
             )[:500],
+            module="call_log",
+            old_value=_json.dumps(_old_v),
+            new_value=_json.dumps(_new_v),
         )
         flash("Call log updated.", "success")
         return redirect(url_for("frontend.call_center_queue", section="completed"))

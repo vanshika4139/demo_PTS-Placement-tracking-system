@@ -36,6 +36,8 @@ def my_organization_stats():
     org = _authenticate_by_api_key()
     if not org:
         return jsonify({"error": "Invalid or missing API key"}), 401
+    if org.status == 0:
+        return jsonify({"error": "Organization access is suspended"}), 403
 
     candidates = Candidate.query.filter_by(organization_id=org.id, is_deleted=False).all()
     total = len(candidates)

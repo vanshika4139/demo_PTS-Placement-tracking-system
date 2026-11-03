@@ -45,3 +45,5 @@ next_scan.txt
 !.env.example
 app/static/uploads/offer_letters/
 app/static/uploads/placement_proofs/
+app/static/uploads/offer_letters/
+app/static/uploads/placement_proofs/

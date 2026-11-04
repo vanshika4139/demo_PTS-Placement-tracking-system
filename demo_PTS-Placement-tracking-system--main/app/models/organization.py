@@ -2,6 +2,7 @@ from sqlalchemy import Column, BigInteger, Boolean, Date, DateTime, ForeignKey, 
 from sqlalchemy.dialects.mysql import CHAR as MySQLCHAR
 
 from app.extensions import db
+from app.utils.crypto import EncryptedString
 
 
 class Organization(db.Model):
@@ -33,6 +34,9 @@ class Organization(db.Model):
     storage_used = Column(BigInteger, nullable=True, default=0)
     candidate_limit = Column(Integer, nullable=True, default=0)
     ai_call_allowance = Column(Integer, nullable=True, default=0)
+    ai_provider = Column(String(30), nullable=True)  # ollama | openai | gemini (own key, if plan allows)
+    ai_api_key = Column(EncryptedString(1000), nullable=True)  # Fernet-encrypted at rest
+    ai_model = Column(String(100), nullable=True)
     whatsapp_credits = Column(Integer, nullable=True, default=0)
     sms_credits = Column(Integer, nullable=True, default=0)
     email_credits = Column(Integer, nullable=True, default=0)

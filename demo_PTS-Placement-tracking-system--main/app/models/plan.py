@@ -29,6 +29,7 @@ class Plan(db.Model):
 
     candidate_limit = Column(Integer, nullable=False, default=0)
     ai_call_allowance = Column(Integer, nullable=False, default=0)
+    allow_own_ai_key = Column(Boolean, nullable=False, default=False)  # org admin may use own AI key
     whatsapp_credits = Column(Integer, nullable=False, default=0)
     sms_credits = Column(Integer, nullable=False, default=0)
     email_credits = Column(Integer, nullable=False, default=0)

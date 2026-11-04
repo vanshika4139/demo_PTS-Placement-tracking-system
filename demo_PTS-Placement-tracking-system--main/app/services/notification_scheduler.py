@@ -53,7 +53,16 @@ def _is_due(schedule, today, force=False, now=None):
     if schedule.frequency == "weekly":
         return schedule.day_of_week is not None and today.weekday() == schedule.day_of_week
     if schedule.frequency == "monthly":
-        return schedule.day_of_month is not None and today.day == schedule.day_of_month
+        if schedule.day_of_month is None:
+            return False
+        import calendar
+        due_day = min(schedule.day_of_month, calendar.monthrange(today.year, today.month)[1])
+        if today.day < due_day:
+            return False
+        due_date = today.replace(day=due_day)
+        if schedule.last_run_at and schedule.last_run_at.date() >= due_date:
+            return False
+        return True
     return False
 
 

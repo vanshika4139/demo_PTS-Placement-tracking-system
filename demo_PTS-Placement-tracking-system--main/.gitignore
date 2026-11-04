@@ -47,3 +47,8 @@ app/static/uploads/offer_letters/
 app/static/uploads/placement_proofs/
 app/static/uploads/offer_letters/
 app/static/uploads/placement_proofs/
+
+app/private_uploads/
+*.bak*
+.env
+.env.backup

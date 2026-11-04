@@ -21,3 +21,4 @@ cashfree-pg
 croniter
 APScheduler==3.11.3
 stripe==16.0.0
+bcrypt==4.0.1

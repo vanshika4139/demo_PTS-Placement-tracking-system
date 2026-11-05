@@ -323,12 +323,26 @@ def candidate_salary_slips():
 def candidate_salary_slip_upload():
     """multipart/form-data: month=YYYY-MM and file. Uses the same function as the web page,
     so type, size, future-month and storage rules are identical."""
-    from app.routes.frontend import _save_salary_slip
+    from app.routes.frontend import _create_notification, _save_salary_slip
 
+    candidate = g.candidate
+    # same rule as the web page: only after the placement is recorded
+    if not candidate.employer_name:
+        return _fail(403, "You can upload a salary slip after your placement is recorded.", "no placement recorded")
     month = (request.form.get("month") or "").strip()
-    ok, message = _save_salary_slip(g.candidate, month, request.files.get("file"))
+    ok, message = _save_salary_slip(candidate, month, request.files.get("file"))
     if not ok:
         return _fail(400, message, "upload rejected")
+    try:
+        _create_notification(
+            title="Salary slip uploaded: %s" % candidate.full_name,
+            message="%s uploaded the salary slip for %s." % (candidate.full_name, month),
+            notif_type="info",
+            organization_id=candidate.organization_id,
+            candidate_id=candidate.id,
+        )
+    except Exception:
+        pass  # the slip is saved; a notification problem must not fail the upload
     return _resp(True, message, {"month": month}, None, 201)
 
 

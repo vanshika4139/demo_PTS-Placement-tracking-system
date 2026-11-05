@@ -43,10 +43,12 @@ def client(app):
     return app.test_client()
 
 
-def make_candidate(reg="REG001", email=None, password=PASSWORD, mobile=MOBILE, status="active", consent=True):
+def make_candidate(reg="REG001", email=None, password=PASSWORD, mobile=MOBILE, status="active", consent=True,
+                   employer="Acme Pvt Ltd"):
     c = Candidate(
         organization_id=1, registration_number=reg, full_name="Test " + reg, mobile=mobile,
         email=email, password_hash=generate_password_hash(password), account_status=status,
+        employer_name=employer,
     )
     db.session.add(c)
     db.session.commit()
@@ -245,3 +247,32 @@ def test_candidate_cannot_see_or_download_another_candidates_slip(client, slips_
     assert client.get("/api/v1/candidate/salary-slips", headers=bearer(b)).get_json()["data"]["slips"] == []
     stolen = client.get("/api/v1/candidate/salary-slips/%s/download" % slip_id, headers=bearer(b))
     assert stolen.status_code in (403, 404)
+
+def test_slip_upload_needs_a_recorded_placement(client, slips_env):
+    make_candidate(employer=None)
+    access, _ = tokens(client)
+    month = datetime.utcnow().strftime("%Y-%m")
+    assert upload(client, access, month).status_code == 403
+    assert SalarySlip.query.count() == 0
+
+
+def test_slip_upload_notifies_the_organization(client, slips_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.routes.frontend._create_notification", lambda **kw: calls.append(kw))
+    c = make_candidate()
+    access, _ = tokens(client)
+    month = datetime.utcnow().strftime("%Y-%m")
+    assert upload(client, access, month).status_code == 201
+    assert len(calls) == 1
+    assert calls[0]["candidate_id"] == c.id and calls[0]["organization_id"] == 1
+
+
+def test_notification_failure_does_not_fail_the_upload(client, slips_env, monkeypatch):
+    def boom(**kw):
+        raise RuntimeError("notification down")
+    monkeypatch.setattr("app.routes.frontend._create_notification", boom)
+    make_candidate()
+    access, _ = tokens(client)
+    month = datetime.utcnow().strftime("%Y-%m")
+    assert upload(client, access, month).status_code == 201
+    assert SalarySlip.query.count() == 1

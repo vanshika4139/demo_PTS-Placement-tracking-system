@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}AI Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>AI Settings</h2>
+  <p>Use your own OpenAI or Gemini key for AI features.</p>
+</div>
+
+<div class="panel-card form-card">
+  {% if allowed %}
+  <p style="margin-top:0;">
+    Current setup:
+    {% if has_key %}
+    <strong>Your own {{ (organization.ai_provider or '')|capitalize }} key</strong> (saved, not shown for security).
+    AI calls use your key and do not use up your plan's AI call allowance.
+    {% else %}
+    <strong>Platform AI</strong>. Each AI call uses one from your plan's AI call allowance ({{ organization.ai_call_allowance or 0 }} left).
+    {% endif %}
+  </p>
+
+  <form method="post" class="full-form" style="margin-top:16px;">
+    <div class="form-grid">
+      <label>Provider
+        <select name="ai_provider" required>
+          <option value="openai" {{ 'selected' if organization.ai_provider == 'openai' }}>OpenAI</option>
+          <option value="gemini" {{ 'selected' if organization.ai_provider == 'gemini' }}>Gemini</option>
+        </select>
+      </label>
+      <label>Model (optional)
+        <input type="text" name="ai_model" maxlength="100" value="{{ organization.ai_model or '' }}" placeholder="Leave empty for the default model">
+      </label>
+      <label>API key
+        <input type="password" name="ai_api_key" maxlength="500" autocomplete="new-password"
+               placeholder="{{ 'Saved. Leave empty to keep the current key.' if has_key else 'Paste your API key' }}" {{ '' if has_key else 'required' }}>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary-btn">Save</button>
+    </div>
+  </form>
+
+  {% if has_key %}
+  <form method="post" style="margin-top:12px;" onsubmit="return confirm('Remove your AI key and go back to the platform AI?');">
+    <input type="hidden" name="remove_key" value="1">
+    <button type="submit" class="ghost-btn">Remove my key</button>
+  </form>
+  {% endif %}
+  {% else %}
+  <p style="margin-top:0;">Using your own AI key is not included in your {{ plan.name if plan else 'current' }} plan. AI features use the platform AI and your plan's AI call allowance ({{ organization.ai_call_allowance or 0 }} left).</p>
+  <a class="primary-btn" href="{{ url_for('frontend.organization_billing') }}">View plans</a>
+  {% endif %}
+</div>
+{% endblock %}

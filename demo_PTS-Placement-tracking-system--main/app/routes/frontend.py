@@ -3872,6 +3872,7 @@ def super_admin_plan_create():
             sms_credits=_parse_int(request.form.get("sms_credits")) or 0,
             email_credits=_parse_int(request.form.get("email_credits")) or 0,
             ai_call_allowance=_parse_int(request.form.get("ai_call_allowance")) or 0,
+            allow_own_ai_key=bool(request.form.get("allow_own_ai_key")),
             storage_limit_mb=_parse_int(request.form.get("storage_limit_mb")),
             api_access=bool(request.form.get("api_access")),
             custom_branding=bool(request.form.get("custom_branding")),
@@ -3897,7 +3898,7 @@ def super_admin_plan_edit(plan_id):
         actor = session.get("user") or {}
         _plan_before = _audit_snapshot(plan, [
             "name", "price", "default_billing_cycle", "candidate_limit", "whatsapp_credits",
-            "sms_credits", "email_credits", "ai_call_allowance", "storage_limit_mb",
+            "sms_credits", "email_credits", "ai_call_allowance", "allow_own_ai_key", "storage_limit_mb",
             "api_access", "custom_branding", "report_access_level", "display_order",
         ])
         plan.name = request.form.get("name", "").strip() or plan.name
@@ -3918,6 +3919,7 @@ def super_admin_plan_edit(plan_id):
         plan.sms_credits = _parse_int(request.form.get("sms_credits")) or 0
         plan.email_credits = _parse_int(request.form.get("email_credits")) or 0
         plan.ai_call_allowance = _parse_int(request.form.get("ai_call_allowance")) or 0
+        plan.allow_own_ai_key = bool(request.form.get("allow_own_ai_key"))
         plan.storage_limit_mb = _parse_int(request.form.get("storage_limit_mb"))
         plan.api_access = bool(request.form.get("api_access"))
         plan.custom_branding = bool(request.form.get("custom_branding"))
@@ -9789,6 +9791,62 @@ def organization_branding():
         return back
 
     return render_template("organization/settings/branding.html", organization=organization, plan=plan, allowed=allowed)
+
+
+@frontend_bp.route("/organization/settings/ai", methods=["GET", "POST"])
+@login_required
+@require_permission("settings.view")
+def organization_ai_settings():
+    """Org's own AI key. Allowed only when the plan has allow_own_ai_key. The key is stored
+    encrypted and is never sent back to the browser."""
+    user = session.get("user") or {}
+    org_id = user.get("organization_id")
+    if not org_id:
+        flash("No organization is associated with this account.", "error")
+        return redirect(url_for("frontend.settings_profile"))
+
+    organization = Organization.query.get_or_404(org_id)
+    plan = Plan.query.get(organization.subscription_plan_id) if organization.subscription_plan_id else None
+    allowed = bool(plan and plan.allow_own_ai_key)
+    back = redirect(url_for("frontend.organization_ai_settings"))
+
+    if request.method == "POST":
+        if not allowed:
+            flash("Using your own AI key is not included in your plan.", "error")
+            return back
+        if request.form.get("remove_key"):
+            organization.ai_api_key = None
+            organization.ai_provider = None
+            organization.ai_model = None
+            db.session.commit()
+            _log_activity("organization.ai_settings_updated", f"{organization.organization_name}: own AI key removed")
+            flash("Your AI key was removed. The platform AI will be used.", "success")
+            return back
+        provider = (request.form.get("ai_provider") or "").strip().lower()
+        model = (request.form.get("ai_model") or "").strip()[:100] or None
+        new_key = (request.form.get("ai_api_key") or "").strip()
+        if provider not in ("openai", "gemini"):
+            flash("Please choose OpenAI or Gemini.", "error")
+            return back
+        if len(new_key) > 500:
+            flash("That API key looks too long.", "error")
+            return back
+        if not new_key and not organization.ai_api_key:
+            flash("Please enter your API key.", "error")
+            return back
+        organization.ai_provider = provider
+        organization.ai_model = model
+        if new_key:
+            organization.ai_api_key = new_key
+        db.session.commit()
+        _log_activity("organization.ai_settings_updated", f"{organization.organization_name}: AI settings updated ({provider})")
+        flash("AI settings saved.", "success")
+        return back
+
+    return render_template(
+        "organization/settings/ai.html",
+        organization=organization, plan=plan, allowed=allowed, has_key=bool(organization.ai_api_key),
+    )
 
 
 @frontend_bp.route("/settings/profile", methods=["GET", "POST"])

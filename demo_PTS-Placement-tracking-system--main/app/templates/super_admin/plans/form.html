@@ -45,6 +45,9 @@
       <label style="display:flex; align-items:center; gap:8px; flex-direction:row;">
         <input type="checkbox" name="custom_branding" style="width:auto;" {{ 'checked' if plan and plan.custom_branding }}> Custom Branding
       </label>
+      <label style="display:flex; align-items:center; gap:8px; flex-direction:row;">
+        <input type="checkbox" name="allow_own_ai_key" style="width:auto;" {{ 'checked' if plan and plan.allow_own_ai_key }}> Allow own AI key
+      </label>
     </div>
     <div class="form-actions">
       <button type="submit" class="primary-btn">{{ 'Save Changes' if plan else 'Create Plan' }}</button>

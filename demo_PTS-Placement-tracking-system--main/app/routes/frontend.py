@@ -9795,7 +9795,7 @@ def organization_branding():
 
 @frontend_bp.route("/organization/settings/ai", methods=["GET", "POST"])
 @login_required
-@require_permission("settings.view")
+@require_permission("org_role.manage")
 def organization_ai_settings():
     """Org's own AI key. Allowed only when the plan has allow_own_ai_key. The key is stored
     encrypted and is never sent back to the browser."""

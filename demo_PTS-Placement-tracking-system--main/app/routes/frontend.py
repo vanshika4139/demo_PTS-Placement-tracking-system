@@ -639,6 +639,138 @@ def _sync_overdue_notifications(user):
         )
 
 
+def _finish_staff_login(user, email):
+    from datetime import datetime
+    _dev_hash = _device_hash(request.headers.get("User-Agent", ""))
+    _had_login = LoginHistory.query.filter_by(user_id=user.id, success=True).first() is not None
+    _known_device = LoginHistory.query.filter_by(user_id=user.id, success=True, device_hash=_dev_hash).first() is not None
+    _new_device = _had_login and not _known_device
+    user.last_login_at = datetime.utcnow()
+    db.session.add(LoginHistory(
+        email=email,
+        full_name=user.full_name,
+        user_id=user.id,
+        ip_address=_client_ip(),
+        user_agent=request.headers.get("User-Agent", "")[:500],
+        device_hash=_dev_hash,
+        success=True,
+    ))
+    db.session.commit()
+
+    session["user"] = {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_super_admin": user.is_super_admin,
+        "organization_id": user.organization_id,
+    }
+
+    import secrets
+    session_token = secrets.token_hex(16)
+    session["session_token"] = session_token
+    db.session.add(UserSession(
+        session_token=session_token,
+        user_id=user.id,
+        user_email=user.email,
+        ip_address=_client_ip(),
+        user_agent=request.headers.get("User-Agent", "")[:500],
+    ))
+    db.session.commit()
+
+    if _new_device:
+        _log_activity("security.new_device_login",
+                      f"{user.email} logged in from a new device (IP {_client_ip()})",
+                      module="security")
+    session.permanent = True
+    flash(f"Welcome back, {user.full_name}", "success")
+    if user.is_super_admin:
+        return redirect(url_for("frontend.super_admin_dashboard"))
+    if getattr(user, "employer_id", None):
+        return redirect(url_for("frontend.employer_dashboard"))
+    return redirect(url_for("frontend.organization_dashboard"))
+
+
+def _staff_2fa_required(user):
+    """FR-57: email OTP as the second factor for staff (web) logins."""
+    from flask import current_app
+    enabled = current_app.config.get("STAFF_2FA_ENABLED")
+    if enabled is None:
+        enabled = os.getenv("STAFF_2FA_ENABLED", "1") == "1"
+    return bool(enabled) and bool(user.email)
+
+
+def _start_staff_otp(user):
+    """Password, IP and organization checks have passed; now send the OTP. No session is created yet."""
+    from app.utils.email import send_otp_email
+
+    if _otp_cooldown_remaining(user.email) <= 0:
+        otp_entry = PasswordResetOTP(
+            email=user.email,
+            otp_code=_generate_otp(),
+            expires_at=datetime.utcnow() + timedelta(minutes=10),
+        )
+        db.session.add(otp_entry)
+        db.session.commit()
+        try:
+            send_otp_email(user.email, otp_entry.otp_code)
+        except Exception:
+            try:
+                otp_entry.is_used = True
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            return render_template("auth/login.html", error="Could not send OTP email. Please try again later.")
+        flash("An OTP has been sent to your email address", "success")
+    else:
+        flash(
+            "An OTP was already sent. Please use it, or wait %s before requesting another one."
+            % _otp_wait_text(_otp_cooldown_remaining(user.email)),
+            "error",
+        )
+    session["staff_otp_pending_id"] = user.id
+    session["staff_otp_email"] = user.email
+    return redirect(url_for("frontend.staff_verify_login_otp"))
+
+
+@frontend_bp.route("/login/verify-otp", methods=["GET", "POST"])
+@rate_limit("staff_verify_login_otp", max_attempts=5, window_seconds=600)
+def staff_verify_login_otp():
+    error = None
+    user_id = session.get("staff_otp_pending_id")
+    email = session.get("staff_otp_email")
+    if not user_id or not email:
+        flash("Please log in again", "error")
+        return redirect(url_for("frontend.login"))
+
+    if request.method == "POST":
+        entered_otp = request.form.get("otp", "").strip()
+        otp_entry = (
+            PasswordResetOTP.query.filter_by(email=email, otp_code=entered_otp, is_used=False)
+            .order_by(PasswordResetOTP.created_at.desc())
+            .first()
+        )
+        if not entered_otp or not otp_entry or not otp_entry.is_valid():
+            error = "Invalid or expired OTP. Please try again."
+        else:
+            user = User.query.filter_by(id=user_id, is_deleted=False).first()
+            organization = None
+            if user and not user.is_super_admin and user.organization_id:
+                organization = Organization.query.get(user.organization_id)
+            if (not user or not user.is_active or not _ip_allowed(user, _client_ip())
+                    or (organization and organization.status == 0)):
+                session.pop("staff_otp_pending_id", None)
+                session.pop("staff_otp_email", None)
+                flash("Login is not allowed. Please contact your administrator.", "error")
+                return redirect(url_for("frontend.login"))
+            otp_entry.is_used = True
+            db.session.commit()
+            session.pop("staff_otp_pending_id", None)
+            session.pop("staff_otp_email", None)
+            return _finish_staff_login(user, user.email)
+
+    return render_template("auth/verify_otp.html", error=error, email=email)
+
+
 @frontend_bp.route("/login", methods=["GET", "POST"])
 @rate_limit("login", max_attempts=5, window_seconds=300)
 def login():
@@ -710,54 +842,9 @@ def login():
                 db.session.commit()
                 return render_template("auth/login.html", error=error)
 
-            from datetime import datetime
-            _dev_hash = _device_hash(request.headers.get("User-Agent", ""))
-            _had_login = LoginHistory.query.filter_by(user_id=user.id, success=True).first() is not None
-            _known_device = LoginHistory.query.filter_by(user_id=user.id, success=True, device_hash=_dev_hash).first() is not None
-            _new_device = _had_login and not _known_device
-            user.last_login_at = datetime.utcnow()
-            db.session.add(LoginHistory(
-                email=email,
-                full_name=user.full_name,
-                user_id=user.id,
-                ip_address=_client_ip(),
-                user_agent=request.headers.get("User-Agent", "")[:500],
-                device_hash=_dev_hash,
-                success=True,
-            ))
-            db.session.commit()
-
-            session["user"] = {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "is_super_admin": user.is_super_admin,
-                "organization_id": user.organization_id,
-            }
-
-            import secrets
-            session_token = secrets.token_hex(16)
-            session["session_token"] = session_token
-            db.session.add(UserSession(
-                session_token=session_token,
-                user_id=user.id,
-                user_email=user.email,
-                ip_address=_client_ip(),
-                user_agent=request.headers.get("User-Agent", "")[:500],
-            ))
-            db.session.commit()
-
-            if _new_device:
-                _log_activity("security.new_device_login",
-                              f"{user.email} logged in from a new device (IP {_client_ip()})",
-                              module="security")
-            session.permanent = True
-            flash(f"Welcome back, {user.full_name}", "success")
-            if user.is_super_admin:
-                return redirect(url_for("frontend.super_admin_dashboard"))
-            if getattr(user, "employer_id", None):
-                return redirect(url_for("frontend.employer_dashboard"))
-            return redirect(url_for("frontend.organization_dashboard"))
+            if _staff_2fa_required(user):
+                return _start_staff_otp(user)
+            return _finish_staff_login(user, email)
     return render_template("auth/login.html", error=error)
 
 
